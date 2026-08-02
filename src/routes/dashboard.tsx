@@ -44,7 +44,7 @@ function Dashboard() {
 
   const updateStatus = async (id: string, status: string) => {
     const { error } = await supabase.from("listings").update({ status }).eq("id", id);
-    if (error) return toast.error("Update failed");
+    if (error) { toast.error("Update failed"); return; }
     toast.success("Listing updated");
     queryClient.invalidateQueries({ queryKey: ["listings"] });
   };
