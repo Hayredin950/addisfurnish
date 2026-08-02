@@ -32,15 +32,15 @@ const ANY = "any";
 
 export const Route = createFileRoute("/browse")({
   validateSearch: (search: Record<string, unknown>): BrowseSearch => ({
-    q: typeof search.q === "string" ? search.q : "",
-    category: typeof search.category === "string" ? search.category : "",
-    condition: typeof search.condition === "string" ? search.condition : "",
-    material: typeof search.material === "string" ? search.material : "",
-    room: typeof search.room === "string" ? search.room : "",
-    city: typeof search.city === "string" ? search.city : "",
-    min: Number(search.min) > 0 ? Number(search.min) : 0,
-    max: Number(search.max) > 0 ? Number(search.max) : 0,
-    sort: typeof search.sort === "string" ? search.sort : "newest",
+    q: typeof search["q"] === "string" ? search["q"] : "",
+    category: typeof search["category"] === "string" ? search["category"] : "",
+    condition: typeof search["condition"] === "string" ? search["condition"] : "",
+    material: typeof search["material"] === "string" ? search["material"] : "",
+    room: typeof search["room"] === "string" ? search["room"] : "",
+    city: typeof search["city"] === "string" ? search["city"] : "",
+    min: Number(search["min"]) > 0 ? Number(search["min"]) : 0,
+    max: Number(search["max"]) > 0 ? Number(search["max"]) : 0,
+    sort: typeof search["sort"] === "string" ? search["sort"] : "newest",
   }),
   head: () => ({
     meta: [
