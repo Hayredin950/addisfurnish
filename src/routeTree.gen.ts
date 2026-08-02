@@ -13,6 +13,8 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as BrowseRouteImport } from './routes/browse'
 import { Route as CategoriesRouteImport } from './routes/categories'
+import { Route as FavoritesRouteImport } from './routes/favorites'
+import { Route as MessagesRouteImport } from './routes/messages'
 import { Route as SafetyRouteImport } from './routes/safety'
 import { Route as ListingIdRouteImport } from './routes/listing.$id'
 
@@ -36,6 +38,16 @@ const CategoriesRoute = CategoriesRouteImport.update({
   path: '/categories',
   getParentRoute: () => rootRouteImport,
 } as any)
+const FavoritesRoute = FavoritesRouteImport.update({
+  id: '/favorites',
+  path: '/favorites',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MessagesRoute = MessagesRouteImport.update({
+  id: '/messages',
+  path: '/messages',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SafetyRoute = SafetyRouteImport.update({
   id: '/safety',
   path: '/safety',
@@ -52,6 +64,8 @@ export interface FileRoutesByFullPath {
   '/auth': typeof AuthRoute
   '/browse': typeof BrowseRoute
   '/categories': typeof CategoriesRoute
+  '/favorites': typeof FavoritesRoute
+  '/messages': typeof MessagesRoute
   '/safety': typeof SafetyRoute
   '/listing/$id': typeof ListingIdRoute
 }
@@ -60,6 +74,8 @@ export interface FileRoutesByTo {
   '/auth': typeof AuthRoute
   '/browse': typeof BrowseRoute
   '/categories': typeof CategoriesRoute
+  '/favorites': typeof FavoritesRoute
+  '/messages': typeof MessagesRoute
   '/safety': typeof SafetyRoute
   '/listing/$id': typeof ListingIdRoute
 }
@@ -69,21 +85,40 @@ export interface FileRoutesById {
   '/auth': typeof AuthRoute
   '/browse': typeof BrowseRoute
   '/categories': typeof CategoriesRoute
+  '/favorites': typeof FavoritesRoute
+  '/messages': typeof MessagesRoute
   '/safety': typeof SafetyRoute
   '/listing/$id': typeof ListingIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
-    '/' | '/auth' | '/browse' | '/categories' | '/safety' | '/listing/$id'
+    | '/'
+    | '/auth'
+    | '/browse'
+    | '/categories'
+    | '/favorites'
+    | '/messages'
+    | '/safety'
+    | '/listing/$id'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/auth' | '/browse' | '/categories' | '/safety' | '/listing/$id'
+  to:
+    | '/'
+    | '/auth'
+    | '/browse'
+    | '/categories'
+    | '/favorites'
+    | '/messages'
+    | '/safety'
+    | '/listing/$id'
   id:
     | '__root__'
     | '/'
     | '/auth'
     | '/browse'
     | '/categories'
+    | '/favorites'
+    | '/messages'
     | '/safety'
     | '/listing/$id'
   fileRoutesById: FileRoutesById
@@ -93,6 +128,8 @@ export interface RootRouteChildren {
   AuthRoute: typeof AuthRoute
   BrowseRoute: typeof BrowseRoute
   CategoriesRoute: typeof CategoriesRoute
+  FavoritesRoute: typeof FavoritesRoute
+  MessagesRoute: typeof MessagesRoute
   SafetyRoute: typeof SafetyRoute
   ListingIdRoute: typeof ListingIdRoute
 }
@@ -127,6 +164,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof CategoriesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/favorites': {
+      id: '/favorites'
+      path: '/favorites'
+      fullPath: '/favorites'
+      preLoaderRoute: typeof FavoritesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/messages': {
+      id: '/messages'
+      path: '/messages'
+      fullPath: '/messages'
+      preLoaderRoute: typeof MessagesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/safety': {
       id: '/safety'
       path: '/safety'
@@ -149,6 +200,8 @@ const rootRouteChildren: RootRouteChildren = {
   AuthRoute: AuthRoute,
   BrowseRoute: BrowseRoute,
   CategoriesRoute: CategoriesRoute,
+  FavoritesRoute: FavoritesRoute,
+  MessagesRoute: MessagesRoute,
   SafetyRoute: SafetyRoute,
   ListingIdRoute: ListingIdRoute,
 }
