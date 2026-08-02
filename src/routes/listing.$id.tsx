@@ -39,7 +39,9 @@ function ListingDetail() {
   const { data: listing, isLoading } = useQuery(listingQuery(id));
   const { data: history } = useQuery(priceHistoryQuery(id));
   const { data: similar } = useQuery(
-    listingsQuery({ category: listing?.categories?.slug, limit: 4 }),
+    listingsQuery(
+      listing?.categories?.slug ? { category: listing.categories.slug, limit: 4 } : { limit: 4 },
+    ),
   );
   const [active, setActive] = useState(0);
   const [message, setMessage] = useState("");

@@ -10,13 +10,20 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AuthRouteImport } from './routes/auth'
 import { Route as BrowseRouteImport } from './routes/browse'
 import { Route as CategoriesRouteImport } from './routes/categories'
 import { Route as SafetyRouteImport } from './routes/safety'
+import { Route as ListingIdRouteImport } from './routes/listing.$id'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthRoute = AuthRouteImport.update({
+  id: '/auth',
+  path: '/auth',
   getParentRoute: () => rootRouteImport,
 } as any)
 const BrowseRoute = BrowseRouteImport.update({
@@ -34,39 +41,60 @@ const SafetyRoute = SafetyRouteImport.update({
   path: '/safety',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ListingIdRoute = ListingIdRouteImport.update({
+  id: '/listing/$id',
+  path: '/listing/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/auth': typeof AuthRoute
   '/browse': typeof BrowseRoute
   '/categories': typeof CategoriesRoute
   '/safety': typeof SafetyRoute
+  '/listing/$id': typeof ListingIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/auth': typeof AuthRoute
   '/browse': typeof BrowseRoute
   '/categories': typeof CategoriesRoute
   '/safety': typeof SafetyRoute
+  '/listing/$id': typeof ListingIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/auth': typeof AuthRoute
   '/browse': typeof BrowseRoute
   '/categories': typeof CategoriesRoute
   '/safety': typeof SafetyRoute
+  '/listing/$id': typeof ListingIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/browse' | '/categories' | '/safety'
+  fullPaths:
+    '/' | '/auth' | '/browse' | '/categories' | '/safety' | '/listing/$id'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/browse' | '/categories' | '/safety'
-  id: '__root__' | '/' | '/browse' | '/categories' | '/safety'
+  to: '/' | '/auth' | '/browse' | '/categories' | '/safety' | '/listing/$id'
+  id:
+    | '__root__'
+    | '/'
+    | '/auth'
+    | '/browse'
+    | '/categories'
+    | '/safety'
+    | '/listing/$id'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AuthRoute: typeof AuthRoute
   BrowseRoute: typeof BrowseRoute
   CategoriesRoute: typeof CategoriesRoute
   SafetyRoute: typeof SafetyRoute
+  ListingIdRoute: typeof ListingIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -76,6 +104,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/auth': {
+      id: '/auth'
+      path: '/auth'
+      fullPath: '/auth'
+      preLoaderRoute: typeof AuthRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/browse': {
@@ -99,14 +134,23 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SafetyRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/listing/$id': {
+      id: '/listing/$id'
+      path: '/listing/$id'
+      fullPath: '/listing/$id'
+      preLoaderRoute: typeof ListingIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AuthRoute: AuthRoute,
   BrowseRoute: BrowseRoute,
   CategoriesRoute: CategoriesRoute,
   SafetyRoute: SafetyRoute,
+  ListingIdRoute: ListingIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
