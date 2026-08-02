@@ -19,7 +19,7 @@ export const Route = createFileRoute("/")({
       { property: "og:title", content: "SuqBet — Buy & Sell Used Furniture in Ethiopia" },
       {
         property: "og:description",
-        content: "Ethiopia's marketplace for quality second-hand furniture.",
+        content: "Browse thousands of second-hand sofas, beds, desks and dining sets from trusted shops across Addis Ababa. Free to list, free to message.",
       },
     ],
   }),
