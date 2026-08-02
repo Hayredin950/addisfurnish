@@ -79,7 +79,7 @@ function Browse() {
   );
 
   const set = (patch: Partial<BrowseSearch>) =>
-    navigate({ search: (prev) => ({ ...prev, ...patch }) });
+    navigate({ search: (prev: BrowseSearch) => ({ ...prev, ...patch }) });
 
   const activeCount = [
     search.q,
@@ -201,7 +201,7 @@ function Browse() {
                 <Link
                   key={c.id}
                   to="/browse"
-                  search={(prev) => ({ ...prev, category: c.slug })}
+                  search={(prev: BrowseSearch) => ({ ...prev, category: c.slug })}
                   className="rounded-full border px-3 py-1 text-xs"
                 >
                   {c.name}
