@@ -16,9 +16,11 @@ import { Route as CategoriesRouteImport } from './routes/categories'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as FavoritesRouteImport } from './routes/favorites'
 import { Route as MessagesRouteImport } from './routes/messages'
+import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as SafetyRouteImport } from './routes/safety'
 import { Route as SellRouteImport } from './routes/sell'
 import { Route as ListingIdRouteImport } from './routes/listing.$id'
+import { Route as ShopSlugRouteImport } from './routes/shop.$slug'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -55,6 +57,11 @@ const MessagesRoute = MessagesRouteImport.update({
   path: '/messages',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ProfileRoute = ProfileRouteImport.update({
+  id: '/profile',
+  path: '/profile',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SafetyRoute = SafetyRouteImport.update({
   id: '/safety',
   path: '/safety',
@@ -70,6 +77,11 @@ const ListingIdRoute = ListingIdRouteImport.update({
   path: '/listing/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ShopSlugRoute = ShopSlugRouteImport.update({
+  id: '/shop/$slug',
+  path: '/shop/$slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -79,9 +91,11 @@ export interface FileRoutesByFullPath {
   '/dashboard': typeof DashboardRoute
   '/favorites': typeof FavoritesRoute
   '/messages': typeof MessagesRoute
+  '/profile': typeof ProfileRoute
   '/safety': typeof SafetyRoute
   '/sell': typeof SellRoute
   '/listing/$id': typeof ListingIdRoute
+  '/shop/$slug': typeof ShopSlugRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -91,9 +105,11 @@ export interface FileRoutesByTo {
   '/dashboard': typeof DashboardRoute
   '/favorites': typeof FavoritesRoute
   '/messages': typeof MessagesRoute
+  '/profile': typeof ProfileRoute
   '/safety': typeof SafetyRoute
   '/sell': typeof SellRoute
   '/listing/$id': typeof ListingIdRoute
+  '/shop/$slug': typeof ShopSlugRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -104,9 +120,11 @@ export interface FileRoutesById {
   '/dashboard': typeof DashboardRoute
   '/favorites': typeof FavoritesRoute
   '/messages': typeof MessagesRoute
+  '/profile': typeof ProfileRoute
   '/safety': typeof SafetyRoute
   '/sell': typeof SellRoute
   '/listing/$id': typeof ListingIdRoute
+  '/shop/$slug': typeof ShopSlugRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -118,9 +136,11 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/favorites'
     | '/messages'
+    | '/profile'
     | '/safety'
     | '/sell'
     | '/listing/$id'
+    | '/shop/$slug'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -130,9 +150,11 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/favorites'
     | '/messages'
+    | '/profile'
     | '/safety'
     | '/sell'
     | '/listing/$id'
+    | '/shop/$slug'
   id:
     | '__root__'
     | '/'
@@ -142,9 +164,11 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/favorites'
     | '/messages'
+    | '/profile'
     | '/safety'
     | '/sell'
     | '/listing/$id'
+    | '/shop/$slug'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -155,9 +179,11 @@ export interface RootRouteChildren {
   DashboardRoute: typeof DashboardRoute
   FavoritesRoute: typeof FavoritesRoute
   MessagesRoute: typeof MessagesRoute
+  ProfileRoute: typeof ProfileRoute
   SafetyRoute: typeof SafetyRoute
   SellRoute: typeof SellRoute
   ListingIdRoute: typeof ListingIdRoute
+  ShopSlugRoute: typeof ShopSlugRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -211,6 +237,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MessagesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/profile': {
+      id: '/profile'
+      path: '/profile'
+      fullPath: '/profile'
+      preLoaderRoute: typeof ProfileRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/safety': {
       id: '/safety'
       path: '/safety'
@@ -232,6 +265,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ListingIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/shop/$slug': {
+      id: '/shop/$slug'
+      path: '/shop/$slug'
+      fullPath: '/shop/$slug'
+      preLoaderRoute: typeof ShopSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -243,9 +283,11 @@ const rootRouteChildren: RootRouteChildren = {
   DashboardRoute: DashboardRoute,
   FavoritesRoute: FavoritesRoute,
   MessagesRoute: MessagesRoute,
+  ProfileRoute: ProfileRoute,
   SafetyRoute: SafetyRoute,
   SellRoute: SellRoute,
   ListingIdRoute: ListingIdRoute,
+  ShopSlugRoute: ShopSlugRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
