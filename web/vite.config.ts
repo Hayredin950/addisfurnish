@@ -1,15 +1,56 @@
-// @lovable.dev/vite-tanstack-config already includes the following — do NOT add them manually
-// or the app will break with duplicate plugins:
-//   - TanStack devtools (dev-only, first), tanstackStart, viteReact, tailwindcss, tsConfigPaths,
-//     nitro (build-only using cloudflare as a default target), VITE_* env injection, @ path alias,
-//     React/TanStack dedupe, error logger plugins, and sandbox detection (port/host/strictPort).
-// You can pass additional config via defineConfig({ vite: { ... }, etc... }) if needed.
-import { defineConfig } from "@lovable.dev/vite-tanstack-config";
+import { defineConfig } from "vite";
+import { tanstackStart } from "@tanstack/react-start/plugin/vite";
+import { nitro } from "nitro/vite";
+import viteReact from "@vitejs/plugin-react";
+import tailwindcss from "@tailwindcss/vite";
+import tsConfigPaths from "vite-tsconfig-paths";
 
-export default defineConfig({
-  tanstackStart: {
-    // Redirect TanStack Start's bundled server entry to src/server.ts (our SSR error wrapper).
-    // nitro/vite builds from this
-    server: { entry: "server" },
-  },
+// Native TanStack Start + Nitro setup.
+//
+// The Nitro plugin (added only for the `build` command, like the original
+// Lovable preset did) is what packages the SSR server into a deployable
+// output. Pick the deploy target at build time with NITRO_PRESET:
+//   NITRO_PRESET=vercel npm run build            -> .vercel/output (Vercel)
+//   NITRO_PRESET=cloudflare-module npm run build -> .output (Cloudflare Pages)
+//   npm run build                                -> .output (Node server)
+export default defineConfig(async ({ command }) => {
+  const plugins: NonNullable<import("vite").UserConfig["plugins"]> = [
+    tailwindcss(),
+    tsConfigPaths({ projects: ["./tsconfig.json"] }),
+    tanstackStart({
+      // Keep server-only modules out of the client bundle.
+      importProtection: {
+        behavior: "error",
+        client: { files: ["**/server/**"], specifiers: ["server-only"] },
+      },
+      // Redirect TanStack Start's bundled server entry to src/server.ts
+      // (our SSR error wrapper). Nitro builds from this.
+      server: { entry: "server" },
+    }),
+  ];
+
+  if (command === "build") {
+    plugins.push(
+      nitro({
+        defaultPreset: "vercel",
+      }),
+    );
+  }
+
+  plugins.push(viteReact());
+
+  return {
+    plugins,
+    resolve: {
+      alias: { "@": `${process.cwd()}/src` },
+      dedupe: [
+        "react",
+        "react-dom",
+        "react/jsx-runtime",
+        "react/jsx-dev-runtime",
+        "@tanstack/react-query",
+        "@tanstack/query-core",
+      ],
+    },
+  };
 });

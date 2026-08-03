@@ -1,9 +1,10 @@
 # SuqBet — Used Furniture Marketplace (Ethiopia)
 
 A web + mobile marketplace connecting furniture sellers (companies/shops) with
-buyers in Ethiopia. Built with [Lovable](https://lovable.dev).
+buyers in Ethiopia.
 
-**Live app**: https://suqbet.lovable.app
+**Deployment**: see [`DEPLOYMENT.md`](DEPLOYMENT.md) — the web app deploys to
+Vercel or Cloudflare, the mobile app ships via Expo EAS.
 
 ## Repository structure
 
@@ -30,8 +31,7 @@ npm i            # or: bun install
 npm run dev      # → http://localhost:8080
 ```
 
-See [`web/README.md`](web/README.md) for full details (there is no separate
-file yet — the root README below documents the features).
+See [`web/README.md`](web/README.md) for app-specific details.
 
 ## Mobile app (`mobile/`)
 

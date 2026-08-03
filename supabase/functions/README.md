@@ -9,7 +9,7 @@ It's implemented as a **server function** (`src/lib/server/telegram.ts`) called
 from the sell flow, so the bot token never reaches the browser. When the env
 vars below are missing it's a safe no-op.
 
-Set these on the hosting environment (Vercel/Railway/Render/Lovable envs):
+Set these on the hosting environment (Vercel/Railway/Render envs):
 
 | Variable              | Example                      | Purpose                        |
 | --------------------- | ---------------------------- | ------------------------------ |

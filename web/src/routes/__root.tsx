@@ -10,7 +10,6 @@ import {
 import { useEffect, type ReactNode } from "react";
 
 import appCss from "../styles.css?url";
-import { reportLovableError } from "../lib/lovable-error-reporting";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import { LanguageProvider, useLang } from "@/lib/i18n";
 import { SiteHeader } from "@/components/SiteHeader";
@@ -55,9 +54,6 @@ function NotFoundComponent() {
 function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   console.error(error);
   const router = useRouter();
-  useEffect(() => {
-    reportLovableError(error, { boundary: "tanstack_root_error_component" });
-  }, [error]);
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-background px-4">
@@ -90,11 +86,18 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   );
 }
 
+// Set VITE_SITE_URL at build time (e.g. https://suqbet.com) so social
+// platforms resolve the og:image to an absolute URL. Falls back to a
+// relative path when unset.
+const siteUrl = (import.meta.env["VITE_SITE_URL"] as string | undefined) ?? "";
+const ogImageUrl = `${siteUrl.replace(/\/+$/, "")}/og-image.png`;
+
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
   head: () => ({
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
+      { name: "theme-color", content: "#AC451B" },
       { title: "SuqBet — Buy & Sell Used Furniture in Ethiopia" },
       {
         name: "description",
@@ -115,16 +118,10 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         content:
           "Browse thousands of second-hand sofas, beds, desks and dining sets from trusted shops across Addis Ababa. Free to list, free to message.",
       },
-      {
-        property: "og:image",
-        content:
-          "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/c2d4054b-2673-4cc9-a2c2-e3390016a4ce/id-preview-8ba4326e--442ffbb2-5963-4516-a8c6-1c41f3e499c1.lovable.app-1785659147501.png",
-      },
-      {
-        name: "twitter:image",
-        content:
-          "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/c2d4054b-2673-4cc9-a2c2-e3390016a4ce/id-preview-8ba4326e--442ffbb2-5963-4516-a8c6-1c41f3e499c1.lovable.app-1785659147501.png",
-      },
+      { property: "og:image", content: ogImageUrl },
+      { property: "og:image:width", content: "1200" },
+      { property: "og:image:height", content: "630" },
+      { name: "twitter:image", content: ogImageUrl },
     ],
     links: [
       { rel: "stylesheet", href: appCss },
@@ -134,7 +131,9 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         rel: "stylesheet",
         href: "https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=DM+Sans:wght@400;500;600&display=swap",
       },
+      { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" },
       { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
+      { rel: "apple-touch-icon", href: "/apple-touch-icon.png" },
     ],
   }),
   shellComponent: RootShell,
