@@ -1,0 +1,181 @@
+import { createServerFn } from "@tanstack/react-start";
+import { getRequest } from "@tanstack/react-start/server";
+
+/**
+ * Admin-only server actions (spec §3): verification decisions with an audit
+ * trail, account suspension ("log out everywhere") and banning.
+ *
+ * Every function re-verifies the caller's admin role server-side — the admin
+ * UI is only ever the trigger, never the security boundary.
+ */
+
+type ActionResult = { ok: boolean; error?: string };
+
+async function currentAdminId(): Promise<string | null> {
+  const request = getRequest();
+  const authHeader = request?.headers?.get("authorization");
+  if (!authHeader?.startsWith("Bearer ")) return null;
+  const token = authHeader.replace("Bearer ", "");
+  const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+  const { data, error } = await supabaseAdmin.auth.getUser(token);
+  if (error || !data.user) return null;
+  const { data: isAdmin } = await supabaseAdmin.rpc("has_role", {
+    _user_id: data.user.id,
+    _role: "admin",
+  });
+  return isAdmin ? data.user.id : null;
+}
+
+async function sendSellerTelegramAlert(
+  sellerId: string,
+  status: "approved" | "rejected",
+  reason: string | null,
+): Promise<void> {
+  const token = process.env["TELEGRAM_BOT_TOKEN"];
+  if (!token) return;
+  try {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { data: profile } = await supabaseAdmin
+      .from("profiles")
+      .select("telegram_chat_id")
+      .eq("id", sellerId)
+      .maybeSingle();
+    const chatId = profile?.telegram_chat_id;
+    if (!chatId) return;
+    const text =
+      status === "approved"
+        ? "✅ Good news! Your shop has been verified on SuqBet. Your verified badge is now live."
+        : `❌ Your SuqBet verification was not approved${reason ? `: ${reason}` : "."} You can edit your details and resubmit.`;
+    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ chat_id: chatId, text: text.slice(0, 4096) }),
+    });
+  } catch {
+    // Best-effort — the in-app notification already fired.
+  }
+}
+
+/**
+ * Approve or reject a seller verification document. Records the decision in
+ * the immutable audit trail, flips the verified badge on approval, and
+ * notifies the seller in-app + on Telegram (if linked).
+ */
+export const adminVerifyDocument = createServerFn({ method: "POST" })
+  .validator(
+    (d: { documentId: string; action: "approved" | "rejected"; reason?: string | undefined }) => d,
+  )
+  .handler(async ({ data }): Promise<ActionResult> => {
+    const reviewerId = await currentAdminId();
+    if (!reviewerId) return { ok: false, error: "admin" };
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+
+    const { data: doc } = await supabaseAdmin
+      .from("seller_verification_documents")
+      .select("id,seller_id,status")
+      .eq("id", data.documentId)
+      .maybeSingle();
+    if (!doc || doc.status !== "pending") return { ok: false, error: "not_found" };
+
+    const { error: docErr } = await supabaseAdmin
+      .from("seller_verification_documents")
+      .update({
+        status: data.action,
+        reviewed_by: reviewerId,
+        reviewed_at: new Date().toISOString(),
+        rejection_reason: data.action === "rejected" ? (data.reason ?? null) : null,
+      })
+      .eq("id", data.documentId);
+    if (docErr) return { ok: false, error: "server_error" };
+
+    // Immutable audit trail: who decided, when, and why.
+    await supabaseAdmin.from("verification_decisions").insert({
+      seller_id: doc.seller_id,
+      document_id: doc.id,
+      reviewer_id: reviewerId,
+      action: data.action,
+      reason: data.action === "rejected" ? (data.reason ?? null) : null,
+    });
+
+    if (data.action === "approved") {
+      await supabaseAdmin.from("profiles").update({ verified: true }).eq("id", doc.seller_id);
+    }
+
+    // Notify the seller in-app. Direct insert (not the RPC): the service-role
+    // client has no auth.uid(), which would make an auth.uid()-based RPC a no-op.
+    await supabaseAdmin.from("notifications").insert({
+      user_id: doc.seller_id,
+      type: data.action === "approved" ? "seller_verified" : "seller_rejected",
+      payload: {
+        status: data.action,
+        reason: data.action === "rejected" ? (data.reason ?? "") : "",
+      },
+    });
+    await sendSellerTelegramAlert(doc.seller_id, data.action, data.reason ?? null);
+
+    return { ok: true };
+  });
+
+/**
+ * Audited direct approval (used by the legacy "Verify" button on the Sellers
+ * tab). Records a decision so no badge grant goes unlogged.
+ */
+export const adminVerifySellerDirect = createServerFn({ method: "POST" })
+  .validator((d: { userId: string }) => d)
+  .handler(async ({ data }): Promise<ActionResult> => {
+    const reviewerId = await currentAdminId();
+    if (!reviewerId) return { ok: false, error: "admin" };
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    await supabaseAdmin.from("verification_decisions").insert({
+      seller_id: data.userId,
+      document_id: null,
+      reviewer_id: reviewerId,
+      action: "approved",
+      reason: "Direct approval by admin (no document on file)",
+    });
+    await supabaseAdmin.from("profiles").update({ verified: true }).eq("id", data.userId);
+    await supabaseAdmin.from("notifications").insert({
+      user_id: data.userId,
+      type: "seller_verified",
+      payload: { status: "approved" },
+    });
+    await sendSellerTelegramAlert(data.userId, "approved", null);
+    return { ok: true };
+  });
+
+/** Log the user out of every device (revoke all sessions). */
+export const adminRevokeSessions = createServerFn({ method: "POST" })
+  .validator((d: { userId: string }) => d)
+  .handler(async ({ data }): Promise<ActionResult> => {
+    const reviewerId = await currentAdminId();
+    if (!reviewerId) return { ok: false, error: "admin" };
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error } = await supabaseAdmin.auth.admin.signOut(data.userId);
+    return error ? { ok: false, error: "server_error" } : { ok: true };
+  });
+
+/** Suspend an account for N hours (rejects its tokens immediately). */
+export const adminBanUser = createServerFn({ method: "POST" })
+  .validator((d: { userId: string; hours: number }) => d)
+  .handler(async ({ data }): Promise<ActionResult> => {
+    const reviewerId = await currentAdminId();
+    if (!reviewerId) return { ok: false, error: "admin" };
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error } = await supabaseAdmin.auth.admin.updateUserById(data.userId, {
+      ban_duration: `${Math.max(1, data.hours)}h`,
+    });
+    return error ? { ok: false, error: "server_error" } : { ok: true };
+  });
+
+/** Lift a suspension. */
+export const adminUnbanUser = createServerFn({ method: "POST" })
+  .validator((d: { userId: string }) => d)
+  .handler(async ({ data }): Promise<ActionResult> => {
+    const reviewerId = await currentAdminId();
+    if (!reviewerId) return { ok: false, error: "admin" };
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error } = await supabaseAdmin.auth.admin.updateUserById(data.userId, {
+      ban_duration: "0s",
+    });
+    return error ? { ok: false, error: "server_error" } : { ok: true };
+  });

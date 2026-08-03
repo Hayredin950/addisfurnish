@@ -1,0 +1,306 @@
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
+import { Area, AreaChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Phone, PhoneCall } from "lucide-react";
+import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/lib/auth";
+import { useLang } from "@/lib/i18n";
+import { RequireAuth } from "@/components/RequireAuth";
+import { listingsQuery, notifyUser, sellerViewsPerDayQuery } from "@/lib/marketplace";
+import { formatBirr, STATUSES } from "@/lib/format";
+import { ListingImage } from "@/components/ListingImage";
+import { Button } from "@/components/ui/button";
+
+export const Route = createFileRoute("/dashboard")({
+  head: () => ({
+    meta: [
+      { title: "Seller Dashboard — SuqBet" },
+      { name: "description", content: "Manage your listings, prices and callback requests." },
+      { property: "og:title", content: "Seller Dashboard — SuqBet" },
+      { property: "og:description", content: "Your SuqBet selling tools." },
+    ],
+  }),
+  component: () => (
+    <RequireAuth>
+      <Dashboard />
+    </RequireAuth>
+  ),
+});
+
+const STATUS_LABEL: Record<
+  string,
+  "dash.statusActive" | "dash.statusReserved" | "dash.statusSold"
+> = {
+  active: "dash.statusActive",
+  reserved: "dash.statusReserved",
+  sold: "dash.statusSold",
+};
+
+const CALLBACK_STATUS_KEY: Record<
+  string,
+  "dash.cbStatusPending" | "dash.cbStatusContacted" | "dash.cbStatusClosed"
+> = {
+  pending: "dash.cbStatusPending",
+  contacted: "dash.cbStatusContacted",
+  closed: "dash.cbStatusClosed",
+};
+
+function Dashboard() {
+  const { user, profile } = useAuth();
+  const { t } = useLang();
+  const queryClient = useQueryClient();
+  const { data: listings } = useQuery(listingsQuery({ sellerId: user?.id ?? "none", limit: 100 }));
+  const { data: callbacks } = useQuery({
+    queryKey: ["callbacks", user?.id],
+    enabled: !!user,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("callback_requests")
+        .select("id,phone,note,status,created_at,buyer_id,listings(title)")
+        .eq("seller_id", user!.id)
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+  const { data: viewsByDay } = useQuery(sellerViewsPerDayQuery(user?.id ?? "none"));
+  const { data: conversations } = useQuery({
+    queryKey: ["seller-conversations", user?.id],
+    enabled: !!user,
+    queryFn: async () => {
+      const { count, error } = await supabase
+        .from("conversations")
+        .select("id", { count: "exact", head: true })
+        .eq("seller_id", user!.id);
+      if (error) throw error;
+      return count ?? 0;
+    },
+  });
+
+  const updateCallback = async (
+    id: string,
+    status: "contacted" | "closed",
+    buyerId: string | null,
+    listingTitle: string | undefined,
+  ) => {
+    const { error } = await supabase.from("callback_requests").update({ status }).eq("id", id);
+    if (error) {
+      toast.error(t("toast.updateFailed"));
+      return;
+    }
+    toast.success(t("toast.listingUpdated"));
+    queryClient.invalidateQueries({ queryKey: ["callbacks"] });
+    if (buyerId) {
+      // Response-to-inquiry notification (spec §5).
+      const payload: { status: string; title?: string } = { status };
+      if (listingTitle) payload.title = listingTitle;
+      await notifyUser(buyerId, "callback_response", payload);
+    }
+  };
+
+  const updateStatus = async (id: string, status: string) => {
+    const listing = (listings ?? []).find((l) => l.id === id);
+    const { error } = await supabase.from("listings").update({ status }).eq("id", id);
+    if (error) {
+      toast.error(t("toast.updateFailed"));
+      return;
+    }
+    toast.success(t("toast.listingUpdated"));
+    queryClient.invalidateQueries({ queryKey: ["listings"] });
+
+    // Notify interested buyers when an item is marked sold.
+    if (status === "sold" && listing) {
+      const { data: buyers } = await supabase
+        .from("conversations")
+        .select("buyer_id")
+        .eq("listing_id", id);
+      for (const row of buyers ?? []) {
+        await notifyUser(row.buyer_id, "listing_sold", {
+          title: listing.title,
+          listingId: id,
+        });
+      }
+    }
+  };
+
+  const totalViews = (listings ?? []).reduce((sum, l) => sum + l.view_count, 0);
+
+  const stats = [
+    { label: t("dash.statsListings"), value: listings?.length ?? 0 },
+    { label: t("dash.statsViews"), value: totalViews },
+    { label: t("dash.statsCallbacks"), value: callbacks?.length ?? 0 },
+    { label: t("dash.statsConversations"), value: conversations ?? 0 },
+  ];
+
+  return (
+    <div className="mx-auto max-w-5xl px-4 py-12">
+      <div className="flex flex-wrap items-center justify-between gap-4">
+        <div>
+          <h1 className="font-display text-3xl font-semibold">
+            {profile?.shop_name ?? profile?.full_name}
+          </h1>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {t("dash.listingsCount", { count: listings?.length ?? 0, views: totalViews })}
+          </p>
+        </div>
+        <Button asChild>
+          <Link to="/sell">{t("nav.postItem")}</Link>
+        </Button>
+      </div>
+
+      <div className="mt-8 grid grid-cols-2 gap-4 sm:grid-cols-4">
+        {stats.map((s) => (
+          <div key={s.label} className="rounded-lg border bg-card p-5 shadow-soft">
+            <p className="font-display text-3xl font-semibold text-primary">{s.value}</p>
+            <p className="mt-1 text-xs uppercase tracking-wide text-muted-foreground">{s.label}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="mt-8 rounded-lg border bg-card p-5">
+        <div className="flex items-center justify-between">
+          <h2 className="font-display text-lg font-semibold">{t("dash.viewsChart")}</h2>
+          <span className="text-xs text-muted-foreground">{t("dash.lastDays", { days: 14 })}</span>
+        </div>
+        <div className="mt-4 h-48">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={viewsByDay ?? []} margin={{ left: -22, right: 4, top: 4 }}>
+              <defs>
+                <linearGradient id="viewsFill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="var(--primary)" stopOpacity={0.35} />
+                  <stop offset="100%" stopColor="var(--primary)" stopOpacity={0.02} />
+                </linearGradient>
+              </defs>
+              <XAxis
+                dataKey="date"
+                tickFormatter={(d: string) => d.slice(5)}
+                tick={{ fontSize: 11 }}
+                stroke="var(--border)"
+              />
+              <YAxis allowDecimals={false} tick={{ fontSize: 11 }} stroke="var(--border)" />
+              <Tooltip
+                formatter={(value) => [value, t("dash.statsViews")]}
+                labelFormatter={(label: string) => new Date(label).toLocaleDateString()}
+                contentStyle={{
+                  background: "var(--card)",
+                  border: "1px solid var(--border)",
+                  borderRadius: 8,
+                  fontSize: 12,
+                }}
+              />
+              <Area
+                type="monotone"
+                dataKey="count"
+                stroke="var(--primary)"
+                strokeWidth={2}
+                fill="url(#viewsFill)"
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      <div className="mt-8 space-y-3">
+        {(listings ?? []).map((listing) => (
+          <div key={listing.id} className="flex items-center gap-4 rounded-lg border bg-card p-3">
+            <ListingImage
+              path={listing.listing_images[0]?.url ?? null}
+              alt={listing.title}
+              className="h-16 w-16 rounded-md object-cover"
+            />
+            <div className="min-w-0 flex-1">
+              <Link
+                to="/listing/$id"
+                params={{ id: listing.id }}
+                className="block truncate font-medium"
+              >
+                {listing.title}
+              </Link>
+              <p className="text-xs text-muted-foreground">
+                {formatBirr(listing.price)} · {t("dash.statsViews")}: {listing.view_count}
+              </p>
+            </div>
+            <select
+              value={listing.status}
+              onChange={(e) => updateStatus(listing.id, e.target.value)}
+              className="h-9 rounded-md border border-input bg-background px-2 text-sm capitalize"
+            >
+              {STATUSES.map((s) => (
+                <option key={s} value={s}>
+                  {t(STATUS_LABEL[s] ?? "dash.statusActive")}
+                </option>
+              ))}
+            </select>
+          </div>
+        ))}
+        {listings?.length === 0 ? (
+          <p className="rounded-lg border border-dashed p-12 text-center text-sm text-muted-foreground">
+            {t("dash.noListings")}
+          </p>
+        ) : null}
+      </div>
+
+      <h2 className="mt-12 font-display text-2xl font-semibold">{t("dash.callbacks")}</h2>
+      <div className="mt-4 space-y-2">
+        {(callbacks ?? []).map((c) => {
+          const cb = c as unknown as {
+            id: string;
+            phone: string;
+            note: string | null;
+            status: string;
+            buyer_id: string;
+            created_at: string;
+            listings: { title: string } | null;
+          };
+          return (
+            <div key={cb.id} className="rounded-lg border bg-card p-4 text-sm">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="font-medium">
+                  {cb.listings?.title ?? t("msg.listing")} — {cb.phone}
+                </p>
+                <span
+                  className={`rounded-full px-2.5 py-0.5 text-xs capitalize ${
+                    cb.status === "pending"
+                      ? "bg-amber-500/10 text-amber-600"
+                      : cb.status === "contacted"
+                        ? "bg-primary/10 text-primary"
+                        : "bg-secondary text-muted-foreground"
+                  }`}
+                >
+                  {t(CALLBACK_STATUS_KEY[cb.status] ?? "dash.cbStatusPending")}
+                </span>
+              </div>
+              {cb.note ? <p className="mt-1 text-muted-foreground">{cb.note}</p> : null}
+              <p className="mt-1 text-xs text-muted-foreground">
+                {new Date(cb.created_at).toLocaleString()}
+              </p>
+              {cb.status === "pending" ? (
+                <div className="mt-3 flex gap-2">
+                  <Button
+                    size="sm"
+                    onClick={() =>
+                      updateCallback(cb.id, "contacted", cb.buyer_id, cb.listings?.title)
+                    }
+                  >
+                    <PhoneCall className="mr-1.5 h-3.5 w-3.5" /> {t("dash.markContacted")}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => updateCallback(cb.id, "closed", cb.buyer_id, cb.listings?.title)}
+                  >
+                    <Phone className="mr-1.5 h-3.5 w-3.5" /> {t("dash.close")}
+                  </Button>
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
+        {callbacks?.length === 0 ? (
+          <p className="text-sm text-muted-foreground">{t("dash.noCallbacks")}</p>
+        ) : null}
+      </div>
+    </div>
+  );
+}
