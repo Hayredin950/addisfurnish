@@ -1,17 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  BadgeCheck,
-  MapPin,
-  Eye,
-  Phone,
-  ArrowLeft,
-  MessageCircle,
-  Send,
-  Truck,
-  Timer,
-} from "lucide-react";
+import { BadgeCheck, MapPin, Eye, Phone, ArrowLeft, Send, Truck, Timer } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
@@ -98,9 +88,14 @@ function ListingDetail() {
     };
   }, [id, queryClient]);
 
+  const isOwnListing = !!user && !!listing && user.id === listing.seller_id;
+
   const contact = useMutation({
     mutationFn: async () => {
       if (!user) throw new Error("auth");
+      // A seller contacting their own listing would create a conversation with
+      // themselves; the DB rejects it too, but fail early with a clear message.
+      if (user.id === listing!.seller_id) throw new Error("self");
       const { data: existing } = await supabase
         .from("conversations")
         .select("id")
@@ -133,8 +128,15 @@ function ListingDetail() {
       toast.success(t("toast.messageSent"));
       navigate({ to: "/messages" });
     },
-    onError: (error: Error) =>
-      error.message === "auth" ? navigate({ to: "/auth" }) : toast.error(t("toast.couldNotSend")),
+    onError: (error: Error) => {
+      if (error.message === "auth") {
+        void navigate({ to: "/auth" });
+      } else if (error.message === "self") {
+        toast.error(t("toast.cannotMessageSelf"));
+      } else {
+        toast.error(t("toast.couldNotSend"));
+      }
+    },
   });
 
   const callback = useMutation({
@@ -420,61 +422,68 @@ function ListingDetail() {
             </div>
           ) : null}
 
-          <div className="rounded-xl border bg-card p-6">
-            <h2 className="font-display text-lg font-semibold">{t("listing.contact")}</h2>
-            <div className="mt-4 space-y-3">
-              <Textarea
-                rows={3}
-                placeholder={t("listing.messagePlaceholder")}
-                value={message}
-                onChange={(e) => setMessage(e.target.value)}
-              />
-              <Button
-                className="w-full"
-                disabled={!message.trim() || contact.isPending}
-                onClick={() => contact.mutate()}
-              >
-                <Send className="mr-2 h-4 w-4" />
-                {t("listing.sendMessage")}
-              </Button>
-            </div>
-
-            <div className="mt-6 space-y-2 border-t pt-5">
-              <Label htmlFor="callback">{t("listing.callback")}</Label>
-              <div className="flex gap-2">
-                <Input
-                  id="callback"
-                  placeholder={t("listing.callbackPlaceholder")}
-                  value={phone}
-                  onChange={(e) => setPhone(e.target.value)}
-                />
-                <Button
-                  variant="outline"
-                  disabled={!phone.trim() || callback.isPending}
-                  onClick={() => callback.mutate()}
-                >
-                  <Phone className="h-4 w-4" />
+          {isOwnListing ? (
+            <div className="rounded-xl border bg-card p-6">
+              <h2 className="font-display text-lg font-semibold">{t("listing.yourListing")}</h2>
+              <p className="mt-2 text-sm text-muted-foreground">{t("listing.yourListingHint")}</p>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <Button asChild variant="outline" size="sm">
+                  <Link to="/sell" search={{ edit: listing.id }}>
+                    {t("action.edit")}
+                  </Link>
+                </Button>
+                <Button asChild variant="outline" size="sm">
+                  <Link to="/dashboard">{t("nav.myShop")}</Link>
                 </Button>
               </div>
             </div>
+          ) : (
+            <div className="rounded-xl border bg-card p-6">
+              <h2 className="font-display text-lg font-semibold">{t("listing.contact")}</h2>
+              <div className="mt-4 space-y-3">
+                <Textarea
+                  rows={3}
+                  placeholder={t("listing.messagePlaceholder")}
+                  value={message}
+                  onChange={(e) => setMessage(e.target.value)}
+                />
+                <Button
+                  className="w-full"
+                  disabled={!message.trim() || contact.isPending}
+                  onClick={() => contact.mutate()}
+                >
+                  <Send className="mr-2 h-4 w-4" />
+                  {t("listing.sendMessage")}
+                </Button>
+              </div>
 
-            <p className="mt-5 text-xs text-muted-foreground">
-              {t("listing.neverPay")}{" "}
-              <Link to="/safety" className="text-primary">
-                {t("listing.safetyTips")}
-              </Link>
-            </p>
-          </div>
+              <div className="mt-6 space-y-2 border-t pt-5">
+                <Label htmlFor="callback">{t("listing.callback")}</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="callback"
+                    placeholder={t("listing.callbackPlaceholder")}
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                  />
+                  <Button
+                    variant="outline"
+                    disabled={!phone.trim() || callback.isPending}
+                    onClick={() => callback.mutate()}
+                  >
+                    <Phone className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
 
-          {seller && seller.id === user?.id ? (
-            <div className="rounded-xl border border-dashed bg-secondary/40 p-4 text-xs text-muted-foreground">
-              <MessageCircle className="mb-1 h-4 w-4 text-primary" />
-              {t("listing.contact")} —{" "}
-              <Link to="/dashboard" className="text-primary">
-                {t("nav.myShop")}
-              </Link>
+              <p className="mt-5 text-xs text-muted-foreground">
+                {t("listing.neverPay")}{" "}
+                <Link to="/safety" className="text-primary">
+                  {t("listing.safetyTips")}
+                </Link>
+              </p>
             </div>
-          ) : null}
+          )}
         </aside>
       </div>
 

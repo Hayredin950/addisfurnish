@@ -23,6 +23,9 @@ type Profile = {
   telegram: string | null;
   preferred_language: string;
   registration_number: string | null;
+  /** Shop location pinned on the map (WGS84); null until the seller sets it. */
+  latitude: number | null;
+  longitude: number | null;
 };
 
 type AuthContextValue = {

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -11,6 +12,16 @@ import { listingsQuery, notifyUser, sellerViewsPerDayQuery } from "@/lib/marketp
 import { formatBirr, STATUSES } from "@/lib/format";
 import { ListingImage } from "@/components/ListingImage";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 export const Route = createFileRoute("/dashboard")({
   head: () => ({
@@ -50,6 +61,8 @@ function Dashboard() {
   const { user, profile } = useAuth();
   const { t } = useLang();
   const queryClient = useQueryClient();
+  const [pendingDelete, setPendingDelete] = useState<{ id: string; title: string } | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const { data: listings } = useQuery(listingsQuery({ sellerId: user?.id ?? "none", limit: 100 }));
   const { data: callbacks } = useQuery({
     queryKey: ["callbacks", user?.id],
@@ -96,6 +109,36 @@ function Dashboard() {
       const payload: { status: string; title?: string } = { status };
       if (listingTitle) payload.title = listingTitle;
       await notifyUser(buyerId, "callback_response", payload);
+    }
+  };
+
+  /**
+   * Deletes a listing. `listings`, `listing_images` and `conversations` all
+   * cascade from the listing row, so one delete is enough; the storage objects
+   * are removed separately since Postgres has no reach into the bucket.
+   */
+  const confirmDelete = async () => {
+    if (!pendingDelete) return;
+    setDeleting(true);
+    try {
+      const listing = (listings ?? []).find((l) => l.id === pendingDelete.id);
+      const paths = (listing?.listing_images ?? [])
+        .map((img) => img.url)
+        .filter((url): url is string => !!url && !url.startsWith("http"));
+
+      const { error } = await supabase.from("listings").delete().eq("id", pendingDelete.id);
+      if (error) throw error;
+
+      // Best-effort cleanup; orphaned files are harmless if this fails.
+      if (paths.length) await supabase.storage.from("listing-images").remove(paths);
+
+      toast.success(t("toast.listingDeleted"));
+      setPendingDelete(null);
+      queryClient.invalidateQueries({ queryKey: ["listings"] });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("toast.deleteFailed"));
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -232,6 +275,19 @@ function Dashboard() {
                 </option>
               ))}
             </select>
+            <Button asChild variant="outline" size="sm">
+              <Link to="/sell" search={{ edit: listing.id }}>
+                {t("action.edit")}
+              </Link>
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="text-destructive hover:text-destructive"
+              onClick={() => setPendingDelete({ id: listing.id, title: listing.title })}
+            >
+              {t("action.delete")}
+            </Button>
           </div>
         ))}
         {listings?.length === 0 ? (
@@ -301,6 +357,37 @@ function Dashboard() {
           <p className="text-sm text-muted-foreground">{t("dash.noCallbacks")}</p>
         ) : null}
       </div>
+
+      <AlertDialog
+        open={!!pendingDelete}
+        onOpenChange={(open) => {
+          if (!open) setPendingDelete(null);
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("listing.deleteTitle")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingDelete ? `“${pendingDelete.title}” — ` : null}
+              {t("listing.deleteBody")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>{t("action.cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                // Keep the dialog open while the delete runs.
+                e.preventDefault();
+                void confirmDelete();
+              }}
+              disabled={deleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {t("action.confirmDelete")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

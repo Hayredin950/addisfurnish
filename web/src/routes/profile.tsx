@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -7,6 +7,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { useLang } from "@/lib/i18n";
 import { RequireAuth } from "@/components/RequireAuth";
+import { LocationPicker, type Coords } from "@/components/LocationPicker";
 import { getTelegramDeepLink } from "@/lib/telegram";
 import { sendPhoneOtp, verifyPhoneOtp } from "@/lib/otp";
 import {
@@ -17,7 +18,7 @@ import {
   submitVerificationDocument,
   type BuyerPreferences,
 } from "@/lib/marketplace";
-import { useImageUrl, uploadVerificationDocument } from "@/lib/storage";
+import { useImageUrl, uploadShopLogo, uploadVerificationDocument } from "@/lib/storage";
 import { CITIES } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -88,6 +89,16 @@ function ProfilePage() {
   const [otpSent, setOtpSent] = useState(false);
   const [otpDevCode, setOtpDevCode] = useState<string | null>(null);
   const [otpBusy, setOtpBusy] = useState(false);
+  // Shop location pin. Seeded from the profile once it loads.
+  const [shopCoords, setShopCoords] = useState<Coords | null>(null);
+  const coordsSeeded = useRef(false);
+  useEffect(() => {
+    if (coordsSeeded.current) return;
+    if (profile?.latitude != null && profile?.longitude != null) {
+      coordsSeeded.current = true;
+      setShopCoords({ latitude: profile.latitude, longitude: profile.longitude });
+    }
+  }, [profile]);
 
   const save = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -112,10 +123,13 @@ function ProfilePage() {
         telegram: (form.get("telegram") as string) || null,
         registration_number: (form.get("registration_number") as string) || null,
         is_seller: !!shopName,
+        latitude: shopCoords?.latitude ?? null,
+        longitude: shopCoords?.longitude ?? null,
       })
       .eq("id", user!.id);
     if (error) {
-      toast.error(t("toast.couldNotSave"));
+      // Show the real reason instead of a generic failure.
+      toast.error(error.message);
       return;
     }
     toast.success(t("toast.profileUpdated"));
@@ -139,13 +153,13 @@ function ProfilePage() {
 
   const uploadLogo = async (file: File) => {
     if (!user) return;
-    const ext = file.name.split(".").pop() ?? "jpg";
-    const path = `logos/${user.id}/${crypto.randomUUID()}.${ext}`;
-    const { error } = await supabase.storage
-      .from("listing-images")
-      .upload(path, file, { cacheControl: "3600", upsert: false });
-    if (error) {
-      toast.error(t("toast.couldNotSave"));
+    let path: string;
+    try {
+      path = await uploadShopLogo(user.id, file);
+    } catch (error) {
+      // Surface the real reason — a missing bucket and a rejected file type look
+      // identical otherwise.
+      toast.error(error instanceof Error ? error.message : t("toast.couldNotSave"));
       return;
     }
     const { error: updateError } = await supabase
@@ -153,7 +167,7 @@ function ProfilePage() {
       .update({ shop_logo_url: path })
       .eq("id", user.id);
     if (updateError) {
-      toast.error(t("toast.couldNotSave"));
+      toast.error(updateError.message);
       return;
     }
     toast.success(t("toast.profileUpdated"));
@@ -266,6 +280,11 @@ function ProfilePage() {
         <div className="space-y-2">
           <Label htmlFor="shop_address">{t("profile.shopAddress")}</Label>
           <Input id="shop_address" name="shop_address" defaultValue={profile?.shop_address ?? ""} />
+        </div>
+
+        <div className="space-y-2">
+          <Label>{t("loc.pin")}</Label>
+          <LocationPicker value={shopCoords} onChange={setShopCoords} />
         </div>
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2">

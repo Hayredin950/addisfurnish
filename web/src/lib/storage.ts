@@ -31,6 +31,22 @@ export async function uploadListingImage(userId: string, file: File): Promise<st
   return path;
 }
 
+/**
+ * Uploads a shop logo. The path must start with the uploader's id — the bucket's
+ * INSERT policy checks `(storage.foldername(name))[1] = auth.uid()`, so a
+ * top-level `logos/` prefix is rejected.
+ */
+export async function uploadShopLogo(userId: string, file: File): Promise<string> {
+  const ext = file.name.split(".").pop() ?? "jpg";
+  const path = `${userId}/logos/${crypto.randomUUID()}.${ext}`;
+  const { error } = await supabase.storage.from(BUCKET).upload(path, file, {
+    cacheControl: "3600",
+    upsert: false,
+  });
+  if (error) throw error;
+  return path;
+}
+
 /** Uploads a verification document to the private (owner+admin only) bucket. */
 export async function uploadVerificationDocument(userId: string, file: File): Promise<string> {
   const ext = file.name.split(".").pop() ?? "jpg";

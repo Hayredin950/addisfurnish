@@ -120,6 +120,20 @@ export type Database = {
             referencedRelation: "listings";
             referencedColumns: ["id"];
           },
+          {
+            foreignKeyName: "conversations_buyer_id_fkey";
+            columns: ["buyer_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "conversations_seller_id_fkey";
+            columns: ["seller_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
         ];
       };
       favorites: {
@@ -309,6 +323,13 @@ export type Database = {
             referencedRelation: "conversations";
             referencedColumns: ["id"];
           },
+          {
+            foreignKeyName: "messages_sender_id_fkey";
+            columns: ["sender_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
         ];
       };
       price_history: {
@@ -350,6 +371,8 @@ export type Database = {
           is_online: boolean;
           is_seller: boolean;
           last_seen: string;
+          latitude: number | null;
+          longitude: number | null;
           phone: string | null;
           phone_verified_at: string | null;
           preferred_language: string;
@@ -375,6 +398,8 @@ export type Database = {
           is_online?: boolean;
           is_seller?: boolean;
           last_seen?: string;
+          latitude?: number | null;
+          longitude?: number | null;
           phone?: string | null;
           phone_verified_at?: string | null;
           preferred_language?: string;
@@ -400,6 +425,8 @@ export type Database = {
           is_online?: boolean;
           is_seller?: boolean;
           last_seen?: string;
+          latitude?: number | null;
+          longitude?: number | null;
           phone?: string | null;
           phone_verified_at?: string | null;
           preferred_language?: string;
@@ -447,6 +474,13 @@ export type Database = {
           {
             foreignKeyName: "reviews_seller_id_fkey";
             columns: ["seller_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "reviews_author_id_fkey";
+            columns: ["author_id"];
             isOneToOne: false;
             referencedRelation: "profiles";
             referencedColumns: ["id"];
@@ -797,7 +831,22 @@ export type Database = {
       };
     };
     Views: {
-      [_ in never]: never;
+      category_listing_counts: {
+        Row: {
+          category_id: string | null;
+          category_slug: string | null;
+          listing_count: number | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "categories_pkey";
+            columns: ["category_id"];
+            isOneToOne: false;
+            referencedRelation: "categories";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
     };
     Functions: {
       admin_notify_user: {

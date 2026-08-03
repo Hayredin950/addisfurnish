@@ -382,6 +382,37 @@ const en = {
   "toast.searchSaved": "Search saved — you'll be notified of new matches",
   "toast.searchRemoved": "Search removed",
   "toast.prefsSaved": "Preferences saved",
+  "toast.cannotMessageSelf": "This is your own listing — you can't message yourself",
+  "toast.listingDeleted": "Listing deleted",
+  "toast.deleteFailed": "Could not delete the listing",
+  "toast.imageUploadFailed": "Listing saved, but the photos could not be uploaded",
+
+  // ── Owner actions on own listings ────────────────────────────────
+  "action.edit": "Edit",
+  "action.delete": "Delete",
+  "action.cancel": "Cancel",
+  "action.saveChanges": "Save changes",
+  "action.confirmDelete": "Yes, delete it",
+  "listing.yourListing": "This is your listing",
+  "listing.yourListingHint": "Buyers see a contact form here. You can edit or remove this listing.",
+  "listing.deleteTitle": "Delete this listing?",
+  "listing.deleteBody":
+    "This permanently removes the listing, its photos and its conversations. This cannot be undone.",
+  "listing.editTitle": "Edit listing",
+
+  // ── Location picker ──────────────────────────────────────────────
+  "loc.pin": "Pin the location on the map",
+  "loc.hint": "Click the map or drag the marker to set the exact spot.",
+  "loc.clear": "Clear pin",
+  "loc.useShop": "Use my shop location",
+  "loc.none": "No location pinned yet",
+  "loc.searchPlaceholder": "Search a place in Ethiopia…",
+  "loc.searching": "Searching…",
+  "loc.noResults": "No places found",
+
+  // ── Categories ───────────────────────────────────────────────────
+  "categories.itemCount": "{count} items",
+  "categories.empty": "No items yet",
 } as const;
 
 type Dict = typeof en;
@@ -735,6 +766,36 @@ const am: Record<keyof Dict, string> = {
   "toast.searchSaved": "ፍለጋ ተቀምጧል — አዲስ ውጤቶች ሲገቡ እናሳውቅዎታለን",
   "toast.searchRemoved": "ፍለጋ ተወግዷል",
   "toast.prefsSaved": "ምርጫዎች ተቀምጠዋል",
+  "toast.cannotMessageSelf": "ይህ የራስዎ ማስታወቂያ ነው — ለራስዎ መልዕክት መላክ አይችሉም",
+  "toast.listingDeleted": "ማስታወቂያ ተሰርዟል",
+  "toast.deleteFailed": "ማስታወቂያውን መሰረዝ አልተቻለም",
+  "toast.imageUploadFailed": "ማስታወቂያው ተቀምጧል፣ ግን ፎቶዎቹ አልተጫኑም",
+
+  // ── Owner actions on own listings ────────────────────────────────
+  "action.edit": "አስተካክል",
+  "action.delete": "ሰርዝ",
+  "action.cancel": "ተው",
+  "action.saveChanges": "ለውጦችን አስቀምጥ",
+  "action.confirmDelete": "አዎ፣ ሰርዘው",
+  "listing.yourListing": "ይህ የእርስዎ ማስታወቂያ ነው",
+  "listing.yourListingHint": "ገዢዎች እዚህ የመገኛ ቅጽ ያያሉ። ማስታወቂያውን ማስተካከል ወይም ማስወገድ ይችላሉ።",
+  "listing.deleteTitle": "ይህን ማስታወቂያ ይሰርዙ?",
+  "listing.deleteBody": "ይህ ማስታወቂያውን፣ ፎቶዎቹንና ውይይቶቹን በቋሚነት ያስወግዳል። ወደ ኋላ መመለስ አይቻልም።",
+  "listing.editTitle": "ማስታወቂያ አስተካክል",
+
+  // ── Location picker ──────────────────────────────────────────────
+  "loc.pin": "በካርታው ላይ ቦታውን ይምረጡ",
+  "loc.hint": "ትክክለኛውን ቦታ ለማስቀመጥ ካርታውን ይጫኑ ወይም ምልክቱን ይጎትቱ።",
+  "loc.clear": "ምልክቱን አጥፋ",
+  "loc.useShop": "የሱቄን ቦታ ተጠቀም",
+  "loc.none": "እስካሁን ቦታ አልተመረጠም",
+  "loc.searchPlaceholder": "በኢትዮጵያ ውስጥ ቦታ ይፈልጉ…",
+  "loc.searching": "በመፈለግ ላይ…",
+  "loc.noResults": "ቦታ አልተገኘም",
+
+  // ── Categories ───────────────────────────────────────────────────
+  "categories.itemCount": "{count} ዕቃዎች",
+  "categories.empty": "እስካሁን ዕቃ የለም",
 } as const;
 
 const dictionaries: Record<Lang, Record<keyof Dict, string>> = { en, am };

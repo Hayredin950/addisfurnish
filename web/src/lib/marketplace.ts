@@ -108,6 +108,28 @@ export const categoriesQuery = queryOptions({
   },
 });
 
+/**
+ * Active-listing count per category, including each category's direct children
+ * (mirrors how browse.tsx filters a root category). Backed by the
+ * `category_listing_counts` view.
+ */
+export const categoryCountsQuery = queryOptions({
+  queryKey: ["category-counts"],
+  staleTime: 1000 * 60 * 5,
+  queryFn: async () => {
+    const { data, error } = await supabase
+      .from("category_listing_counts")
+      .select("category_id,listing_count");
+    if (error) throw error;
+    const counts: Record<string, number> = {};
+    for (const row of data ?? []) {
+      // View columns are nullable in the generated types; skip incomplete rows.
+      if (row.category_id) counts[row.category_id] = Number(row.listing_count ?? 0);
+    }
+    return counts;
+  },
+});
+
 export type ListingFilters = {
   q?: string;
   category?: string;
@@ -232,7 +254,9 @@ export function reviewsQuery(sellerId: string) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("reviews")
-        .select("id,rating,comment,created_at,author_id,profiles(full_name)")
+        // `reviews` has two FKs to `profiles` (author_id and seller_id), so the
+        // embed must name the constraint or PostgREST rejects it as ambiguous.
+        .select("id,rating,comment,created_at,author_id,profiles!reviews_author_id_fkey(full_name)")
         .eq("seller_id", sellerId)
         .order("created_at", { ascending: false });
       if (error) throw error;

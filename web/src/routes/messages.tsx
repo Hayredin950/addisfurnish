@@ -5,6 +5,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { useLang } from "@/lib/i18n";
 import { RequireAuth } from "@/components/RequireAuth";
+import { UserAvatar } from "@/components/UserAvatar";
 import { timeAgo } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,6 +26,35 @@ export const Route = createFileRoute("/messages")({
   ),
 });
 
+/** A chat participant as embedded from `profiles`. */
+type Participant = {
+  id: string;
+  full_name: string | null;
+  avatar_url: string | null;
+} | null;
+
+/**
+ * Shapes for the aliased PostgREST embeds. The generated types can't infer
+ * aliases (`buyer:profiles!fk(...)`), so the query result is cast to these.
+ */
+type Conversation = {
+  id: string;
+  last_message_at: string;
+  buyer_id: string;
+  seller_id: string;
+  listings: { title: string } | null;
+  buyer: Participant;
+  seller: Participant;
+};
+
+type Message = {
+  id: string;
+  body: string;
+  sender_id: string;
+  created_at: string;
+  profiles: { full_name: string | null; avatar_url: string | null } | null;
+};
+
 function Messages() {
   const { user } = useAuth();
   const { t } = useLang();
@@ -36,12 +66,18 @@ function Messages() {
     queryKey: ["conversations", user?.id],
     enabled: !!user,
     queryFn: async () => {
+      // Both participant FKs point at profiles, so each embed names its
+      // constraint — an unqualified `profiles(...)` would be ambiguous.
       const { data, error } = await supabase
         .from("conversations")
-        .select("id,last_message_at,buyer_id,seller_id,listings(title)")
+        .select(
+          "id,last_message_at,buyer_id,seller_id,listings(title)," +
+            "buyer:profiles!conversations_buyer_id_fkey(id,full_name,avatar_url)," +
+            "seller:profiles!conversations_seller_id_fkey(id,full_name,avatar_url)",
+        )
         .order("last_message_at", { ascending: false });
       if (error) throw error;
-      return data ?? [];
+      return (data ?? []) as unknown as Conversation[];
     },
   });
 
@@ -53,13 +89,23 @@ function Messages() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("messages")
-        .select("id,body,sender_id,created_at")
+        .select(
+          "id,body,sender_id,created_at,profiles!messages_sender_id_fkey(full_name,avatar_url)",
+        )
         .eq("conversation_id", current!)
         .order("created_at");
       if (error) throw error;
-      return data ?? [];
+      return (data ?? []) as unknown as Message[];
     },
   });
+
+  const activeConversation = (conversations ?? []).find((c) => c.id === current);
+  /** The other participant — whichever side of the conversation isn't me. */
+  const counterpart = activeConversation
+    ? activeConversation.buyer_id === user?.id
+      ? activeConversation.seller
+      : activeConversation.buyer
+    : null;
 
   // Live delivery: the messages table is on the realtime publication, so new
   // incoming messages appear without a manual refresh.
@@ -114,10 +160,24 @@ function Messages() {
                 c.id === current ? "border-primary bg-secondary/50" : ""
               }`}
             >
-              <span className="block font-medium">
-                {(c.listings as { title: string } | null)?.title ?? t("msg.listing")}
+              <span className="flex items-center gap-2">
+                {(() => {
+                  // Show who you're talking to, not your own side.
+                  const other = c.buyer_id === user?.id ? c.seller : c.buyer;
+                  return (
+                    <UserAvatar name={other?.full_name} avatarUrl={other?.avatar_url} size={28} />
+                  );
+                })()}
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate font-medium">
+                    {(c.listings as { title: string } | null)?.title ?? t("msg.listing")}
+                  </span>
+                  <span className="block truncate text-xs text-muted-foreground">
+                    {(c.buyer_id === user?.id ? c.seller : c.buyer)?.full_name ?? ""} ·{" "}
+                    {timeAgo(c.last_message_at)}
+                  </span>
+                </span>
               </span>
-              <span className="text-xs text-muted-foreground">{timeAgo(c.last_message_at)}</span>
             </button>
           ))}
           {conversations?.length === 0 ? (
@@ -126,19 +186,44 @@ function Messages() {
         </aside>
 
         <section className="flex min-h-[420px] flex-col rounded-lg border bg-card p-4">
+          {counterpart ? (
+            <header className="mb-3 flex items-center gap-2 border-b pb-3">
+              <UserAvatar name={counterpart.full_name} avatarUrl={counterpart.avatar_url} />
+              <span className="text-sm font-medium">{counterpart.full_name}</span>
+            </header>
+          ) : null}
           <div className="flex-1 space-y-3 overflow-y-auto">
-            {(messages ?? []).map((m) => (
-              <div
-                key={m.id}
-                className={`max-w-[75%] rounded-lg px-3 py-2 text-sm ${
-                  m.sender_id === user?.id
-                    ? "ml-auto bg-primary text-primary-foreground"
-                    : "bg-secondary"
-                }`}
-              >
-                {m.body}
-              </div>
-            ))}
+            {(messages ?? []).map((m) => {
+              const mine = m.sender_id === user?.id;
+              const sender = m.profiles as {
+                full_name: string | null;
+                avatar_url: string | null;
+              } | null;
+              return (
+                <div
+                  key={m.id}
+                  className={`flex items-end gap-2 ${mine ? "flex-row-reverse" : "flex-row"}`}
+                >
+                  <UserAvatar name={sender?.full_name} avatarUrl={sender?.avatar_url} size={28} />
+                  <div className="max-w-[75%]">
+                    <span
+                      className={`block text-[11px] text-muted-foreground ${
+                        mine ? "text-right" : "text-left"
+                      }`}
+                    >
+                      {sender?.full_name ?? ""} · {timeAgo(m.created_at)}
+                    </span>
+                    <div
+                      className={`mt-0.5 rounded-lg px-3 py-2 text-sm ${
+                        mine ? "bg-primary text-primary-foreground" : "bg-secondary"
+                      }`}
+                    >
+                      {m.body}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
           {current ? (
             <form
