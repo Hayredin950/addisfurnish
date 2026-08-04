@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { Eye, MapPin, BadgeCheck } from "lucide-react";
 import { ListingImage } from "@/components/ListingImage";
+import { UserAvatar } from "@/components/UserAvatar";
 import { FavoriteButton } from "@/components/FavoriteButton";
 import { QuickViewDialog } from "@/components/QuickViewDialog";
 import { Badge } from "@/components/ui/badge";
@@ -80,13 +81,23 @@ export function ListingCard({ listing }: { listing: Listing }) {
             </span>
           </div>
           <div className="flex items-center justify-between border-t pt-2 text-xs text-muted-foreground">
-            <span className="inline-flex items-center gap-1 truncate">
-              {listing.profiles?.shop_name ?? listing.profiles?.full_name ?? "Seller"}
+            <span className="inline-flex min-w-0 items-center gap-1.5 truncate">
+              <UserAvatar
+                name={listing.profiles?.shop_name ?? listing.profiles?.full_name}
+                avatarUrl={listing.profiles?.shop_logo_url ?? listing.profiles?.avatar_url}
+                size={20}
+              />
+              <span className="truncate">
+                {listing.profiles?.shop_name ?? listing.profiles?.full_name ?? "Seller"}
+              </span>
               {listing.profiles?.verified ? (
-                <BadgeCheck className="h-3.5 w-3.5 text-success" aria-label={t("card.verified")} />
+                <BadgeCheck
+                  className="h-3.5 w-3.5 shrink-0 text-success"
+                  aria-label={t("card.verified")}
+                />
               ) : null}
             </span>
-            <span>{timeAgo(listing.created_at)}</span>
+            <span className="shrink-0">{timeAgo(listing.created_at)}</span>
           </div>
         </div>
       </Link>

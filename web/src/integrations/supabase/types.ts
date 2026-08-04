@@ -298,21 +298,30 @@ export type Database = {
           body: string;
           conversation_id: string;
           created_at: string;
+          deleted_at: string | null;
+          edited_at: string | null;
           id: string;
+          read_at: string | null;
           sender_id: string;
         };
         Insert: {
           body: string;
           conversation_id: string;
           created_at?: string;
+          deleted_at?: string | null;
+          edited_at?: string | null;
           id?: string;
+          read_at?: string | null;
           sender_id: string;
         };
         Update: {
           body?: string;
           conversation_id?: string;
           created_at?: string;
+          deleted_at?: string | null;
+          edited_at?: string | null;
           id?: string;
+          read_at?: string | null;
           sender_id?: string;
         };
         Relationships: [
@@ -364,6 +373,8 @@ export type Database = {
       profiles: {
         Row: {
           avatar_url: string | null;
+          ban_reason: string | null;
+          banned_until: string | null;
           city: string | null;
           created_at: string;
           full_name: string;
@@ -391,6 +402,8 @@ export type Database = {
         };
         Insert: {
           avatar_url?: string | null;
+          ban_reason?: string | null;
+          banned_until?: string | null;
           city?: string | null;
           created_at?: string;
           full_name?: string;
@@ -418,6 +431,8 @@ export type Database = {
         };
         Update: {
           avatar_url?: string | null;
+          ban_reason?: string | null;
+          banned_until?: string | null;
           city?: string | null;
           created_at?: string;
           full_name?: string;
@@ -875,6 +890,14 @@ export type Database = {
           _user_id: string;
         };
         Returns: boolean;
+      };
+      admin_revoke_sessions: {
+        Args: { _user_id: string };
+        Returns: undefined;
+      };
+      admin_set_ban: {
+        Args: { _user_id: string; _until: string | null; _reason?: string | null };
+        Returns: undefined;
       };
       increment_listing_views: {
         Args: { _listing_id: string };

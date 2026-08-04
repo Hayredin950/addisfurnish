@@ -1,13 +1,20 @@
 import { useState } from "react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BadgeCheck, MapPin, Star, Flag } from "lucide-react";
+import { BadgeCheck, MapPin, Star, Flag, Pencil, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { useLang } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth";
-import { listingsQuery, reviewsQuery, shopQuery, submitReview } from "@/lib/marketplace";
+import {
+  deleteReview,
+  listingsQuery,
+  reviewsQuery,
+  shopQuery,
+  submitReview,
+} from "@/lib/marketplace";
 import { isOnlineNow } from "@/lib/format";
 import { ListingCard } from "@/components/ListingCard";
+import { UserAvatar } from "@/components/UserAvatar";
 import { Stars, StarPicker } from "@/components/ReviewStars";
 import { ReportDialog } from "@/components/ReportDialog";
 import { Button } from "@/components/ui/button";
@@ -53,6 +60,19 @@ function Shop() {
       error.message === "auth" ? navigate({ to: "/auth" }) : toast.error(t("toast.requestFailed")),
   });
 
+  const removeReview = useMutation({
+    mutationFn: async (reviewId: string) => {
+      await deleteReview(reviewId);
+    },
+    onSuccess: () => {
+      setRating(0);
+      setComment("");
+      toast.success(t("toast.reviewDeleted"));
+      queryClient.invalidateQueries({ queryKey: ["reviews", shop?.id] });
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
   if (!shop) {
     return (
       <div className="mx-auto max-w-3xl px-4 py-24 text-center">
@@ -74,11 +94,16 @@ function Shop() {
     <div className="mx-auto max-w-6xl px-4 py-12">
       <div className="rounded-xl border bg-card p-6 shadow-soft">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2">
-            <h1 className="font-display text-3xl font-semibold">
+          <div className="flex min-w-0 items-center gap-3">
+            <UserAvatar
+              name={shop.shop_name ?? shop.full_name}
+              avatarUrl={shop.shop_logo_url ?? shop.avatar_url}
+              size={56}
+            />
+            <h1 className="truncate font-display text-3xl font-semibold">
               {shop.shop_name ?? shop.full_name}
             </h1>
-            {shop.verified ? <BadgeCheck className="h-5 w-5 text-primary" /> : null}
+            {shop.verified ? <BadgeCheck className="h-5 w-5 shrink-0 text-primary" /> : null}
           </div>
           <div className="flex items-center gap-2">
             {reviews && reviews.length > 0 ? (
@@ -150,22 +175,62 @@ function Shop() {
           </h2>
           {reviews && reviews.length > 0 ? (
             <ul className="mt-5 space-y-5">
-              {reviews.map((r) => (
-                <li key={r.id} className="border-b pb-5 last:border-0">
-                  <div className="flex items-center justify-between">
-                    <Stars value={r.rating} />
-                    <span className="text-xs text-muted-foreground">
-                      {new Date(r.created_at).toLocaleDateString()}
-                    </span>
-                  </div>
-                  {r.comment ? (
-                    <p className="mt-2 text-sm text-muted-foreground">{r.comment}</p>
-                  ) : null}
-                  <p className="mt-1.5 text-xs font-medium">
-                    {r.profiles?.full_name ?? t("nav.profile")}
-                  </p>
-                </li>
-              ))}
+              {reviews.map((r) => {
+                const mine = !!user && r.author_id === user.id;
+                return (
+                  <li key={r.id} className="border-b pb-5 last:border-0">
+                    <div className="flex items-center justify-between">
+                      <Stars value={r.rating} />
+                      <span className="text-xs text-muted-foreground">
+                        {new Date(r.created_at).toLocaleDateString()}
+                      </span>
+                    </div>
+                    {r.comment ? (
+                      <p className="mt-2 text-sm text-muted-foreground">{r.comment}</p>
+                    ) : null}
+                    <div className="mt-1.5 flex items-center justify-between gap-2">
+                      <span className="flex min-w-0 items-center gap-1.5">
+                        <UserAvatar
+                          name={r.profiles?.full_name}
+                          avatarUrl={r.profiles?.avatar_url}
+                          size={20}
+                        />
+                        <span className="truncate text-xs font-medium">
+                          {r.profiles?.full_name ?? t("nav.profile")}
+                        </span>
+                      </span>
+                      {mine ? (
+                        <span className="flex shrink-0 gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-xs"
+                            onClick={() => {
+                              // Load the review into the form for editing; the
+                              // upsert overwrites it on submit.
+                              setRating(r.rating);
+                              setComment(r.comment ?? "");
+                            }}
+                          >
+                            <Pencil className="mr-1 h-3 w-3" />
+                            {t("action.edit")}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-xs text-destructive hover:text-destructive"
+                            disabled={removeReview.isPending}
+                            onClick={() => removeReview.mutate(r.id)}
+                          >
+                            <Trash2 className="mr-1 h-3 w-3" />
+                            {t("action.delete")}
+                          </Button>
+                        </span>
+                      ) : null}
+                    </div>
+                  </li>
+                );
+              })}
             </ul>
           ) : (
             <p className="mt-5 text-sm text-muted-foreground">{t("shop.noReviews")}</p>

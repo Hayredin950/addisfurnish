@@ -17,6 +17,8 @@ export type SellerSummary = {
   shop_name: string | null;
   shop_slug: string | null;
   shop_logo_url: string | null;
+  /** Personal picture; used when the seller has no shop logo. */
+  avatar_url: string | null;
   verified: boolean;
   city: string | null;
   phone: string | null;
@@ -62,7 +64,7 @@ export type Review = {
   comment: string | null;
   created_at: string;
   author_id: string;
-  profiles?: { full_name: string } | null;
+  profiles?: { full_name: string; avatar_url?: string | null } | null;
 };
 
 export type NotificationRow = {
@@ -96,7 +98,7 @@ export type BuyerPreferences = {
 };
 
 const LISTING_SELECT =
-  "*, listing_images(id,url,position), profiles!listings_seller_id_fkey(id,full_name,shop_name,shop_slug,shop_logo_url,verified,city,phone,last_seen,is_online,whatsapp,telegram), categories(name,slug,name_am)";
+  "*, listing_images(id,url,position), profiles!listings_seller_id_fkey(id,full_name,shop_name,shop_slug,shop_logo_url,avatar_url,verified,city,phone,last_seen,is_online,whatsapp,telegram), categories(name,slug,name_am)";
 
 export const categoriesQuery = queryOptions({
   queryKey: ["categories"],
@@ -256,7 +258,9 @@ export function reviewsQuery(sellerId: string) {
         .from("reviews")
         // `reviews` has two FKs to `profiles` (author_id and seller_id), so the
         // embed must name the constraint or PostgREST rejects it as ambiguous.
-        .select("id,rating,comment,created_at,author_id,profiles!reviews_author_id_fkey(full_name)")
+        .select(
+          "id,rating,comment,created_at,author_id,profiles!reviews_author_id_fkey(full_name,avatar_url)",
+        )
         .eq("seller_id", sellerId)
         .order("created_at", { ascending: false });
       if (error) throw error;
@@ -411,6 +415,12 @@ export async function submitReview(
       { seller_id: sellerId, author_id: authorId, rating, comment },
       { onConflict: "seller_id,author_id" },
     );
+  if (error) throw error;
+}
+
+/** Removes the caller's own review. RLS restricts this to author_id = auth.uid(). */
+export async function deleteReview(reviewId: string) {
+  const { error } = await supabase.from("reviews").delete().eq("id", reviewId);
   if (error) throw error;
 }
 
@@ -656,6 +666,45 @@ export function adminReportsQuery() {
         .order("created_at", { ascending: false });
       if (error) throw error;
       return (data ?? []) as AdminReport[];
+    },
+  });
+}
+
+export type AdminUser = {
+  id: string;
+  full_name: string;
+  shop_name: string | null;
+  shop_slug: string | null;
+  avatar_url: string | null;
+  shop_logo_url: string | null;
+  verified: boolean;
+  is_seller: boolean;
+  created_at: string;
+  phone: string | null;
+  city: string | null;
+  banned_until: string | null;
+  ban_reason: string | null;
+};
+
+/**
+ * Every account, for the admin users tab. Readable only by admins — the
+ * "admin reads all profiles" policy gates it.
+ */
+export function adminAllUsersQuery(filter: "all" | "sellers" | "buyers" = "all") {
+  return queryOptions({
+    queryKey: ["admin-all-users", filter],
+    queryFn: async () => {
+      let query = supabase
+        .from("profiles")
+        .select(
+          "id,full_name,shop_name,shop_slug,avatar_url,shop_logo_url,verified,is_seller,created_at,phone,city,banned_until,ban_reason",
+        )
+        .order("created_at", { ascending: false });
+      if (filter === "sellers") query = query.eq("is_seller", true);
+      if (filter === "buyers") query = query.eq("is_seller", false);
+      const { data, error } = await query;
+      if (error) throw error;
+      return (data ?? []) as AdminUser[];
     },
   });
 }

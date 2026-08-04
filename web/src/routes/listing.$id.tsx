@@ -15,7 +15,9 @@ import {
   priceHistoryQuery,
   recordListingView,
 } from "@/lib/marketplace";
-import { ListingImage } from "@/components/ListingImage";
+import { ListingGallery } from "@/components/ListingGallery";
+import { UserAvatar } from "@/components/UserAvatar";
+import { LocationCard } from "@/components/LocationCard";
 import { ListingCard } from "@/components/ListingCard";
 import { FavoriteButton } from "@/components/FavoriteButton";
 import { ShareButton } from "@/components/ShareButton";
@@ -55,7 +57,6 @@ function ListingDetail() {
       listing?.categories?.slug ? { category: listing.categories.slug, limit: 4 } : { limit: 4 },
     ),
   );
-  const [active, setActive] = useState(0);
   const [message, setMessage] = useState("");
   const [phone, setPhone] = useState("");
 
@@ -197,9 +198,6 @@ function ListingDetail() {
     ? Math.ceil((new Date(listing.discount_expires_at!).getTime() - Date.now()) / 86400000)
     : 0;
   const hasMap = typeof listing.latitude === "number" && typeof listing.longitude === "number";
-  const bbox = hasMap
-    ? `${listing.longitude! - 0.006}%2C${listing.latitude! - 0.004}%2C${listing.longitude! + 0.006}%2C${listing.latitude! + 0.004}`
-    : "";
   const online = seller ? seller.is_online || isOnlineNow(seller.last_seen) : false;
   const waLink = seller?.whatsapp
     ? `https://wa.me/${seller.whatsapp.replace(/\D/g, "")}?text=${encodeURIComponent(
@@ -230,33 +228,7 @@ function ListingDetail() {
 
       <div className="mt-6 grid gap-10 lg:grid-cols-[1.4fr_1fr]">
         <div>
-          <div className="overflow-hidden rounded-xl border bg-muted">
-            <ListingImage
-              path={images[active]?.url ?? null}
-              alt={listing.title}
-              className="aspect-4/3 w-full object-cover"
-            />
-          </div>
-          {images.length > 1 ? (
-            <div className="mt-3 flex gap-3">
-              {images.map((img, i) => (
-                <button
-                  key={img.id}
-                  type="button"
-                  onClick={() => setActive(i)}
-                  className={`h-20 w-20 overflow-hidden rounded-md border ${
-                    i === active ? "ring-2 ring-primary" : ""
-                  }`}
-                >
-                  <ListingImage
-                    path={img.url}
-                    alt={`${listing.title} photo ${i + 1}`}
-                    className="h-full w-full object-cover"
-                  />
-                </button>
-              ))}
-            </div>
-          ) : null}
+          <ListingGallery images={images} alt={listing.title} />
 
           <div className="mt-8">
             <h2 className="font-display text-xl font-semibold">{t("listing.description")}</h2>
@@ -358,20 +330,12 @@ function ListingDetail() {
           </div>
 
           {hasMap ? (
-            <div className="overflow-hidden rounded-xl border bg-card">
-              <div className="flex items-center gap-2 px-4 pt-4 text-xs font-medium text-muted-foreground">
-                <MapPin className="h-3.5 w-3.5 text-primary" />
-                {listing.sub_city ? `${listing.sub_city}, ` : ""}
-                {listing.city}
-              </div>
-              <iframe
-                title={`Map — ${listing.title}`}
-                src={`https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${listing.latitude}%2C${listing.longitude}`}
-                className="mt-2 h-56 w-full border-0"
-                loading="lazy"
-                referrerPolicy="no-referrer-when-downgrade"
-              />
-            </div>
+            <LocationCard
+              latitude={listing.latitude!}
+              longitude={listing.longitude!}
+              label={`${listing.sub_city ? `${listing.sub_city}, ` : ""}${listing.city}`}
+              title={listing.title}
+            />
           ) : null}
 
           {seller ? (
@@ -379,9 +343,20 @@ function ListingDetail() {
               <p className="text-xs uppercase tracking-wide text-muted-foreground">
                 {t("listing.seller")}
               </p>
-              <div className="mt-2 flex items-center gap-2">
-                <span className="font-medium">{seller.shop_name ?? seller.full_name}</span>
-                {seller.verified ? <BadgeCheck className="h-4 w-4 text-primary" /> : null}
+              <div className="mt-2 flex items-center gap-3">
+                <UserAvatar
+                  name={seller.shop_name ?? seller.full_name}
+                  avatarUrl={seller.shop_logo_url ?? seller.avatar_url}
+                  size={44}
+                />
+                <span className="flex min-w-0 items-center gap-2">
+                  <span className="truncate font-medium">
+                    {seller.shop_name ?? seller.full_name}
+                  </span>
+                  {seller.verified ? (
+                    <BadgeCheck className="h-4 w-4 shrink-0 text-primary" />
+                  ) : null}
+                </span>
               </div>
               <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
                 {online ? (

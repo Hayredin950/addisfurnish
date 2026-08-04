@@ -344,9 +344,35 @@ const en = {
   "admin.verifiedOk": "Seller verified — badge assigned",
   "admin.rejectedOk": "Decision recorded and seller notified",
   "admin.sessionsRevoked": "All sessions revoked",
-  "admin.banned": "Account suspended for 24 hours",
+  "admin.banned": "Account suspended",
   "admin.revokeSessions": "Revoke sessions",
-  "admin.ban": "Ban 24h",
+  "admin.ban": "Suspend",
+  "admin.unban": "Lift suspension",
+  "admin.unbanned": "Suspension lifted",
+  "admin.banTitle": "Suspend this account",
+  "admin.banBody":
+    "The account is signed out immediately and cannot sign in until the suspension expires.",
+  "admin.banDuration": "Duration",
+  "admin.banReason": "Reason (shown in the admin list)",
+  "admin.banHours24": "24 hours",
+  "admin.banDays7": "7 days",
+  "admin.banDays30": "30 days",
+  "admin.banPermanent": "Permanent (100 years)",
+  "admin.banConfirm": "Suspend account",
+  "admin.suspendedUntil": "Suspended until {date}",
+  "admin.users": "Users",
+  "admin.noUsers": "No accounts yet",
+  "admin.searchUsers": "Search by name, shop or phone…",
+  "admin.roleSeller": "Seller",
+  "admin.roleBuyer": "Buyer",
+  "admin.viewDocument": "View document",
+  "admin.documentTitle": "Verification document",
+  "admin.documentMissing": "The file could not be loaded",
+  "admin.openOriginal": "Open in a new tab",
+  "admin.reporterNotified": "Resolved — the reporter was notified",
+  "admin.revokeSessionsHint":
+    "Signs the account out on every device by deleting its sessions and refresh tokens. They can sign in again immediately.",
+  "nav.admin": "Admin dashboard",
   "verif.becomeSeller": "Become a seller",
   "verif.becomeSellerHint":
     "Fill in your shop details above and save. You can list items right away — the verified badge comes after document review.",
@@ -413,6 +439,45 @@ const en = {
   // ── Categories ───────────────────────────────────────────────────
   "categories.itemCount": "{count} items",
   "categories.empty": "No items yet",
+
+  // ── Chat: edit / delete / receipts ───────────────────────────────
+  "msg.edited": "edited",
+  "msg.deletedPlaceholder": "This message was deleted",
+  "msg.seen": "Seen",
+  "msg.sent": "Sent",
+  "msg.editAction": "Edit",
+  "msg.deleteAction": "Delete",
+  "msg.saveEdit": "Save",
+  "msg.aboutItem": "About this item",
+  "msg.viewItem": "View item",
+  "msg.deleteConfirm": "Delete this message?",
+  "msg.deleteConfirmBody": "The other person will see that a message was deleted.",
+  "toast.reviewDeleted": "Review deleted",
+  "profile.emailHint": "Your sign-in address. Contact support to change it.",
+
+  // ── Notifications ────────────────────────────────────────────────
+  "notif.dismiss": "Dismiss",
+  "notif.reportResolved": "We reviewed your report and took action. Thank you.",
+  "notif.reportDismissed": "We reviewed your report and found no violation.",
+
+  // ── Photos ───────────────────────────────────────────────────────
+  "sell.addPhotos": "Add photos",
+  "sell.removePhoto": "Remove photo",
+  "sell.coverPhoto": "Cover",
+  "sell.currentPhotos": "Current photos",
+  "sell.photoHint": "The first photo is the cover buyers see. Add up to 10.",
+  "listing.viewFullSize": "View full size",
+  "listing.photoCounter": "{index} of {total}",
+  "listing.zoomIn": "Zoom in",
+  "listing.zoomOut": "Zoom out",
+  "listing.closeViewer": "Close",
+
+  // ── Location sharing ─────────────────────────────────────────────
+  "loc.copy": "Copy location",
+  "loc.copied": "Location copied",
+  "loc.openInMaps": "Open in Maps",
+  "loc.share": "Share location",
+  "loc.directions": "Directions",
 } as const;
 
 type Dict = typeof en;
@@ -730,9 +795,34 @@ const am: Record<keyof Dict, string> = {
   "admin.verifiedOk": "ሻጭ ተረጋግጧል — ምልክት ተሰጥቷል",
   "admin.rejectedOk": "ውሳኔ ተመዝግቧል እና ሻጩ ተሳውቋል",
   "admin.sessionsRevoked": "ሁሉም ክፍለ-ጊዜዎች ተሰርዘዋል",
-  "admin.banned": "መለያ ለ24 ሰዓታት ታግዷል",
+  "admin.banned": "መለያ ታግዷል",
   "admin.revokeSessions": "ክፍለ-ጊዜዎችን ሰርዝ",
-  "admin.ban": "ለ24 ሰዓት ከልክል",
+  "admin.ban": "አግድ",
+  "admin.unban": "እገዳውን አንሳ",
+  "admin.unbanned": "እገዳው ተነስቷል",
+  "admin.banTitle": "ይህን መለያ አግድ",
+  "admin.banBody": "መለያው ወዲያውኑ ይወጣል፤ እገዳው እስኪያልቅ ድረስ መግባት አይችልም።",
+  "admin.banDuration": "የጊዜ ርዝመት",
+  "admin.banReason": "ምክንያት (በአስተዳዳሪ ዝርዝር ውስጥ ይታያል)",
+  "admin.banHours24": "24 ሰዓታት",
+  "admin.banDays7": "7 ቀናት",
+  "admin.banDays30": "30 ቀናት",
+  "admin.banPermanent": "ቋሚ (100 ዓመታት)",
+  "admin.banConfirm": "መለያውን አግድ",
+  "admin.suspendedUntil": "እስከ {date} ድረስ ታግዷል",
+  "admin.users": "ተጠቃሚዎች",
+  "admin.noUsers": "እስካሁን መለያ የለም",
+  "admin.searchUsers": "በስም፣ በሱቅ ወይም በስልክ ይፈልጉ…",
+  "admin.roleSeller": "ሻጭ",
+  "admin.roleBuyer": "ገዢ",
+  "admin.viewDocument": "ሰነዱን ይመልከቱ",
+  "admin.documentTitle": "የማረጋገጫ ሰነድ",
+  "admin.documentMissing": "ፋይሉን መጫን አልተቻለም",
+  "admin.openOriginal": "በአዲስ ትር ክፈት",
+  "admin.reporterNotified": "ተፈትቷል — ጠቋሚው ተሳውቋል",
+  "admin.revokeSessionsHint":
+    "ክፍለ-ጊዜዎቹንና ቶከኖቹን በመሰረዝ መለያውን ከሁሉም መሣሪያዎች ያስወጣል። ወዲያውኑ እንደገና መግባት ይችላሉ።",
+  "nav.admin": "የአስተዳዳሪ ዳሽቦርድ",
   "verif.becomeSeller": "ሻጭ ይሁኑ",
   "verif.becomeSellerHint":
     "ከላይ የሱቅ ዝርዝሮችዎን ይሙሉ እና ያስቀምጡ። ወዲያውኑ መሸጥ ይችላሉ — የተረጋገጠ ምልክቱ ከሰነድ ግምገማ በኋላ ይመጣል።",
@@ -796,6 +886,45 @@ const am: Record<keyof Dict, string> = {
   // ── Categories ───────────────────────────────────────────────────
   "categories.itemCount": "{count} ዕቃዎች",
   "categories.empty": "እስካሁን ዕቃ የለም",
+
+  // ── Chat: edit / delete / receipts ───────────────────────────────
+  "msg.edited": "ተስተካክሏል",
+  "msg.deletedPlaceholder": "ይህ መልዕክት ተሰርዟል",
+  "msg.seen": "ታይቷል",
+  "msg.sent": "ተልኳል",
+  "msg.editAction": "አስተካክል",
+  "msg.deleteAction": "ሰርዝ",
+  "msg.saveEdit": "አስቀምጥ",
+  "msg.aboutItem": "ስለዚህ ዕቃ",
+  "msg.viewItem": "ዕቃውን ይመልከቱ",
+  "msg.deleteConfirm": "ይህን መልዕክት ይሰርዙ?",
+  "msg.deleteConfirmBody": "ሌላው ሰው መልዕክት መሰረዙን ያያል።",
+  "toast.reviewDeleted": "ግምገማ ተሰርዟል",
+  "profile.emailHint": "የመግቢያ አድራሻዎ። ለመቀየር ድጋፍን ያግኙ።",
+
+  // ── Notifications ────────────────────────────────────────────────
+  "notif.dismiss": "አስወግድ",
+  "notif.reportResolved": "ጥቆማዎን ገምግመን እርምጃ ወስደናል። እናመሰግናለን።",
+  "notif.reportDismissed": "ጥቆማዎን ገምግመን ጥሰት አላገኘንም።",
+
+  // ── Photos ───────────────────────────────────────────────────────
+  "sell.addPhotos": "ፎቶዎች ጨምር",
+  "sell.removePhoto": "ፎቶ አስወግድ",
+  "sell.coverPhoto": "ዋና ፎቶ",
+  "sell.currentPhotos": "አሁን ያሉ ፎቶዎች",
+  "sell.photoHint": "የመጀመሪያው ፎቶ ገዢዎች የሚያዩት ዋና ፎቶ ነው። እስከ 10 ድረስ ይጨምሩ።",
+  "listing.viewFullSize": "ሙሉ መጠን ይመልከቱ",
+  "listing.photoCounter": "{index} ከ {total}",
+  "listing.zoomIn": "አጉላ",
+  "listing.zoomOut": "አሳንስ",
+  "listing.closeViewer": "ዝጋ",
+
+  // ── Location sharing ─────────────────────────────────────────────
+  "loc.copy": "ቦታ ቅዳ",
+  "loc.copied": "ቦታ ተቀድቷል",
+  "loc.openInMaps": "በካርታ ክፈት",
+  "loc.share": "ቦታ አጋራ",
+  "loc.directions": "አቅጣጫ",
 } as const;
 
 const dictionaries: Record<Lang, Record<keyof Dict, string>> = { en, am };

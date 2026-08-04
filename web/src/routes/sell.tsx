@@ -7,6 +7,7 @@ import { useAuth } from "@/lib/auth";
 import { useLang } from "@/lib/i18n";
 import { RequireAuth } from "@/components/RequireAuth";
 import { LocationPicker, type Coords } from "@/components/LocationPicker";
+import { PhotoPicker, type ExistingPhoto } from "@/components/PhotoPicker";
 import { uploadListingImage } from "@/lib/storage";
 import { categoriesQuery } from "@/lib/marketplace";
 import { CITIES, CONDITIONS, MATERIALS, ROOM_TYPES, SUB_CITY_COORDS } from "@/lib/format";
@@ -48,6 +49,9 @@ function Sell() {
   const { data: categories } = useQuery(categoriesQuery);
   const [busy, setBusy] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
+  // Edit mode: photos already on the listing, and pending changes to them.
+  const [removedPhotoIds, setRemovedPhotoIds] = useState<string[]>([]);
+  const [coverPhotoId, setCoverPhotoId] = useState<string | null>(null);
 
   // Edit mode: load the listing being edited. Restricted to the owner so the
   // form can't be used to view someone else's draft.
@@ -57,7 +61,7 @@ function Sell() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("listings")
-        .select("*")
+        .select("*, listing_images(id,url,position)")
         .eq("id", editId!)
         .eq("seller_id", user!.id)
         .maybeSingle();
@@ -65,6 +69,17 @@ function Sell() {
       return data;
     },
   });
+
+  /** Existing photos minus pending removals, cover-first. */
+  const existingPhotos = useMemo(() => {
+    const rows = (editing?.listing_images ?? []) as ExistingPhoto[];
+    const kept = rows
+      .filter((p) => !removedPhotoIds.includes(p.id))
+      .sort((a, b) => a.position - b.position);
+    if (!coverPhotoId) return kept;
+    const promoted = kept.find((p) => p.id === coverPhotoId);
+    return promoted ? [promoted, ...kept.filter((p) => p.id !== coverPhotoId)] : kept;
+  }, [editing, removedPhotoIds, coverPhotoId]);
   // Seed the pin from the shop location so sellers don't re-enter it per listing.
   // Memoised so the object identity is stable across renders (it's an effect dep).
   const shopLocation = useMemo(
@@ -147,17 +162,30 @@ function Sell() {
       // The listing row exists from here on, so an image failure must not be
       // reported as "could not publish" — warn instead and still navigate.
       let imagesFailed = false;
-      if (files.length) {
-        // When editing, append after the existing photos instead of colliding
-        // with their positions.
-        let position = 0;
-        if (editId) {
-          const { count } = await supabase
-            .from("listing_images")
-            .select("id", { count: "exact", head: true })
-            .eq("listing_id", editId);
-          position = count ?? 0;
+
+      if (editId) {
+        // Apply photo removals first so positions below stay contiguous.
+        if (removedPhotoIds.length) {
+          const doomed = ((editing?.listing_images ?? []) as ExistingPhoto[]).filter((p) =>
+            removedPhotoIds.includes(p.id),
+          );
+          await supabase.from("listing_images").delete().in("id", removedPhotoIds);
+          const paths = doomed.map((p) => p.url).filter((u) => !u.startsWith("http"));
+          // Best-effort: an orphaned file is harmless, a failed delete is not.
+          if (paths.length) await supabase.storage.from("listing-images").remove(paths);
         }
+        // Re-number the survivors so the chosen cover really is position 0.
+        for (let i = 0; i < existingPhotos.length; i++) {
+          const photo = existingPhotos[i]!;
+          if (photo.position !== i) {
+            await supabase.from("listing_images").update({ position: i }).eq("id", photo.id);
+          }
+        }
+      }
+
+      if (files.length) {
+        // Append after whatever survived, so new photos never collide.
+        const position = editId ? existingPhotos.length : 0;
         for (let i = 0; i < files.length; i++) {
           try {
             const path = await uploadListingImage(user!.id, files[i]!);
@@ -344,19 +372,13 @@ function Sell() {
           <LocationPicker value={coords} onChange={setCoords} shopLocation={shopLocation} />
         </div>
 
-        <div className="space-y-2">
-          <Label htmlFor="photos">{t("sell.photos")}</Label>
-          <Input
-            id="photos"
-            type="file"
-            accept="image/*"
-            multiple
-            onChange={(e) => setFiles(Array.from(e.target.files ?? []))}
-          />
-          <p className="text-xs text-muted-foreground">
-            {t("sell.photosSelected", { count: files.length })}
-          </p>
-        </div>
+        <PhotoPicker
+          files={files}
+          onFilesChange={setFiles}
+          existing={existingPhotos}
+          onRemoveExisting={(id) => setRemovedPhotoIds((prev) => [...prev, id])}
+          onReorderExisting={setCoverPhotoId}
+        />
 
         <div className="flex gap-2">
           <Button type="submit" size="lg" disabled={busy}>

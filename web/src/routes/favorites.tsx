@@ -34,7 +34,7 @@ function Favorites() {
       const { data, error } = await supabase
         .from("favorites")
         .select(
-          "listing_id, listings(*, listing_images(id,url,position), profiles!listings_seller_id_fkey(id,full_name,shop_name,shop_slug,shop_logo_url,verified,city,phone,last_seen), categories(name,slug))",
+          "listing_id, listings(*, listing_images(id,url,position), profiles!listings_seller_id_fkey(id,full_name,shop_name,shop_slug,shop_logo_url,avatar_url,verified,city,phone,last_seen), categories(name,slug))",
         )
         .eq("user_id", user!.id);
       if (error) throw error;

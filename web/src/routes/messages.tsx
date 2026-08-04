@@ -1,12 +1,15 @@
 import { useEffect, useState } from "react";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Check, CheckCheck, ExternalLink } from "lucide-react";
+import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { useLang } from "@/lib/i18n";
 import { RequireAuth } from "@/components/RequireAuth";
 import { UserAvatar } from "@/components/UserAvatar";
-import { timeAgo } from "@/lib/format";
+import { ListingImage } from "@/components/ListingImage";
+import { formatBirr, timeAgo } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -42,7 +45,14 @@ type Conversation = {
   last_message_at: string;
   buyer_id: string;
   seller_id: string;
-  listings: { title: string } | null;
+  listing_id: string;
+  listings: {
+    id: string;
+    title: string;
+    price: number;
+    status: string;
+    listing_images: { url: string; position: number }[];
+  } | null;
   buyer: Participant;
   seller: Participant;
 };
@@ -52,6 +62,9 @@ type Message = {
   body: string;
   sender_id: string;
   created_at: string;
+  edited_at: string | null;
+  deleted_at: string | null;
+  read_at: string | null;
   profiles: { full_name: string | null; avatar_url: string | null } | null;
 };
 
@@ -61,6 +74,8 @@ function Messages() {
   const queryClient = useQueryClient();
   const [activeId, setActiveId] = useState<string | null>(null);
   const [body, setBody] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editBody, setEditBody] = useState("");
 
   const { data: conversations } = useQuery({
     queryKey: ["conversations", user?.id],
@@ -71,7 +86,8 @@ function Messages() {
       const { data, error } = await supabase
         .from("conversations")
         .select(
-          "id,last_message_at,buyer_id,seller_id,listings(title)," +
+          "id,last_message_at,buyer_id,seller_id,listing_id," +
+            "listings(id,title,price,status,listing_images(url,position))," +
             "buyer:profiles!conversations_buyer_id_fkey(id,full_name,avatar_url)," +
             "seller:profiles!conversations_seller_id_fkey(id,full_name,avatar_url)",
         )
@@ -90,7 +106,8 @@ function Messages() {
       const { data, error } = await supabase
         .from("messages")
         .select(
-          "id,body,sender_id,created_at,profiles!messages_sender_id_fkey(full_name,avatar_url)",
+          "id,body,sender_id,created_at,edited_at,deleted_at,read_at," +
+            "profiles!messages_sender_id_fkey(full_name,avatar_url)",
         )
         .eq("conversation_id", current!)
         .order("created_at");
@@ -107,6 +124,53 @@ function Messages() {
       : activeConversation.buyer
     : null;
 
+  const editMessage = useMutation({
+    mutationFn: async ({ id, text }: { id: string; text: string }) => {
+      const { error } = await supabase
+        .from("messages")
+        .update({ body: text, edited_at: new Date().toISOString() })
+        .eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      setEditingId(null);
+      setEditBody("");
+      queryClient.invalidateQueries({ queryKey: ["messages", current] });
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
+  /** Soft delete: the row stays so the other side sees a "deleted" placeholder. */
+  const removeMessage = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase
+        .from("messages")
+        .update({ deleted_at: new Date().toISOString() })
+        .eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["messages", current] });
+      queryClient.invalidateQueries({ queryKey: ["conversations"] });
+    },
+    onError: (error: Error) => toast.error(error.message),
+  });
+
+  // Mark the counterpart's messages read when the conversation is open. The DB
+  // trigger rejects a sender marking their own message, so filter by sender.
+  useEffect(() => {
+    if (!current || !user || !messages?.length) return;
+    const unread = messages.filter((m) => m.sender_id !== user.id && !m.read_at).map((m) => m.id);
+    if (!unread.length) return;
+    void supabase
+      .from("messages")
+      .update({ read_at: new Date().toISOString() })
+      .in("id", unread)
+      .then(() => {
+        queryClient.invalidateQueries({ queryKey: ["messages", current] });
+      });
+  }, [current, user, messages, queryClient]);
+
   // Live delivery: the messages table is on the realtime publication, so new
   // incoming messages appear without a manual refresh.
   useEffect(() => {
@@ -116,7 +180,8 @@ function Messages() {
       .on(
         "postgres_changes",
         {
-          event: "INSERT",
+          // "*" so edits, deletions and read receipts sync too, not just sends.
+          event: "*",
           schema: "public",
           table: "messages",
           filter: `conversation_id=eq.${current}`,
@@ -192,17 +257,49 @@ function Messages() {
               <span className="text-sm font-medium">{counterpart.full_name}</span>
             </header>
           ) : null}
+
+          {/* Which item this conversation is about — so a seller with several
+              listings knows immediately without asking. */}
+          {activeConversation?.listings ? (
+            <Link
+              to="/listing/$id"
+              params={{ id: activeConversation.listings.id }}
+              className="mb-3 flex items-center gap-3 rounded-lg border bg-secondary/40 p-2.5 transition-colors hover:border-primary"
+            >
+              <ListingImage
+                path={
+                  [...(activeConversation.listings.listing_images ?? [])].sort(
+                    (a, b) => a.position - b.position,
+                  )[0]?.url ?? null
+                }
+                alt={activeConversation.listings.title}
+                className="h-12 w-12 shrink-0 rounded object-cover"
+              />
+              <span className="min-w-0 flex-1">
+                <span className="block text-[11px] uppercase tracking-wide text-muted-foreground">
+                  {t("msg.aboutItem")}
+                </span>
+                <span className="block truncate text-sm font-medium">
+                  {activeConversation.listings.title}
+                </span>
+                <span className="block text-xs text-primary">
+                  {formatBirr(activeConversation.listings.price)}
+                </span>
+              </span>
+              <ExternalLink className="h-4 w-4 shrink-0 text-muted-foreground" />
+            </Link>
+          ) : null}
+
           <div className="flex-1 space-y-3 overflow-y-auto">
             {(messages ?? []).map((m) => {
               const mine = m.sender_id === user?.id;
-              const sender = m.profiles as {
-                full_name: string | null;
-                avatar_url: string | null;
-              } | null;
+              const sender = m.profiles;
+              const deleted = !!m.deleted_at;
+              const isEditing = editingId === m.id;
               return (
                 <div
                   key={m.id}
-                  className={`flex items-end gap-2 ${mine ? "flex-row-reverse" : "flex-row"}`}
+                  className={`group flex items-end gap-2 ${mine ? "flex-row-reverse" : "flex-row"}`}
                 >
                   <UserAvatar name={sender?.full_name} avatarUrl={sender?.avatar_url} size={28} />
                   <div className="max-w-[75%]">
@@ -212,13 +309,93 @@ function Messages() {
                       }`}
                     >
                       {sender?.full_name ?? ""} · {timeAgo(m.created_at)}
+                      {m.edited_at && !deleted ? ` · ${t("msg.edited")}` : ""}
                     </span>
+
+                    {isEditing ? (
+                      <form
+                        className="mt-0.5 flex gap-1"
+                        onSubmit={(e) => {
+                          e.preventDefault();
+                          if (editBody.trim())
+                            editMessage.mutate({ id: m.id, text: editBody.trim() });
+                        }}
+                      >
+                        <Input
+                          value={editBody}
+                          onChange={(e) => setEditBody(e.target.value)}
+                          className="h-8 text-sm"
+                          autoFocus
+                          onKeyDown={(e) => {
+                            if (e.key === "Escape") setEditingId(null);
+                          }}
+                        />
+                        <Button type="submit" size="sm" className="h-8" disabled={!editBody.trim()}>
+                          {t("msg.saveEdit")}
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          className="h-8"
+                          onClick={() => setEditingId(null)}
+                        >
+                          {t("action.cancel")}
+                        </Button>
+                      </form>
+                    ) : (
+                      <div
+                        className={`mt-0.5 rounded-lg px-3 py-2 text-sm ${
+                          deleted
+                            ? "border border-dashed bg-transparent italic text-muted-foreground"
+                            : mine
+                              ? "bg-primary text-primary-foreground"
+                              : "bg-secondary"
+                        }`}
+                      >
+                        {deleted ? t("msg.deletedPlaceholder") : m.body}
+                      </div>
+                    )}
+
                     <div
-                      className={`mt-0.5 rounded-lg px-3 py-2 text-sm ${
-                        mine ? "bg-primary text-primary-foreground" : "bg-secondary"
+                      className={`mt-0.5 flex items-center gap-2 text-[11px] text-muted-foreground ${
+                        mine ? "justify-end" : "justify-start"
                       }`}
                     >
-                      {m.body}
+                      {mine && !deleted ? (
+                        <span className="inline-flex items-center gap-0.5">
+                          {m.read_at ? (
+                            <>
+                              <CheckCheck className="h-3 w-3 text-primary" /> {t("msg.seen")}
+                            </>
+                          ) : (
+                            <>
+                              <Check className="h-3 w-3" /> {t("msg.sent")}
+                            </>
+                          )}
+                        </span>
+                      ) : null}
+                      {mine && !deleted && !isEditing ? (
+                        <span className="hidden gap-1 group-hover:inline-flex">
+                          <button
+                            type="button"
+                            className="hover:text-foreground"
+                            onClick={() => {
+                              setEditingId(m.id);
+                              setEditBody(m.body);
+                            }}
+                          >
+                            {t("msg.editAction")}
+                          </button>
+                          <button
+                            type="button"
+                            className="hover:text-destructive"
+                            onClick={() => removeMessage.mutate(m.id)}
+                          >
+                            {t("msg.deleteAction")}
+                          </button>
+                        </span>
+                      ) : null}
                     </div>
                   </div>
                 </div>

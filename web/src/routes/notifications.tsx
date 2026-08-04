@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bell, CheckCheck } from "lucide-react";
+import { Bell, CheckCheck, X } from "lucide-react";
+import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { notificationsQuery } from "@/lib/marketplace";
 import { useAuth } from "@/lib/auth";
@@ -35,6 +36,8 @@ const TYPE_KEY: Record<
   | "notif.callbackResponse"
   | "notif.sellerVerified"
   | "notif.sellerRejected"
+  | "notif.reportResolved"
+  | "notif.reportDismissed"
 > = {
   new_message: "notif.newMessage",
   callback_request: "notif.callbackRequest",
@@ -44,7 +47,12 @@ const TYPE_KEY: Record<
   callback_response: "notif.callbackResponse",
   seller_verified: "notif.sellerVerified",
   seller_rejected: "notif.sellerRejected",
+  report_resolved: "notif.reportResolved",
+  report_dismissed: "notif.reportDismissed",
 };
+
+/** Types that should open the inbox rather than the listing page. */
+const MESSAGE_TYPES = new Set(["new_message", "callback_request", "callback_response"]);
 
 function NotificationsPage() {
   const { user } = useAuth();
@@ -70,6 +78,15 @@ function NotificationsPage() {
       if (error) throw error;
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ["notifications"] }),
+  });
+
+  const dismiss = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from("notifications").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["notifications"] }),
+    onError: (error: Error) => toast.error(error.message),
   });
 
   const unread = (notifications ?? []).filter((n) => !n.is_read).length;
@@ -113,26 +130,43 @@ function NotificationsPage() {
                 <p className="mt-0.5 text-xs text-muted-foreground">{timeAgo(n.created_at)}</p>
               </>
             );
-            return n.payload?.listingId ? (
-              <Link
-                key={n.id}
-                to="/listing/$id"
-                params={{ id: n.payload.listingId }}
-                onClick={() => {
-                  if (!n.is_read) markRead.mutate(n.id);
-                }}
-                className={`block rounded-lg border bg-card p-4 text-sm transition-colors hover:border-primary ${
-                  n.is_read ? "opacity-70" : ""
-                }`}
-              >
-                {inner}
-              </Link>
-            ) : (
+            // Conversation-related alerts belong in the inbox; everything else
+            // points at the listing it concerns.
+            const target = MESSAGE_TYPES.has(n.type)
+              ? ({ to: "/messages" } as const)
+              : n.payload?.listingId
+                ? ({ to: "/listing/$id", params: { id: n.payload.listingId } } as const)
+                : null;
+
+            return (
               <div
                 key={n.id}
-                className={`rounded-lg border bg-card p-4 text-sm ${n.is_read ? "opacity-70" : ""}`}
+                className={`flex items-start gap-2 rounded-lg border bg-card p-4 text-sm transition-colors ${
+                  n.is_read ? "opacity-70" : ""
+                } ${target ? "hover:border-primary" : ""}`}
               >
-                {inner}
+                {target ? (
+                  <Link
+                    {...target}
+                    onClick={() => {
+                      if (!n.is_read) markRead.mutate(n.id);
+                    }}
+                    className="min-w-0 flex-1"
+                  >
+                    {inner}
+                  </Link>
+                ) : (
+                  <div className="min-w-0 flex-1">{inner}</div>
+                )}
+                <button
+                  type="button"
+                  onClick={() => dismiss.mutate(n.id)}
+                  aria-label={t("notif.dismiss")}
+                  title={t("notif.dismiss")}
+                  className="shrink-0 rounded-full p-1 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                >
+                  <X className="h-4 w-4" />
+                </button>
               </div>
             );
           })

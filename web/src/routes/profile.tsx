@@ -214,6 +214,15 @@ function ProfilePage() {
     <div className="mx-auto max-w-xl px-4 py-12">
       <h1 className="font-display text-3xl font-semibold">{t("nav.profile")}</h1>
       <form className="mt-8 space-y-5" onSubmit={save}>
+        {/* The email is the login identity and can't be edited here — show it
+            read-only so the account is identifiable. */}
+        {user?.email ? (
+          <div className="space-y-2">
+            <Label htmlFor="email">{t("auth.email")}</Label>
+            <Input id="email" value={user.email} readOnly disabled className="bg-muted" />
+            <p className="text-xs text-muted-foreground">{t("profile.emailHint")}</p>
+          </div>
+        ) : null}
         <div className="space-y-2">
           <Label htmlFor="full_name">{t("auth.fullName")}</Label>
           <Input id="full_name" name="full_name" defaultValue={profile?.full_name ?? ""} required />

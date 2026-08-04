@@ -27,6 +27,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { UserAvatar } from "@/components/UserAvatar";
 import { useAuth } from "@/lib/auth";
 import { LanguageToggle } from "@/components/LanguageToggle";
 import { NotificationBell } from "@/components/NotificationBell";
@@ -58,11 +59,13 @@ export function SiteHeader() {
   const showTrending = open && term.trim().length < 2;
   const showSuggestions = open && term.trim().length >= 2;
 
-  const NAV = [
+  const NAV: readonly { to: string; label: string }[] = [
     { to: "/browse", label: t("nav.browse") },
     { to: "/categories", label: t("nav.categories") },
     { to: "/safety", label: t("nav.safety") },
-  ] as const;
+    // Admins get the dashboard in the main nav, not just the account menu.
+    ...(isAdmin ? [{ to: "/admin", label: t("nav.admin") }] : []),
+  ];
 
   return (
     <header className="sticky top-0 z-40 border-b bg-background/90 backdrop-blur">
@@ -174,13 +177,33 @@ export function SiteHeader() {
               <NotificationBell />
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <Button variant="outline" size="icon" aria-label={t("nav.accountMenu")}>
-                    <User className="h-4 w-4" />
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    aria-label={t("nav.accountMenu")}
+                    className="overflow-hidden p-0"
+                  >
+                    {profile?.shop_logo_url || profile?.avatar_url ? (
+                      <UserAvatar
+                        name={profile.shop_name ?? profile.full_name}
+                        avatarUrl={profile.shop_logo_url ?? profile.avatar_url}
+                        size={36}
+                      />
+                    ) : (
+                      <User className="h-4 w-4" />
+                    )}
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-56">
                   <DropdownMenuLabel className="truncate">
                     {profile?.full_name ?? user.email}
+                    {/* The email is the account identity; show it when a display
+                        name is also present so the two aren't confused. */}
+                    {profile?.full_name && user.email ? (
+                      <span className="block truncate text-xs font-normal text-muted-foreground">
+                        {user.email}
+                      </span>
+                    ) : null}
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem asChild>
@@ -206,7 +229,7 @@ export function SiteHeader() {
                   {isAdmin ? (
                     <DropdownMenuItem asChild>
                       <Link to="/admin">
-                        <Shield className="mr-2 h-4 w-4" /> {t("admin.title")}
+                        <Shield className="mr-2 h-4 w-4 text-primary" /> {t("nav.admin")}
                       </Link>
                     </DropdownMenuItem>
                   ) : null}

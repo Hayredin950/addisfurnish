@@ -6,6 +6,7 @@ import {
   Ban,
   ClipboardCheck,
   FileCheck2,
+  FileText,
   Flag,
   FolderTree,
   LayoutList,
@@ -19,6 +20,7 @@ import {
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import {
+  adminAllUsersQuery,
   adminListingsQuery,
   adminReportsQuery,
   adminStatsQuery,
@@ -33,12 +35,16 @@ import {
 import {
   adminBanUser,
   adminRevokeSessions,
+  adminUnbanUser,
   adminVerifyDocument,
   adminVerifySellerDirect,
 } from "@/lib/admin";
 import { useAuth } from "@/lib/auth";
 import { useLang } from "@/lib/i18n";
 import { RequireAuth } from "@/components/RequireAuth";
+import { UserAvatar } from "@/components/UserAvatar";
+import { BanDialog } from "@/components/admin/BanDialog";
+import { DocumentViewer } from "@/components/admin/DocumentViewer";
 import { useImageUrl } from "@/lib/storage";
 import { timeAgo, formatBirr } from "@/lib/format";
 import { Button } from "@/components/ui/button";
@@ -93,6 +99,7 @@ function AdminPage() {
         <TabsList className="flex-wrap">
           <TabsTrigger value="reports">{t("admin.reports")}</TabsTrigger>
           <TabsTrigger value="sellers">{t("admin.sellers")}</TabsTrigger>
+          <TabsTrigger value="users">{t("admin.users")}</TabsTrigger>
           <TabsTrigger value="verification">
             <ClipboardCheck className="mr-1.5 h-3.5 w-3.5" /> {t("admin.verification")}
           </TabsTrigger>
@@ -110,6 +117,9 @@ function AdminPage() {
         </TabsContent>
         <TabsContent value="sellers" className="mt-6">
           <SellersTab />
+        </TabsContent>
+        <TabsContent value="users" className="mt-6">
+          <UsersTab />
         </TabsContent>
         <TabsContent value="verification" className="mt-6">
           <VerificationTab />
@@ -134,12 +144,24 @@ function ReportsTab() {
   const { data: reports } = useQuery(adminReportsQuery());
 
   const resolve = async (id: string, status: "reviewed" | "dismissed") => {
+    const report = (reports ?? []).find((r) => r.id === id);
     const { error } = await supabase.from("reports").update({ status }).eq("id", id);
     if (error) {
-      toast.error(t("toast.updateFailed"));
+      toast.error(error.message);
       return;
     }
-    toast.success(t("toast.listingUpdated"));
+    // Close the loop with whoever reported it — they never heard back before.
+    if (report?.reporter_id) {
+      await supabase.rpc("admin_notify_user", {
+        _user_id: report.reporter_id,
+        _type: status === "reviewed" ? "report_resolved" : "report_dismissed",
+        _payload: {
+          title: report.listings?.title ?? report.profiles?.shop_name ?? report.reason,
+          ...(report.listings?.id ? { listingId: report.listings.id } : {}),
+        },
+      });
+    }
+    toast.success(t("admin.reporterNotified"));
     queryClient.invalidateQueries({ queryKey: ["admin-reports"] });
   };
 
@@ -190,13 +212,15 @@ function SellersTab() {
   const { t } = useLang();
   const queryClient = useQueryClient();
   const { data: sellers } = useQuery(pendingSellersQuery());
+  const [banTarget, setBanTarget] = useState<{ id: string; name: string } | null>(null);
+  const [busy, setBusy] = useState(false);
 
   const verify = async (id: string) => {
     // Routed through the server so the decision is audited and the seller is
     // notified — the badge can never be granted without a log entry.
     const res = await adminVerifySellerDirect({ data: { userId: id } });
     if (!res.ok) {
-      toast.error(t("toast.updateFailed"));
+      toast.error(res.error ?? t("toast.updateFailed"));
       return;
     }
     toast.success(t("admin.verifiedOk"));
@@ -207,19 +231,24 @@ function SellersTab() {
   const revokeSessions = async (id: string) => {
     const res = await adminRevokeSessions({ data: { userId: id } });
     if (!res.ok) {
-      toast.error(t("toast.updateFailed"));
+      toast.error(res.error ?? t("toast.updateFailed"));
       return;
     }
     toast.success(t("admin.sessionsRevoked"));
   };
 
-  const ban = async (id: string) => {
-    const res = await adminBanUser({ data: { userId: id, hours: 24 } });
+  const confirmBan = async (hours: number, reason: string) => {
+    if (!banTarget) return;
+    setBusy(true);
+    const res = await adminBanUser({ data: { userId: banTarget.id, hours, reason } });
+    setBusy(false);
     if (!res.ok) {
-      toast.error(t("toast.updateFailed"));
+      toast.error(res.error ?? t("toast.updateFailed"));
       return;
     }
     toast.success(t("admin.banned"));
+    setBanTarget(null);
+    queryClient.invalidateQueries({ queryKey: ["admin-all-users"] });
   };
 
   if (!sellers || sellers.length === 0) {
@@ -227,37 +256,211 @@ function SellersTab() {
   }
 
   return (
-    <ul className="space-y-3">
-      {sellers.map((s) => (
-        <li
-          key={s.id}
-          className="flex items-center justify-between gap-3 rounded-lg border bg-card p-4"
-        >
-          <div>
-            <p className="text-sm font-medium">{s.shop_name ?? s.full_name}</p>
-            <p className="text-xs text-muted-foreground">
-              {s.city ?? "—"} · {timeAgo(s.created_at)}
-            </p>
-          </div>
-          <div className="flex shrink-0 gap-2">
-            <Button size="sm" variant="outline" onClick={() => revokeSessions(s.id)}>
-              <LogOut className="mr-1.5 h-3.5 w-3.5" /> {t("admin.revokeSessions")}
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => ban(s.id)}
-              className="text-destructive"
-            >
-              <Ban className="mr-1.5 h-3.5 w-3.5" /> {t("admin.ban")}
-            </Button>
-            <Button size="sm" onClick={() => verify(s.id)}>
-              <BadgeCheck className="mr-1.5 h-4 w-4" /> {t("admin.approve")}
-            </Button>
-          </div>
-        </li>
-      ))}
-    </ul>
+    <>
+      <p className="mb-3 text-xs text-muted-foreground">{t("admin.revokeSessionsHint")}</p>
+      <ul className="space-y-3">
+        {sellers.map((s) => (
+          <li
+            key={s.id}
+            className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card p-4"
+          >
+            <div>
+              <p className="text-sm font-medium">{s.shop_name ?? s.full_name}</p>
+              <p className="text-xs text-muted-foreground">
+                {s.city ?? "—"} · {timeAgo(s.created_at)}
+              </p>
+            </div>
+            <div className="flex shrink-0 flex-wrap gap-2">
+              <Button size="sm" variant="outline" onClick={() => revokeSessions(s.id)}>
+                <LogOut className="mr-1.5 h-3.5 w-3.5" /> {t("admin.revokeSessions")}
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setBanTarget({ id: s.id, name: s.shop_name ?? s.full_name })}
+                className="text-destructive"
+              >
+                <Ban className="mr-1.5 h-3.5 w-3.5" /> {t("admin.ban")}
+              </Button>
+              <Button size="sm" onClick={() => verify(s.id)}>
+                <BadgeCheck className="mr-1.5 h-4 w-4" /> {t("admin.approve")}
+              </Button>
+            </div>
+          </li>
+        ))}
+      </ul>
+
+      <BanDialog
+        open={!!banTarget}
+        onOpenChange={(open) => {
+          if (!open) setBanTarget(null);
+        }}
+        onConfirm={confirmBan}
+        subjectName={banTarget?.name ?? ""}
+        pending={busy}
+      />
+    </>
+  );
+}
+
+/** Every account, with suspension controls. */
+function UsersTab() {
+  const { t } = useLang();
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const [filter, setFilter] = useState<"all" | "sellers" | "buyers">("all");
+  const [search, setSearch] = useState("");
+  const { data: users } = useQuery(adminAllUsersQuery(filter));
+  const [banTarget, setBanTarget] = useState<{ id: string; name: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const term = search.trim().toLowerCase();
+  const visible = (users ?? []).filter((u) =>
+    !term
+      ? true
+      : [u.full_name, u.shop_name, u.phone, u.city]
+          .filter(Boolean)
+          .some((v) => v!.toLowerCase().includes(term)),
+  );
+
+  const confirmBan = async (hours: number, reason: string) => {
+    if (!banTarget) return;
+    setBusy(true);
+    const res = await adminBanUser({ data: { userId: banTarget.id, hours, reason } });
+    setBusy(false);
+    if (!res.ok) {
+      toast.error(res.error ?? t("toast.updateFailed"));
+      return;
+    }
+    toast.success(t("admin.banned"));
+    setBanTarget(null);
+    queryClient.invalidateQueries({ queryKey: ["admin-all-users"] });
+  };
+
+  const unban = async (id: string) => {
+    const res = await adminUnbanUser({ data: { userId: id } });
+    if (!res.ok) {
+      toast.error(res.error ?? t("toast.updateFailed"));
+      return;
+    }
+    toast.success(t("admin.unbanned"));
+    queryClient.invalidateQueries({ queryKey: ["admin-all-users"] });
+  };
+
+  const revoke = async (id: string) => {
+    const res = await adminRevokeSessions({ data: { userId: id } });
+    if (!res.ok) {
+      toast.error(res.error ?? t("toast.updateFailed"));
+      return;
+    }
+    toast.success(t("admin.sessionsRevoked"));
+  };
+
+  return (
+    <>
+      <div className="flex flex-wrap items-center gap-2">
+        {(["all", "sellers", "buyers"] as const).map((f) => (
+          <Button
+            key={f}
+            size="sm"
+            variant={filter === f ? "default" : "outline"}
+            onClick={() => setFilter(f)}
+          >
+            {f === "all"
+              ? t("admin.users")
+              : f === "sellers"
+                ? t("admin.roleSeller")
+                : t("admin.roleBuyer")}
+          </Button>
+        ))}
+        <Input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder={t("admin.searchUsers")}
+          className="h-9 max-w-xs"
+        />
+      </div>
+
+      {visible.length === 0 ? (
+        <p className="mt-6 text-sm text-muted-foreground">{t("admin.noUsers")}</p>
+      ) : (
+        <ul className="mt-4 space-y-2">
+          {visible.map((u) => {
+            const suspended = !!u.banned_until && new Date(u.banned_until) > new Date();
+            const name = u.shop_name ?? u.full_name;
+            return (
+              <li
+                key={u.id}
+                className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card p-3"
+              >
+                <div className="flex min-w-0 items-center gap-3">
+                  <UserAvatar name={name} avatarUrl={u.shop_logo_url ?? u.avatar_url} size={36} />
+                  <div className="min-w-0">
+                    <p className="flex items-center gap-1.5 truncate text-sm font-medium">
+                      {name}
+                      {u.verified ? <BadgeCheck className="h-3.5 w-3.5 text-primary" /> : null}
+                      <span className="rounded-full bg-secondary px-1.5 py-0.5 text-[10px] font-normal text-muted-foreground">
+                        {u.is_seller ? t("admin.roleSeller") : t("admin.roleBuyer")}
+                      </span>
+                    </p>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {u.phone ?? "—"} · {u.city ?? "—"} · {timeAgo(u.created_at)}
+                    </p>
+                    {suspended ? (
+                      <p className="text-xs font-medium text-destructive">
+                        {t("admin.suspendedUntil", {
+                          date: new Date(u.banned_until!).toLocaleString(),
+                        })}
+                        {u.ban_reason ? ` — ${u.ban_reason}` : ""}
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+
+                <div className="flex shrink-0 flex-wrap gap-2">
+                  {u.shop_slug ? (
+                    <Button asChild size="sm" variant="ghost">
+                      <Link to="/shop/$slug" params={{ slug: u.shop_slug }}>
+                        {t("listing.visitShop")}
+                      </Link>
+                    </Button>
+                  ) : null}
+                  <Button size="sm" variant="outline" onClick={() => revoke(u.id)}>
+                    <LogOut className="mr-1.5 h-3.5 w-3.5" /> {t("admin.revokeSessions")}
+                  </Button>
+                  {suspended ? (
+                    <Button size="sm" variant="outline" onClick={() => unban(u.id)}>
+                      <ShieldCheck className="mr-1.5 h-3.5 w-3.5" /> {t("admin.unban")}
+                    </Button>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="text-destructive"
+                      // An admin banning themselves would lock them out.
+                      disabled={u.id === user?.id}
+                      onClick={() => setBanTarget({ id: u.id, name })}
+                    >
+                      <Ban className="mr-1.5 h-3.5 w-3.5" /> {t("admin.ban")}
+                    </Button>
+                  )}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+
+      <BanDialog
+        open={!!banTarget}
+        onOpenChange={(open) => {
+          if (!open) setBanTarget(null);
+        }}
+        onConfirm={confirmBan}
+        subjectName={banTarget?.name ?? ""}
+        pending={busy}
+      />
+    </>
   );
 }
 
@@ -401,20 +604,32 @@ function VerificationRow({
 }) {
   const { t } = useLang();
   const { data: imgUrl } = useImageUrl(doc.file_url, "verification-docs");
+  const [viewing, setViewing] = useState(false);
+  const sellerName = doc.profiles?.shop_name ?? doc.profiles?.full_name ?? doc.id;
   return (
     <li className="rounded-lg border bg-card p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <p className="font-medium">
-            {doc.profiles?.shop_name ?? doc.profiles?.full_name ?? doc.id}
-          </p>
+          <p className="font-medium">{sellerName}</p>
           <p className="mt-0.5 text-xs text-muted-foreground">
             {t(ADMIN_DOC_TYPE_KEY[doc.document_type] ?? "verif.docTypeother")} ·{" "}
             {timeAgo(doc.created_at)}
           </p>
+          {doc.profiles?.shop_slug ? (
+            <Link
+              to="/shop/$slug"
+              params={{ slug: doc.profiles.shop_slug }}
+              className="mt-0.5 inline-block text-xs text-primary"
+            >
+              {t("listing.visitShop")}
+            </Link>
+          ) : null}
         </div>
         {rejecting ? null : (
-          <div className="flex shrink-0 gap-2">
+          <div className="flex shrink-0 flex-wrap gap-2">
+            <Button size="sm" variant="outline" onClick={() => setViewing(true)}>
+              <FileText className="mr-1.5 h-3.5 w-3.5" /> {t("admin.viewDocument")}
+            </Button>
             <Button size="sm" variant="destructive" disabled={busy} onClick={onStartReject}>
               {t("admin.reject")}
             </Button>
@@ -424,17 +639,35 @@ function VerificationRow({
           </div>
         )}
       </div>
+
+      {/* Inline preview doubles as the trigger for the full-size viewer. */}
       {doc.file_url && !doc.file_url.startsWith("demo/") ? (
-        <div className="mt-3 max-h-64 overflow-hidden rounded-md border bg-muted">
+        <button
+          type="button"
+          onClick={() => setViewing(true)}
+          className="mt-3 block max-h-64 w-full overflow-hidden rounded-md border bg-muted transition-colors hover:border-primary"
+        >
           {imgUrl ? (
             <img
               src={imgUrl}
               alt="Verification document"
               className="mx-auto max-h-64 w-auto object-contain"
             />
-          ) : null}
-        </div>
+          ) : (
+            <span className="flex h-24 items-center justify-center text-xs text-muted-foreground">
+              {t("admin.viewDocument")}
+            </span>
+          )}
+        </button>
       ) : null}
+
+      <DocumentViewer
+        open={viewing}
+        onOpenChange={setViewing}
+        filePath={doc.file_url}
+        sellerName={sellerName}
+        documentType={doc.document_type}
+      />
       {rejecting ? (
         <div className="mt-3 rounded-md border border-destructive/30 bg-destructive/5 p-3">
           <Label htmlFor={`reason-${doc.id}`} className="text-xs font-medium text-destructive">

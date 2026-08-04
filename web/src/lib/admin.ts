@@ -143,28 +143,50 @@ export const adminVerifySellerDirect = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
-/** Log the user out of every device (revoke all sessions). */
+/**
+ * Log the user out of every device.
+ *
+ * `auth.admin.signOut()` takes the user's *own* JWT, which an admin never has —
+ * passing a user id there silently failed ("Update failed" in the UI). Deleting
+ * the user's rows in `auth.sessions` and `auth.refresh_tokens` is what GoTrue
+ * itself does on a global logout, so do that through a SECURITY DEFINER RPC.
+ */
 export const adminRevokeSessions = createServerFn({ method: "POST" })
   .validator((d: { userId: string }) => d)
   .handler(async ({ data }): Promise<ActionResult> => {
     const reviewerId = await currentAdminId();
     if (!reviewerId) return { ok: false, error: "admin" };
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { error } = await supabaseAdmin.auth.admin.signOut(data.userId);
-    return error ? { ok: false, error: "server_error" } : { ok: true };
+    const { error } = await supabaseAdmin.rpc("admin_revoke_sessions", {
+      _user_id: data.userId,
+    });
+    return error ? { ok: false, error: error.message } : { ok: true };
   });
 
-/** Suspend an account for N hours (rejects its tokens immediately). */
+/**
+ * Suspend an account for a given duration (rejects its tokens immediately).
+ * `hours` of 0 or less is rejected — use adminUnbanUser to lift a suspension.
+ */
 export const adminBanUser = createServerFn({ method: "POST" })
-  .validator((d: { userId: string; hours: number }) => d)
+  .validator((d: { userId: string; hours: number; reason?: string }) => d)
   .handler(async ({ data }): Promise<ActionResult> => {
     const reviewerId = await currentAdminId();
     if (!reviewerId) return { ok: false, error: "admin" };
+    if (reviewerId === data.userId) return { ok: false, error: "self" };
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const hours = Math.max(1, Math.round(data.hours));
     const { error } = await supabaseAdmin.auth.admin.updateUserById(data.userId, {
-      ban_duration: `${Math.max(1, data.hours)}h`,
+      ban_duration: `${hours}h`,
     });
-    return error ? { ok: false, error: "server_error" } : { ok: true };
+    if (error) return { ok: false, error: error.message };
+    // Mirror onto profiles so the admin list can show who is suspended;
+    // auth.users.banned_until isn't reachable through PostgREST.
+    await supabaseAdmin.rpc("admin_set_ban", {
+      _user_id: data.userId,
+      _until: new Date(Date.now() + hours * 3600_000).toISOString(),
+      _reason: data.reason ?? null,
+    });
+    return { ok: true };
   });
 
 /** Lift a suspension. */
@@ -174,6 +196,12 @@ export const adminUnbanUser = createServerFn({ method: "POST" })
     const reviewerId = await currentAdminId();
     if (!reviewerId) return { ok: false, error: "admin" };
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    // Clear the profiles mirror too, so the admin list stops showing a ban.
+    await supabaseAdmin.rpc("admin_set_ban", {
+      _user_id: data.userId,
+      _until: null,
+      _reason: null,
+    });
     const { error } = await supabaseAdmin.auth.admin.updateUserById(data.userId, {
       ban_duration: "0s",
     });

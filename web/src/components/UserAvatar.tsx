@@ -14,6 +14,9 @@ function initials(name: string | null | undefined) {
 /**
  * Round avatar for a marketplace participant. Falls back to initials when the
  * profile has no picture, so a sender is always identifiable.
+ *
+ * Pass the shop logo for sellers and `avatar_url` for individuals — both live
+ * in the `listing-images` bucket.
  */
 export function UserAvatar({
   name,
