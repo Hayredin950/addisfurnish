@@ -1,5 +1,5 @@
 /**
- * SuqBet design tokens — warm wood/amber palette that mirrors the web app
+ * AddisFurnish design tokens — warm wood/amber palette that mirrors the web app
  * (oklch ~0.52 0.146 40 → warm brown, cream backgrounds).
  */
 export const colors = {

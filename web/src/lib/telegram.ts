@@ -47,7 +47,7 @@ export const postListingToTelegram = createServerFn({ method: "POST" })
         "",
         `${formatPrice(Number(listing.price))}${listing.negotiable ? " (negotiable)" : ""}`,
         extras
-          ? `${extras} — ${listing.profiles?.shop_name ?? "SuqBet"}`
+          ? `${extras} — ${listing.profiles?.shop_name ?? "AddisFurnish"}`
           : listing.profiles?.shop_name
             ? listing.profiles.shop_name
             : "",
@@ -218,7 +218,7 @@ async function broadcastToMatchedFollowers(
 
 /**
  * Returns a `t.me/YourBot?start=TOKEN` deep link that links the user's Telegram
- * chat to their SuqBet account when they press start in the bot.
+ * chat to their AddisFurnish account when they press start in the bot.
  * Requires TELEGRAM_BOT_USERNAME and TELEGRAM_BOT_TOKEN env vars.
  */
 export const getTelegramDeepLink = createServerFn({ method: "POST" })

@@ -1,6 +1,6 @@
-# SuqBet — Agent Guide
+# AddisFurnish — Agent Guide
 
-SuqBet is a used-furniture marketplace for Ethiopia. Two apps share one
+AddisFurnish is a used-furniture marketplace for Ethiopia. Two apps share one
 Supabase backend.
 
 ## Repository layout

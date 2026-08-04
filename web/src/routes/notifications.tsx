@@ -13,10 +13,10 @@ import { Button } from "@/components/ui/button";
 export const Route = createFileRoute("/notifications")({
   head: () => ({
     meta: [
-      { title: "Notifications — SuqBet" },
+      { title: "Notifications — AddisFurnish" },
       { name: "description", content: "Messages, callback requests and price updates." },
-      { property: "og:title", content: "Notifications — SuqBet" },
-      { property: "og:description", content: "Your SuqBet activity." },
+      { property: "og:title", content: "Notifications — AddisFurnish" },
+      { property: "og:description", content: "Your AddisFurnish activity." },
     ],
   }),
   component: () => (

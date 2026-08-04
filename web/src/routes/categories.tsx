@@ -1,28 +1,9 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import {
-  Archive,
-  Bed,
-  Briefcase,
-  Package,
-  Sofa,
-  Trees,
-  UtensilsCrossed,
-  type LucideIcon,
-} from "lucide-react";
 import { categoriesQuery, categoryCountsQuery } from "@/lib/marketplace";
 import { useLang } from "@/lib/i18n";
 import { categoryName } from "@/lib/format";
-
-/** Maps the `categories.icon` seed values to lucide components. */
-const CATEGORY_ICONS: Record<string, LucideIcon> = {
-  sofa: Sofa,
-  bed: Bed,
-  briefcase: Briefcase,
-  utensils: UtensilsCrossed,
-  trees: Trees,
-  archive: Archive,
-};
+import { categoryIcon } from "@/lib/category-icons";
 
 /** Shared search defaults so a category link lands on an unfiltered browse. */
 const BROWSE_DEFAULTS = {
@@ -39,16 +20,16 @@ const BROWSE_DEFAULTS = {
 export const Route = createFileRoute("/categories")({
   head: () => ({
     meta: [
-      { title: "Furniture Categories — SuqBet" },
+      { title: "Furniture Categories — AddisFurnish" },
       {
         name: "description",
         content:
           "Browse used furniture by room and type: living room sofas, bedroom wardrobes, office desks, dining sets, outdoor and storage.",
       },
-      { property: "og:title", content: "Furniture Categories — SuqBet" },
+      { property: "og:title", content: "Furniture Categories — AddisFurnish" },
       {
         property: "og:description",
-        content: "Every room and furniture type available on SuqBet.",
+        content: "Every room and furniture type available on AddisFurnish.",
       },
     ],
   }),
@@ -71,7 +52,7 @@ function Categories() {
       <div className="mt-10 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
         {roots.map((root) => {
           const children = (categories ?? []).filter((c) => c.parent_id === root.id);
-          const Icon = (root.icon ? CATEGORY_ICONS[root.icon] : undefined) ?? Package;
+          const Icon = categoryIcon(root.icon);
           const rootCount = countFor(root.id);
           return (
             <section

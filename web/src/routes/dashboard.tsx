@@ -26,10 +26,10 @@ import {
 export const Route = createFileRoute("/dashboard")({
   head: () => ({
     meta: [
-      { title: "Seller Dashboard — SuqBet" },
+      { title: "Seller Dashboard — AddisFurnish" },
       { name: "description", content: "Manage your listings, prices and callback requests." },
-      { property: "og:title", content: "Seller Dashboard — SuqBet" },
-      { property: "og:description", content: "Your SuqBet selling tools." },
+      { property: "og:title", content: "Seller Dashboard — AddisFurnish" },
+      { property: "og:description", content: "Your AddisFurnish selling tools." },
     ],
   }),
   component: () => (

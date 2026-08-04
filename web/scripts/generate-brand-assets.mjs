@@ -1,4 +1,4 @@
-// Generates SuqBet brand assets into public/:
+// Generates AddisFurnish brand assets into public/:
 //   favicon.svg          crisp vector mark
 //   favicon.ico          legacy fallback (16px + 32px PNG-in-ICO)
 //   apple-touch-icon.png 180px iOS home-screen icon

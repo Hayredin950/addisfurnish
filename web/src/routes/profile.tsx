@@ -29,10 +29,10 @@ import { Switch } from "@/components/ui/switch";
 export const Route = createFileRoute("/profile")({
   head: () => ({
     meta: [
-      { title: "Your Profile & Shop — SuqBet" },
+      { title: "Your Profile & Shop — AddisFurnish" },
       { name: "description", content: "Update your contact details and shop information." },
-      { property: "og:title", content: "Your Profile — SuqBet" },
-      { property: "og:description", content: "Manage your SuqBet account and shop page." },
+      { property: "og:title", content: "Your Profile — AddisFurnish" },
+      { property: "og:description", content: "Manage your AddisFurnish account and shop page." },
     ],
   }),
   component: () => (

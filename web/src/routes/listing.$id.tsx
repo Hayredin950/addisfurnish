@@ -32,12 +32,12 @@ import { Skeleton } from "@/components/ui/skeleton";
 export const Route = createFileRoute("/listing/$id")({
   head: () => ({
     meta: [
-      { title: "Furniture Listing — SuqBet" },
+      { title: "Furniture Listing — AddisFurnish" },
       {
         name: "description",
         content: "View photos, price history, condition details and contact the seller directly.",
       },
-      { property: "og:title", content: "Furniture Listing — SuqBet" },
+      { property: "og:title", content: "Furniture Listing — AddisFurnish" },
       { property: "og:description", content: "Second-hand furniture for sale in Ethiopia." },
     ],
   }),
@@ -201,7 +201,7 @@ function ListingDetail() {
   const online = seller ? seller.is_online || isOnlineNow(seller.last_seen) : false;
   const waLink = seller?.whatsapp
     ? `https://wa.me/${seller.whatsapp.replace(/\D/g, "")}?text=${encodeURIComponent(
-        `Hi, I'm interested in "${listing.title}" on SuqBet`,
+        `Hi, I'm interested in "${listing.title}" on AddisFurnish`,
       )}`
     : null;
   const tgLink = seller?.telegram ? `https://t.me/${seller.telegram.replace(/^@/, "")}` : null;

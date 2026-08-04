@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "SuqBet",
+    "name": "AddisFurnish",
     "slug": "suqbet",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -11,9 +11,9 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.suqbet.app",
       "infoPlist": {
-        "NSCameraUsageDescription": "SuqBet uses the camera to take photos of the furniture you want to sell.",
-        "NSPhotoLibraryUsageDescription": "SuqBet accesses your photos so you can add pictures to your furniture listings.",
-        "NSLocationWhenInUseUsageDescription": "SuqBet uses your location to find furniture listings near you."
+        "NSCameraUsageDescription": "AddisFurnish uses the camera to take photos of the furniture you want to sell.",
+        "NSPhotoLibraryUsageDescription": "AddisFurnish accesses your photos so you can add pictures to your furniture listings.",
+        "NSLocationWhenInUseUsageDescription": "AddisFurnish uses your location to find furniture listings near you."
       }
     },
     "android": {
@@ -51,7 +51,7 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Allow SuqBet to access your photos so you can list your furniture."
+          "photosPermission": "Allow AddisFurnish to access your photos so you can list your furniture."
         }
       ],
       [
@@ -65,7 +65,7 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Allow SuqBet to use your location to find furniture near you."
+          "locationWhenInUsePermission": "Allow AddisFurnish to use your location to find furniture near you."
         }
       ]
     ],

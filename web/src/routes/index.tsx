@@ -23,17 +23,18 @@ import {
   trendingSearchesQuery,
 } from "@/lib/marketplace";
 import { categoryName } from "@/lib/format";
+import { categoryIcon } from "@/lib/category-icons";
 
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "SuqBet — Buy & Sell Used Furniture in Ethiopia" },
+      { title: "AddisFurnish — Buy & Sell Used Furniture in Ethiopia" },
       {
         name: "description",
         content:
           "Browse thousands of second-hand sofas, beds, desks and dining sets from trusted shops across Addis Ababa. Free to list, free to message.",
       },
-      { property: "og:title", content: "SuqBet — Buy & Sell Used Furniture in Ethiopia" },
+      { property: "og:title", content: "AddisFurnish — Buy & Sell Used Furniture in Ethiopia" },
       {
         property: "og:description",
         content:
@@ -98,16 +99,22 @@ function Home() {
           </Link>
         </div>
         <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-          {roots.map((cat) => (
-            <Link
-              key={cat.id}
-              to="/browse"
-              search={{ category: cat.slug }}
-              className="card-lift rounded-lg border bg-card p-4 text-sm font-medium shadow-soft"
-            >
-              {categoryName(cat, lang)}
-            </Link>
-          ))}
+          {roots.map((cat) => {
+            const Icon = categoryIcon(cat.icon);
+            return (
+              <Link
+                key={cat.id}
+                to="/browse"
+                search={{ category: cat.slug }}
+                className="card-lift flex items-center gap-2.5 rounded-lg border bg-card p-4 text-sm font-medium shadow-soft"
+              >
+                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-secondary text-primary">
+                  <Icon className="h-4 w-4" />
+                </span>
+                <span className="min-w-0 truncate">{categoryName(cat, lang)}</span>
+              </Link>
+            );
+          })}
         </div>
       </section>
 

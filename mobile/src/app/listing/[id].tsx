@@ -300,7 +300,7 @@ export default function ListingDetailScreen() {
             onPress={() => {
               try {
                 void Share.share({
-                  message: `${item.title} — ${formatBirr(item.price)} on SuqBet`,
+                  message: `${item.title} — ${formatBirr(item.price)} on AddisFurnish`,
                 });
               } catch {
                 // ignore

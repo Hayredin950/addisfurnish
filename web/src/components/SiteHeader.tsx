@@ -70,8 +70,22 @@ export function SiteHeader() {
   return (
     <header className="sticky top-0 z-40 border-b bg-background/90 backdrop-blur">
       <div className="mx-auto flex h-16 max-w-6xl items-center gap-3 px-4">
-        <Link to="/" className="shrink-0 font-display text-xl font-semibold tracking-tight">
-          Suq<span className="text-primary">Bet</span>
+        <Link
+          to="/"
+          className="flex shrink-0 items-center gap-2 font-display text-xl font-semibold tracking-tight"
+        >
+          <img
+            src="/logo-mark.png"
+            alt=""
+            width={28}
+            height={28}
+            className="h-7 w-auto"
+            // Above the fold on every page, so don't defer it.
+            loading="eager"
+          />
+          <span>
+            Addis<span className="text-primary">Furnish</span>
+          </span>
         </Link>
 
         <nav className="ml-4 hidden items-center gap-1 md:flex">

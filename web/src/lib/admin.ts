@@ -44,8 +44,8 @@ async function sendSellerTelegramAlert(
     if (!chatId) return;
     const text =
       status === "approved"
-        ? "✅ Good news! Your shop has been verified on SuqBet. Your verified badge is now live."
-        : `❌ Your SuqBet verification was not approved${reason ? `: ${reason}` : "."} You can edit your details and resubmit.`;
+        ? "✅ Good news! Your shop has been verified on AddisFurnish. Your verified badge is now live."
+        : `❌ Your AddisFurnish verification was not approved${reason ? `: ${reason}` : "."} You can edit your details and resubmit.`;
     await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method: "POST",
       headers: { "content-type": "application/json" },

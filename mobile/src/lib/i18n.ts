@@ -3,7 +3,7 @@ import { colors } from "./theme";
 /** Minimal en/am dictionary for the mobile app (mirrors web i18n keys). */
 const dict = {
   en: {
-    appName: "SuqBet",
+    appName: "AddisFurnish",
     tagline: "Good furniture deserves a second home",
     searchPlaceholder: "Search sofas, beds, tables…",
     trending: "Trending searches",
@@ -19,7 +19,7 @@ const dict = {
     notifications: "Notifications",
     signIn: "Sign in",
     signOut: "Sign out",
-    welcome: "Welcome to SuqBet",
+    welcome: "Welcome to AddisFurnish",
     loginPhone: "Enter your phone number to sign in or create an account",
     phone: "Phone number",
     code: "Verification code",
@@ -158,7 +158,7 @@ const dict = {
     delete: "Delete",
     confirmDelete: "Are you sure you want to delete this listing?",
     cancel: "Cancel",
-    logoutConfirm: "Sign out of SuqBet?",
+    logoutConfirm: "Sign out of AddisFurnish?",
     about: "About",
     madeInEthiopia: "Made for Ethiopian furniture shoppers & sellers 🇪🇹",
     freeToUse: "Free to use — launch offer",

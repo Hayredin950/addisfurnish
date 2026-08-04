@@ -97,12 +97,12 @@ export const sendPhoneOtp = createServerFn({ method: "POST" })
 
     const delivered = await sendSms(
       phone,
-      `SuqBet verification code: ${code}. Valid for 10 minutes. Do not share it.`,
+      `AddisFurnish verification code: ${code}. Valid for 10 minutes. Do not share it.`,
     );
 
     if (delivered) return { ok: true };
     // Dev fallback — no SMS provider configured.
-    console.log(`[SuqBet OTP dev mode] ${phone} → ${code}`);
+    console.log(`[AddisFurnish OTP dev mode] ${phone} → ${code}`);
     return { ok: true, dev: true, devCode: code };
   });
 
@@ -197,11 +197,11 @@ export const requestAuthOtp = createServerFn({ method: "POST" })
 
     const delivered = await sendSms(
       phone,
-      `SuqBet login code: ${code}. Valid for 5 minutes. Do not share it.`,
+      `AddisFurnish login code: ${code}. Valid for 5 minutes. Do not share it.`,
     );
     if (delivered) return { ok: true };
     // Dev fallback — no SMS provider configured.
-    console.log(`[SuqBet OTP dev mode] ${phone} → ${code}`);
+    console.log(`[AddisFurnish OTP dev mode] ${phone} → ${code}`);
     return { ok: true, dev: true, devCode: code };
   });
 

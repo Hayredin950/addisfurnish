@@ -98,13 +98,13 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { name: "theme-color", content: "#AC451B" },
-      { title: "SuqBet — Buy & Sell Used Furniture in Ethiopia" },
+      { title: "AddisFurnish — Buy & Sell Used Furniture in Ethiopia" },
       {
         name: "description",
         content:
           "Browse thousands of second-hand sofas, beds, desks and dining sets from trusted shops across Addis Ababa. Free to list, free to message.",
       },
-      { property: "og:title", content: "SuqBet — Buy & Sell Used Furniture in Ethiopia" },
+      { property: "og:title", content: "AddisFurnish — Buy & Sell Used Furniture in Ethiopia" },
       {
         property: "og:description",
         content:
@@ -112,7 +112,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
-      { name: "twitter:title", content: "SuqBet — Buy & Sell Used Furniture in Ethiopia" },
+      { name: "twitter:title", content: "AddisFurnish — Buy & Sell Used Furniture in Ethiopia" },
       {
         name: "twitter:description",
         content:
@@ -131,8 +131,8 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         rel: "stylesheet",
         href: "https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=DM+Sans:wght@400;500;600&display=swap",
       },
-      { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" },
-      { rel: "icon", href: "/favicon.ico", type: "image/x-icon" },
+      { rel: "icon", href: "/favicon.ico", type: "image/x-icon", sizes: "48x48 32x32 16x16" },
+      { rel: "icon", href: "/favicon-64.png", type: "image/png", sizes: "64x64" },
       { rel: "apple-touch-icon", href: "/apple-touch-icon.png" },
     ],
   }),

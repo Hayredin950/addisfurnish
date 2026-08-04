@@ -135,7 +135,7 @@ const en = {
   "shop.reviewCount": "{count} reviews",
 
   // ── Auth ─────────────────────────────────────────────────────────
-  "auth.welcome": "Welcome to SuqBet",
+  "auth.welcome": "Welcome to AddisFurnish",
   "auth.subtitle": "One account to buy, sell and message.",
   "auth.google": "Continue with Google",
   "auth.orEmail": "or use phone",
@@ -144,7 +144,7 @@ const en = {
   "auth.phoneHint": "Passwordless — we'll text you a one-time code. No password to forget.",
   "auth.changeNumber": "Change",
   "auth.verifyContinue": "Verify & continue",
-  "auth.welcomeNew": "Welcome to SuqBet — your account is ready",
+  "auth.welcomeNew": "Welcome to AddisFurnish — your account is ready",
   "auth.signIn": "Sign in",
   "auth.createAccount": "Create account",
   "auth.fullName": "Full name",
@@ -154,7 +154,7 @@ const en = {
   // ── Safety ───────────────────────────────────────────────────────
   "safety.title": "Buying and selling safely",
   "safety.subtitle":
-    "SuqBet connects people directly — money and goods change hands in person. These six rules prevent almost every problem we see.",
+    "AddisFurnish connects people directly — money and goods change hands in person. These six rules prevent almost every problem we see.",
   "safety.meetTitle": "Meet in a public place",
   "safety.meetBody":
     "Arrange handover at the shop, a busy street or a compound gate. For large items, bring a friend along.",

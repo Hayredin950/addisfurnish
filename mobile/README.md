@@ -1,6 +1,6 @@
-# SuqBet Mobile (React Native + Expo)
+# AddisFurnish Mobile (React Native + Expo)
 
-The official mobile app for the SuqBet used-furniture marketplace — the same
+The official mobile app for the AddisFurnish used-furniture marketplace — the same
 Supabase backend as the web app, with phone-first login, realtime chat, GPS
 "near me" browsing, and camera-first listing.
 

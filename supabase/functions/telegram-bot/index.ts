@@ -1,5 +1,5 @@
 // Telegram bot webhook — handles the t.me/YourBot?start=TOKEN deep link so a
-// buyer's or seller's Telegram chat gets linked to their SuqBet account.
+// buyer's or seller's Telegram chat gets linked to their AddisFurnish account.
 //
 // Deploy:
 //   supabase functions deploy telegram-bot
@@ -54,21 +54,21 @@ Deno.serve(async (req) => {
           .eq("id", profile.id);
         await sendMessage(
           chatId,
-          `✅ Linked to <b>${profile.shop_name ?? "your SuqBet account"}</b>.\nYou will now get alerts here.`,
+          `✅ Linked to <b>${profile.shop_name ?? "your AddisFurnish account"}</b>.\nYou will now get alerts here.`,
         );
       } else {
         await sendMessage(
           chatId,
-          "This link is invalid or expired. Open it again from your SuqBet account settings.",
+          "This link is invalid or expired. Open it again from your AddisFurnish account settings.",
         );
       }
     } else {
-      await sendMessage(chatId, "Hello! Use a link from your SuqBet account to connect.");
+      await sendMessage(chatId, "Hello! Use a link from your AddisFurnish account to connect.");
     }
   } else {
     await sendMessage(
       chatId,
-      "I send alerts for your SuqBet account. Use the link from your profile to connect.",
+      "I send alerts for your AddisFurnish account. Use the link from your profile to connect.",
     );
   }
 
