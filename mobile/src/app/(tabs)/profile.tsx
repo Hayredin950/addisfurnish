@@ -4,6 +4,7 @@ import {
   Alert,
   Image,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   Pressable,
   ScrollView,
@@ -21,20 +22,28 @@ import { useAuth } from "../../lib/auth";
 import { useLang } from "../../lib/lang";
 import { useAsync } from "../../hooks/use-async";
 import {
+  deleteListing,
+  disconnectTelegram,
   fetchBuyerPreferences,
+  fetchCallbacks,
   fetchCategories,
+  fetchConversationCount,
   fetchMyVerificationDocs,
   fetchMyListings,
+  getTelegramConnectUrl,
+  markListingSold,
   saveBuyerPreferences,
+  telegramConfigured,
+  updateCallbackStatus,
+  updateListingStatus,
   updateProfile,
   uploadListingImage,
 } from "../../lib/api";
 import { Button } from "../../components/Button";
 import { EmptyState } from "../../components/EmptyState";
-import { ListingCard } from "../../components/ListingCard";
 import { colors, radius, spacing, shadows } from "../../lib/theme";
 import { formatBirr, timeAgo } from "../../lib/format";
-import type { BuyerPreferences, Listing } from "../../lib/api";
+import type { BuyerPreferences } from "../../lib/api";
 
 const DOC_TYPES = ["National ID", "Business License", "TIN Certificate", "Other"];
 
@@ -64,9 +73,12 @@ export default function ProfileScreen() {
     telegram_alerts_enabled: false,
   });
   const [prefsLoaded, setPrefsLoaded] = useState(false);
+  const [telegramBusy, setTelegramBusy] = useState(false);
 
   const docs = useAsync(() => fetchMyVerificationDocs(user?.id ?? ""), [user?.id], !!user);
   const myListings = useAsync(() => fetchMyListings(user?.id ?? ""), [user?.id], !!user);
+  const callbacks = useAsync(() => fetchCallbacks(user?.id ?? ""), [user?.id], !!user?.id);
+  const convCount = useAsync(() => fetchConversationCount(user?.id ?? ""), [user?.id], !!user?.id);
   const cats = useAsync(fetchCategories, []);
 
   useEffect(() => {
@@ -174,6 +186,39 @@ export default function ProfileScreen() {
     } catch {
       Alert.alert(t("oops"));
     }
+  };
+
+  const connectTelegram = async () => {
+    setTelegramBusy(true);
+    const url = await getTelegramConnectUrl();
+    setTelegramBusy(false);
+    if (!url) {
+      Alert.alert(t("oops"));
+      return;
+    }
+    // Opens the bot with the one-time token; pressing Start there links the
+    // account. The badge below updates on the next profile refresh.
+    Linking.openURL(url).catch(() => Alert.alert(t("oops")));
+  };
+
+  const unlinkTelegram = () => {
+    Alert.alert(t("telegramDisconnect"), t("telegramDisconnectConfirm"), [
+      { text: t("cancel"), style: "cancel" },
+      {
+        text: t("telegramDisconnect"),
+        style: "destructive",
+        onPress: async () => {
+          setTelegramBusy(true);
+          const ok = await disconnectTelegram();
+          setTelegramBusy(false);
+          if (!ok) {
+            Alert.alert(t("oops"));
+            return;
+          }
+          await refreshProfile();
+        },
+      },
+    ]);
   };
 
   const confirmSignOut = () => {
@@ -337,6 +382,39 @@ export default function ProfileScreen() {
         {/* Preferences */}
         <View style={styles.card}>
           <Text style={styles.cardTitle}>{t("alertPrefs")}</Text>
+          {telegramConfigured() ? (
+            <View style={styles.telegramBlock}>
+              {profile?.telegram_chat_id ? (
+                <>
+                  <View style={styles.prefRow}>
+                    <Text style={styles.prefLabel}>{t("telegramConnected")}</Text>
+                    <Ionicons name="checkmark-circle" size={18} color={colors.success} />
+                  </View>
+                  <Button
+                    title={t("telegramDisconnect")}
+                    variant="outline"
+                    size="sm"
+                    onPress={unlinkTelegram}
+                    loading={telegramBusy}
+                    disabled={telegramBusy}
+                  />
+                </>
+              ) : (
+                <>
+                  <Text style={styles.cardHint}>{t("telegramAlertsHint")}</Text>
+                  <Button
+                    title={t("telegramConnect")}
+                    variant="outline"
+                    size="sm"
+                    onPress={connectTelegram}
+                    loading={telegramBusy}
+                    disabled={telegramBusy}
+                    style={{ marginTop: 8 }}
+                  />
+                </>
+              )}
+            </View>
+          ) : null}
           <View style={styles.prefRow}>
             <Text style={styles.prefLabel}>{t("telegramAlerts")}</Text>
             <Switch
@@ -368,21 +446,188 @@ export default function ProfileScreen() {
           />
         </View>
 
-        {/* My listings */}
+        {/* Seller dashboard */}
+        {profile?.is_seller ? (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>{t("dashTitle")}</Text>
+            <View style={styles.statRow}>
+              <View style={styles.statBox}>
+                <Text style={styles.statValue}>{(myListings.data ?? []).length}</Text>
+                <Text style={styles.statLabel}>{t("dashStatsListings")}</Text>
+              </View>
+              <View style={styles.statBox}>
+                <Text style={styles.statValue}>
+                  {(myListings.data ?? []).reduce((s, l) => s + (l.view_count ?? 0), 0)}
+                </Text>
+                <Text style={styles.statLabel}>{t("dashStatsViews")}</Text>
+              </View>
+              <View style={styles.statBox}>
+                <Text style={styles.statValue}>{(callbacks.data ?? []).length}</Text>
+                <Text style={styles.statLabel}>{t("dashStatsCallbacks")}</Text>
+              </View>
+              <View style={styles.statBox}>
+                <Text style={styles.statValue}>{convCount.data ?? 0}</Text>
+                <Text style={styles.statLabel}>{t("dashStatsConversations")}</Text>
+              </View>
+            </View>
+          </View>
+        ) : null}
+
+        {/* My listings (manage) */}
         {profile?.is_seller ? (
           <View style={styles.card}>
             <Text style={styles.cardTitle}>{t("myListings")}</Text>
             {(myListings.data ?? []).length === 0 ? (
               <Text style={styles.muted}>{t("emptyListings")}</Text>
             ) : (
-              <View style={styles.grid}>
-                {(myListings.data ?? []).slice(0, 4).map((l) => (
-                  <ListingCard key={l.id} listing={l as Listing} lang={lang} compact />
-                ))}
-              </View>
+              (myListings.data ?? []).map((l) => (
+                <View key={l.id} style={styles.manageRow}>
+                  {l.listing_images?.[0]?.url ? (
+                    <Image source={{ uri: l.listing_images[0].url }} style={styles.manageImg} />
+                  ) : (
+                    <View style={[styles.manageImg, styles.manageImgEmpty]}>
+                      <Text style={styles.manageEmoji}>🛋️</Text>
+                    </View>
+                  )}
+                  <View style={{ flex: 1 }}>
+                    <Text numberOfLines={1} style={styles.manageTitle}>
+                      {l.title}
+                    </Text>
+                    <Text style={styles.manageMeta}>
+                      {formatBirr(l.price)} · {t("dashStatsViews")}: {l.view_count ?? 0}
+                    </Text>
+                    <View style={styles.statusRow}>
+                      {["active", "reserved", "sold"].map((s) => (
+                        <Pressable
+                          key={s}
+                          style={[styles.statusChip, l.status === s && styles.statusChipActive]}
+                          onPress={() =>
+                            void (s === "sold"
+                              ? markListingSold(l.id, l.title)
+                              : updateListingStatus(l.id, s))
+                              .then(() => myListings.refetch())
+                              .catch(() => Alert.alert(t("dashUpdateFailed")))
+                          }
+                        >
+                          <Text
+                            style={[
+                              styles.statusChipText,
+                              l.status === s && styles.statusChipTextActive,
+                            ]}
+                          >
+                            {s === "active"
+                              ? t("dashStatusActive")
+                              : s === "reserved"
+                                ? t("dashStatusReserved")
+                                : t("dashStatusSold")}
+                          </Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                  </View>
+                  <View style={styles.manageActions}>
+                    <Pressable
+                      hitSlop={8}
+                      style={styles.manageIconBtn}
+                      onPress={() => router.push({ pathname: "/sell", params: { edit: l.id } })}
+                    >
+                      <Ionicons name="create-outline" size={18} color={colors.primary} />
+                    </Pressable>
+                    <Pressable
+                      hitSlop={8}
+                      style={styles.manageIconBtn}
+                      onPress={() =>
+                        Alert.alert(t("delete"), t("dashDeleteConfirm"), [
+                          { text: t("cancel"), style: "cancel" },
+                          {
+                            text: t("delete"),
+                            style: "destructive",
+                            onPress: () =>
+                              void deleteListing(l.id)
+                                .then(() => myListings.refetch())
+                                .catch(() => Alert.alert(t("dashUpdateFailed"))),
+                          },
+                        ])
+                      }
+                    >
+                      <Ionicons name="trash-outline" size={18} color={colors.danger} />
+                    </Pressable>
+                  </View>
+                </View>
+              ))
             )}
           </View>
         ) : null}
+
+        {/* Callback requests */}
+        {profile?.is_seller && (callbacks.data ?? []).length > 0 ? (
+          <View style={styles.card}>
+            <Text style={styles.cardTitle}>{t("dashStatsCallbacks")}</Text>
+            {(callbacks.data ?? []).map((c) => (
+              <View key={c.id} style={styles.cbRow}>
+                <View style={{ flex: 1 }}>
+                  <Text numberOfLines={1} style={styles.manageTitle}>
+                    {c.listings?.title ?? t("listing")} — {c.phone}
+                  </Text>
+                  {c.note ? <Text style={styles.cbNote}>{c.note}</Text> : null}
+                  <Text style={styles.cbTime}>{timeAgo(c.created_at)}</Text>
+                  <Text
+                    style={[
+                      styles.cbStatus,
+                      c.status === "pending"
+                        ? { color: colors.warning }
+                        : c.status === "contacted"
+                          ? { color: colors.primary }
+                          : { color: colors.textMuted },
+                    ]}
+                  >
+                    {c.status === "pending"
+                      ? t("dashCbPending")
+                      : c.status === "contacted"
+                        ? t("dashCbContacted")
+                        : t("dashCbClosed")}
+                  </Text>
+                </View>
+                {c.status === "pending" ? (
+                  <View style={styles.cbActions}>
+                    <Pressable
+                      style={styles.cbBtn}
+                      onPress={() =>
+                        void updateCallbackStatus(c.id, "contacted", c.buyer_id, c.listings?.title)
+                          .then(() => callbacks.refetch())
+                          .catch(() => Alert.alert(t("dashUpdateFailed")))
+                      }
+                    >
+                      <Ionicons name="call" size={13} color={colors.onPrimary} />
+                      <Text style={styles.cbBtnText}>{t("dashMarkContacted")}</Text>
+                    </Pressable>
+                    <Pressable
+                      style={[styles.cbBtn, styles.cbBtnGhost]}
+                      onPress={() =>
+                        void updateCallbackStatus(c.id, "closed", c.buyer_id, c.listings?.title)
+                          .then(() => callbacks.refetch())
+                          .catch(() => Alert.alert(t("dashUpdateFailed")))
+                      }
+                    >
+                      <Text style={[styles.cbBtnText, { color: colors.text }]}>
+                        {t("dashClose")}
+                      </Text>
+                    </Pressable>
+                  </View>
+                ) : null}
+              </View>
+            ))}
+          </View>
+        ) : null}
+
+        {/* Safety */}
+        <Pressable style={styles.card} onPress={() => router.push("/safety")}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+            <Ionicons name="shield-checkmark-outline" size={20} color={colors.success} />
+            <Text style={[styles.cardTitle, { marginBottom: 0 }]}>{t("safetyTitle")}</Text>
+            <Ionicons name="chevron-forward" size={16} color={colors.textSoft} />
+          </View>
+        </Pressable>
 
         {/* Sign out */}
         <View style={styles.footer}>
@@ -475,6 +720,13 @@ const styles = StyleSheet.create({
   cardHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   cardTitle: { fontSize: 16, fontWeight: "700", color: colors.text, marginBottom: 8 },
   cardHint: { fontSize: 13, color: colors.textMuted, lineHeight: 19 },
+  // Telegram connect block, separated from the alert toggles below it.
+  telegramBlock: {
+    paddingBottom: 12,
+    marginBottom: 12,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+  },
   link: { fontSize: 13, color: colors.primary, fontWeight: "600" },
   inlineBtn: {
     flexDirection: "row",
@@ -535,6 +787,73 @@ const styles = StyleSheet.create({
   langText: { fontSize: 14, color: colors.text, fontWeight: "600" },
   langTextActive: { color: colors.onPrimary },
   grid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" },
+  statRow: { flexDirection: "row", gap: 8, marginTop: 4 },
+  statBox: {
+    flex: 1,
+    backgroundColor: colors.secondary,
+    borderRadius: radius.md,
+    paddingVertical: 12,
+    alignItems: "center",
+  },
+  statValue: { fontSize: 18, fontWeight: "800", color: colors.primary },
+  statLabel: { fontSize: 10, color: colors.textMuted, marginTop: 2, textAlign: "center" },
+  manageRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  manageImg: { width: 44, height: 44, borderRadius: radius.md },
+  manageImgEmpty: {
+    backgroundColor: colors.secondary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  manageEmoji: { fontSize: 20 },
+  manageTitle: { fontSize: 14, fontWeight: "600", color: colors.text },
+  manageMeta: { fontSize: 11.5, color: colors.textMuted, marginTop: 2 },
+  statusRow: { flexDirection: "row", gap: 6, marginTop: 6 },
+  statusChip: {
+    backgroundColor: colors.secondary,
+    borderRadius: radius.full,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+  },
+  statusChipActive: { backgroundColor: colors.primary },
+  statusChipText: { fontSize: 10.5, color: colors.textMuted, fontWeight: "600" },
+  statusChipTextActive: { color: colors.onPrimary },
+  manageActions: { gap: 10 },
+  manageIconBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: radius.full,
+    backgroundColor: colors.secondary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  cbRow: {
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    gap: 8,
+  },
+  cbNote: { fontSize: 12.5, color: colors.textMuted, marginTop: 2 },
+  cbTime: { fontSize: 11, color: colors.textSoft, marginTop: 2 },
+  cbStatus: { fontSize: 11.5, fontWeight: "700", marginTop: 3, textTransform: "uppercase" },
+  cbActions: { flexDirection: "row", gap: 8, marginTop: 4 },
+  cbBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: colors.primary,
+    borderRadius: radius.full,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  cbBtnGhost: { backgroundColor: colors.secondary },
+  cbBtnText: { fontSize: 12, color: colors.onPrimary, fontWeight: "700" },
   muted: { fontSize: 13, color: colors.textMuted },
   footer: { alignItems: "center", gap: 8, paddingTop: spacing.xl },
   signOut: { fontSize: 15, color: colors.danger, fontWeight: "700" },

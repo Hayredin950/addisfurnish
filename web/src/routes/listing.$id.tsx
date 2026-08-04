@@ -7,7 +7,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { useLang } from "@/lib/i18n";
 import { formatBirr, timeAgo, categoryName, isOnlineNow, formatEthiopianDate } from "@/lib/format";
-import { notifySellerTelegram } from "@/lib/telegram";
+import { pingListingView } from "@/lib/telegram";
 import {
   listingQuery,
   listingsQuery,
@@ -75,12 +75,15 @@ function ListingDetail() {
     let cancelled = false;
     const timer = window.setTimeout(() => {
       if (!cancelled) {
-        void recordListingView(id);
+        // The view must be recorded before the ping: the edge function's
+        // throttle reads listing_views, and a ping that arrives first sees an
+        // empty window and would alert on every page load.
+        void recordListingView(id).then(() => {
+          if (sellerIdRef.current && sellerIdRef.current !== viewerIdRef.current) {
+            pingListingView(id);
+          }
+        });
         queryClient.invalidateQueries({ queryKey: ["recently-viewed"] });
-        // Seller bot (spec §11c): "item viewed" alert, throttled server-side.
-        if (sellerIdRef.current && sellerIdRef.current !== viewerIdRef.current) {
-          void notifySellerTelegram({ data: { listingId: id, event: "view" } });
-        }
       }
     }, 1200);
     return () => {
@@ -121,8 +124,6 @@ function ListingDetail() {
         title: listing!.title,
         listingId: listing!.id,
       });
-      // Best-effort: real-time Telegram alert to the seller (if linked).
-      void notifySellerTelegram({ data: { listingId: listing!.id, event: "message" } });
     },
     onSuccess: () => {
       setMessage("");
@@ -155,8 +156,6 @@ function ListingDetail() {
         title: listing!.title,
         listingId: listing!.id,
       });
-      // Best-effort: real-time Telegram alert to the seller (if linked).
-      void notifySellerTelegram({ data: { listingId: listing!.id, event: "callback" } });
     },
     onSuccess: () => {
       setPhone("");

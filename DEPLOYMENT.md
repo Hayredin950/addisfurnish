@@ -15,8 +15,8 @@ for the public and testers. The repo is split into three parts:
 
 | Area | Status |
 |---|---|
-| Database | ✅ Live — project ref `ssihdmhsptlbalidutqa`; schema, RLS, buckets, demo data in place |
-| Edge functions | ⚠️ Exist (`send-push`, `telegram-bot`) but **not deployed** |
+| Database | ✅ Live — project ref `ctgulhtaefzsdfemggty`; schema, RLS, buckets, demo data in place |
+| Edge functions | ⚠️ Exist (`send-push`, `telegram-bot`, `telegram-notify`) but **not deployed** |
 | Web app | ⚠️ Builds clean (Nitro); not deployed to your own domain yet |
 | Mobile app | ⚠️ Builds clean; **no EAS project yet** (no `projectId` → no production push tokens) |
 | GitHub | ✅ `github.com/Hayredin950/addisfurnish`; `.env` correctly untracked |
@@ -60,7 +60,7 @@ git check-ignore web/.env mobile/.env && echo "ignored ✓"
 npm i -g supabase            # or: brew install supabase/tap/supabase
 supabase login               # opens browser; use the account that owns the project
 cd /home/hayredin/Documents/pro/addisfurnish
-supabase link --project-ref ssihhmhsptlbalidutqa
+supabase link --project-ref ctgulhtaefzsdfemggty
 ```
 
 ### 1.2 Apply all migrations
@@ -76,14 +76,18 @@ publication, and the `push_on_notification` trigger that calls the edge function
 ### 1.3 Deploy edge functions + secrets
 
 ```bash
-supabase secrets set --env-file supabase/functions/.env.example
+supabase secrets set --env-file supabase/functions/.env
 supabase functions deploy send-push        # push notifications
-supabase functions deploy telegram-bot     # Telegram alerts (optional)
+supabase functions deploy telegram-bot     # bot webhook: account linking, /stop, /help
+supabase functions deploy telegram-notify  # channel posts + all Telegram alerts
 ```
 
-Secrets are read from `.env` files — fill in real values first (template at
-`supabase/functions/.env.example`). All three functions need `SUPABASE_URL` +
-`SUPABASE_SERVICE_ROLE_KEY`; `send-push` optionally takes `EXPO_ACCESS_TOKEN`.
+Secrets are read from `supabase/functions/.env` — copy the template at
+`supabase/functions/.env.example` and fill in real values first. All three
+functions need `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`; `send-push`
+optionally takes `EXPO_ACCESS_TOKEN`. Telegram setup (creating the bot and the
+channel, registering the webhook) is documented in
+[`supabase/functions/README.md`](supabase/functions/README.md).
 
 > Note: `send-push` currently sends to Expo's public push API without a token
 > (fine for MVP). Add `EXPO_ACCESS_TOKEN` from https://expo.dev/settings/access-tokens
@@ -206,7 +210,8 @@ profiles — edit as needed.
 ## Phase 4 — Go live checklist
 
 - [ ] `supabase db push` applied cleanly
-- [ ] `send-push` + `telegram-bot` deployed, secrets set
+- [ ] `send-push` + `telegram-bot` + `telegram-notify` deployed, secrets set
+- [ ] Telegram webhook registered with `secret_token` (`supabase/functions/README.md`)
 - [ ] SMS provider configured (OTP actually delivered to phones)
 - [ ] Email provider (Resend/SMTP) configured
 - [ ] Redirect URLs include production domain + `addisfurnish://`
@@ -226,11 +231,16 @@ profiles — edit as needed.
 | `web/.env` | `VITE_SUPABASE_PUBLISHABLE_KEY` | ✅ | Public anon/publishable key |
 | `web/.env` | `VITE_SITE_URL` | optional | Production domain, e.g. `https://addisfurnish.vercel.app` (social share image) |
 | `web/.env` | `SUPABASE_SERVICE_ROLE_KEY` | server-only | Secret — never in client bundles |
+| `web/.env` | `VITE_TELEGRAM_BOT_USERNAME` | telegram only | Bot username, no `@`. Public; hides the Connect button when unset |
 | `mobile/.env` | `EXPO_PUBLIC_SUPABASE_URL` | ✅ | Public project URL |
 | `mobile/.env` | `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | ✅ | Public anon/publishable key |
+| `mobile/.env` | `EXPO_PUBLIC_TELEGRAM_BOT_USERNAME` | telegram only | Same value as the web one |
 | edge fn | `SUPABASE_URL` | ✅ | Set via `supabase secrets set` |
 | edge fn | `SUPABASE_SERVICE_ROLE_KEY` | ✅ | Secret |
-| edge fn | `TELEGRAM_BOT_TOKEN` | telegram only | BotFather token |
+| edge fn | `TELEGRAM_BOT_TOKEN` | telegram only | BotFather token — secret |
+| edge fn | `TELEGRAM_CHANNEL_ID` | telegram only | e.g. `@addisfurnish_listings`; bot must be admin |
+| edge fn | `TELEGRAM_WEBHOOK_SECRET` | telegram only | Authenticates Telegram's webhook calls — secret |
+| edge fn | `SITE_URL` | telegram only | Public origin used to link alerts back to a listing |
 | edge fn | `EXPO_ACCESS_TOKEN` | optional | Expo push API scoping |
 
 ---

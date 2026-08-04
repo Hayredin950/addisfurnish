@@ -396,6 +396,8 @@ export type Database = {
           telegram: string | null;
           telegram_chat_id: string | null;
           telegram_link_token: string | null;
+          telegram_link_token_expires_at: string | null;
+          telegram_linked_at: string | null;
           updated_at: string;
           verified: boolean;
           whatsapp: string | null;
@@ -425,6 +427,8 @@ export type Database = {
           telegram?: string | null;
           telegram_chat_id?: string | null;
           telegram_link_token?: string | null;
+          telegram_link_token_expires_at?: string | null;
+          telegram_linked_at?: string | null;
           updated_at?: string;
           verified?: boolean;
           whatsapp?: string | null;
@@ -454,6 +458,8 @@ export type Database = {
           telegram?: string | null;
           telegram_chat_id?: string | null;
           telegram_link_token?: string | null;
+          telegram_link_token_expires_at?: string | null;
+          telegram_linked_at?: string | null;
           updated_at?: string;
           verified?: boolean;
           whatsapp?: string | null;
@@ -871,6 +877,14 @@ export type Database = {
       };
     };
     Functions: {
+      mint_telegram_link_token: {
+        Args: Record<string, never>;
+        Returns: string | null;
+      };
+      unlink_telegram: {
+        Args: Record<string, never>;
+        Returns: undefined;
+      };
       admin_notify_user: {
         Args: {
           _user_id: string;

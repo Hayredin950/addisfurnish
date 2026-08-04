@@ -4,8 +4,7 @@ import type { Database } from "./db-types";
 export type Category = Database["public"]["Tables"]["categories"]["Row"];
 export type ListingRow = Database["public"]["Tables"]["listings"]["Row"];
 export type Profile = Database["public"]["Tables"]["profiles"]["Row"];
-export type Message = Database["public"]["Tables"]["messages"]["Row"];
-export type NotificationRow = Database["public"]["Tables"]["notifications"]["Row"];
+export type Message = Database["public"]["Tables"]["messages"]["Row"];export type NotificationRow = Database["public"]["Tables"]["notifications"]["Row"];
 export type SavedSearch = Database["public"]["Tables"]["saved_searches"]["Row"];
 export type VerificationDoc = Database["public"]["Tables"]["seller_verification_documents"]["Row"];
 
@@ -250,11 +249,80 @@ export async function fetchConversations(userId: string) {
 export async function fetchMessages(conversationId: string): Promise<Message[]> {
   const { data, error } = await supabase
     .from("messages")
-    .select("id,body,sender_id,created_at")
+    .select("id,body,sender_id,created_at,edited_at,deleted_at,read_at")
     .eq("conversation_id", conversationId)
     .order("created_at", { ascending: true });
   if (error) throw error;
   return (data ?? []) as unknown as Message[];
+}
+
+/** Edit an existing message body (web parity: `edited_at` gets stamped). */
+export async function editMessage(messageId: string, body: string) {
+  const { error } = await supabase
+    .from("messages")
+    .update({ body, edited_at: new Date().toISOString() })
+    .eq("id", messageId);
+  if (error) throw error;
+}
+
+/** Soft-delete: row stays so the other side sees a "deleted" placeholder. */
+export async function deleteMessage(messageId: string) {
+  const { error } = await supabase
+    .from("messages")
+    .update({ deleted_at: new Date().toISOString() })
+    .eq("id", messageId);
+  if (error) throw error;
+}
+
+/** Mark the counterpart's messages as read in this conversation. */
+export async function markConversationRead(conversationId: string, myUserId: string) {
+  const { error } = await supabase
+    .from("messages")
+    .update({ read_at: new Date().toISOString() })
+    .eq("conversation_id", conversationId)
+    .neq("sender_id", myUserId)
+    .is("read_at", null);
+  if (error) console.warn("mark read failed", error);
+}
+
+/** Conversation with its listing + both participants (chat header banner). */
+export async function fetchConversation(conversationId: string) {
+  const { data, error } = await supabase
+    .from("conversations")
+    .select(
+      "id,last_message_at,buyer_id,seller_id," +
+        "listings(id,title,price,status,listing_images(url))," +
+        "buyer:profiles!conversations_buyer_id_fkey(id,full_name,shop_name,shop_logo_url)," +
+        "seller:profiles!conversations_seller_id_fkey(id,full_name,shop_name,shop_logo_url)",
+    )
+    .eq("id", conversationId)
+    .maybeSingle();
+  if (error) throw error;
+  return (data ?? null) as unknown as {
+    id: string;
+    last_message_at: string;
+    buyer_id: string;
+    seller_id: string;
+    listings: {
+      id: string;
+      title: string;
+      price: number;
+      status: string;
+      listing_images: { url: string }[];
+    } | null;
+    buyer: {
+      id: string;
+      full_name: string;
+      shop_name: string | null;
+      shop_logo_url: string | null;
+    } | null;
+    seller: {
+      id: string;
+      full_name: string;
+      shop_name: string | null;
+      shop_logo_url: string | null;
+    } | null;
+  } | null;
 }
 
 /** Find or create a conversation for a buyer + listing, then return its id. */
@@ -298,6 +366,63 @@ export async function notifyUser(
     _payload: payload as never,
   });
   if (error) console.warn("notify failed", error);
+}
+
+// ── Telegram ─────────────────────────────────────────────────────────────
+// Delivery lives in the `telegram-notify` edge function, shared with the web
+// app. Seller alerts for messages and callbacks are NOT sent from here — they
+// ride the telegram_on_notification DB trigger off the notifications row that
+// notifyUser() inserts, so one call fans out to in-app, push and Telegram.
+
+/** Fire-and-forget: Telegram must never fail the user's action. */
+async function invokeTelegram(body: Record<string, unknown>) {
+  try {
+    await supabase.functions.invoke("telegram-notify", { body });
+  } catch (error) {
+    console.warn("telegram-notify failed", error);
+  }
+}
+
+/**
+ * Announce a newly published listing: posts it to the public channel and DMs
+ * buyers whose saved preferences match. Called after the images are inserted,
+ * because the channel post uses the first image as its cover photo.
+ */
+export function announceListing(listingId: string) {
+  void invokeTelegram({ kind: "listing", listing_id: listingId });
+}
+
+/** Seller "your item is getting views" ping (throttled in the edge function). */
+export function pingListingView(listingId: string) {
+  void invokeTelegram({ kind: "view", listing_id: listingId });
+}
+
+/**
+ * Mints a single-use, 15-minute token and returns the t.me deep link that binds
+ * this user's Telegram chat to their account when they press Start.
+ * Returns null when no bot is configured for the build.
+ */
+export async function getTelegramConnectUrl(): Promise<string | null> {
+  const username = process.env.EXPO_PUBLIC_TELEGRAM_BOT_USERNAME;
+  if (!username) return null;
+  const { data, error } = await supabase.rpc("mint_telegram_link_token");
+  if (error || !data) {
+    console.warn("mint telegram token failed", error);
+    return null;
+  }
+  return `https://t.me/${username.replace(/^@/, "")}?start=${data}`;
+}
+
+/** True when this build has a bot configured — gates the Connect UI. */
+export function telegramConfigured(): boolean {
+  return !!process.env.EXPO_PUBLIC_TELEGRAM_BOT_USERNAME;
+}
+
+/** Disconnects Telegram from the app side (the bot's /stop does the same). */
+export async function disconnectTelegram(): Promise<boolean> {
+  const { error } = await supabase.rpc("unlink_telegram");
+  if (error) console.warn("unlink telegram failed", error);
+  return !error;
 }
 
 // ── Notifications center ─────────────────────────────────────────────────
@@ -438,6 +563,105 @@ export async function saveBuyerPreferences(userId: string, prefs: BuyerPreferenc
   if (error) throw error;
 }
 
+// ── Seller dashboard ─────────────────────────────────────────────────────
+
+export async function updateListingStatus(id: string, status: string) {
+  const { error } = await supabase.from("listings").update({ status }).eq("id", id);
+  if (error) throw error;
+}
+
+/** Mark a listing sold and ping every buyer who has a conversation about it. */
+export async function markListingSold(id: string, title: string) {
+  await updateListingStatus(id, "sold");
+  const { data: buyers, error } = await supabase
+    .from("conversations")
+    .select("buyer_id")
+    .eq("listing_id", id);
+  if (error) throw error;
+  for (const row of buyers ?? []) {
+    await notifyUser(row.buyer_id, "listing_sold", { title, listingId: id }).catch(() => {});
+  }
+}
+
+/** Delete a listing (images cascade; storage objects removed best-effort). */
+export async function deleteListing(id: string): Promise<void> {
+  const { data: listing } = await supabase
+    .from("listings")
+    .select("listing_images(url)")
+    .eq("id", id)
+    .maybeSingle();
+  const paths = ((listing?.listing_images ?? []) as { url: string }[])
+    .map((img) => img.url)
+    .filter((url) => !!url && !url.startsWith("http"));
+  const { error } = await supabase.from("listings").delete().eq("id", id);
+  if (error) throw error;
+  if (paths.length) {
+    await supabase.storage.from("listing-images").remove(paths).catch(() => {});
+  }
+}
+
+export async function fetchCallbacks(sellerId: string) {
+  const { data, error } = await supabase
+    .from("callback_requests")
+    .select("id,phone,note,status,created_at,buyer_id,listings(title)")
+    .eq("seller_id", sellerId)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as unknown as {
+    id: string;
+    phone: string;
+    note: string | null;
+    status: string;
+    buyer_id: string;
+    created_at: string;
+    listings: { title: string } | null;
+  }[];
+}
+
+export async function updateCallbackStatus(
+  id: string,
+  status: "contacted" | "closed",
+  buyerId?: string | null,
+  listingTitle?: string | null,
+) {
+  const { error } = await supabase.from("callback_requests").update({ status }).eq("id", id);
+  if (error) throw error;
+  if (buyerId) {
+    const payload: { status: string; title?: string } = { status };
+    if (listingTitle) payload.title = listingTitle;
+    await notifyUser(buyerId, "callback_response", payload).catch(() => {});
+  }
+}
+
+export async function fetchConversationCount(sellerId: string): Promise<number> {
+  const { count, error } = await supabase
+    .from("conversations")
+    .select("id", { count: "exact", head: true })
+    .eq("seller_id", sellerId);
+  if (error) throw error;
+  return count ?? 0;
+}
+
+// ── Reports ──────────────────────────────────────────────────────────────
+
+export async function submitReport(input: {
+  reporterId: string;
+  reason: string;
+  details?: string;
+  listingId?: string;
+  reportedUserId?: string;
+}) {
+  const { error } = await supabase.from("reports").insert({
+    reporter_id: input.reporterId,
+    reason: input.reason,
+    details: input.details?.trim() || null,
+    listing_id: input.listingId ?? null,
+    reported_user_id: input.reportedUserId ?? null,
+    status: "pending",
+  });
+  if (error) throw error;
+}
+
 // ── Sell ─────────────────────────────────────────────────────────────────
 
 export async function uploadListingImage(
@@ -516,6 +740,9 @@ export async function createListing(input: {
       .insert(input.imagePaths.map((url, i) => ({ listing_id: data.id, url, position: i })));
     if (imgError) throw imgError;
   }
+  // Announce only after the images exist — the channel post uses the first one
+  // as its cover photo.
+  announceListing(data.id);
   return data.id;
 }
 
@@ -527,6 +754,59 @@ export async function fetchMyListings(sellerId: string): Promise<Listing[]> {
     .order("created_at", { ascending: false });
   if (error) throw error;
   return (data ?? []) as unknown as Listing[];
+}
+
+/** Load one listing with images for the seller edit screen. */
+export async function fetchListingForEdit(id: string): Promise<Listing | null> {
+  const { data, error } = await supabase
+    .from("listings")
+    .select(LISTING_SELECT)
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw error;
+  return (data ?? null) as unknown as Listing | null;
+}
+
+/** Update a listing's core fields (sell/edit screen, owner-only via RLS). */
+export async function updateListing(
+  id: string,
+  patch: {
+    title?: string;
+    description?: string;
+    price?: number;
+    original_price?: number | null;
+    negotiable?: boolean;
+    condition?: string;
+    material?: string | null;
+    color?: string | null;
+    room_type?: string | null;
+    brand?: string | null;
+    city?: string;
+    sub_city?: string | null;
+    category_id?: string | null;
+    delivery_offered?: boolean;
+    delivery_fee?: number | null;
+    discount_expires_at?: string | null;
+    latitude?: number | null;
+    longitude?: number | null;
+  },
+) {
+  const { error } = await supabase.from("listings").update(patch).eq("id", id);
+  if (error) throw error;
+}
+
+/** Replace the image set for an edited listing (delete-then-insert in one call). */
+export async function replaceListingImages(listingId: string, urls: string[]) {
+  const { error } = await supabase
+    .from("listing_images")
+    .delete()
+    .eq("listing_id", listingId);
+  if (error) throw error;
+  if (urls.length === 0) return;
+  const { error: insErr } = await supabase
+    .from("listing_images")
+    .insert(urls.map((url, i) => ({ listing_id: listingId, url, position: i })));
+  if (insErr) throw insErr;
 }
 
 // ── Search suggestions / trending ────────────────────────────────────────

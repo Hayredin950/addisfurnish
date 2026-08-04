@@ -262,6 +262,12 @@ const en = {
   "profile.priceMin": "Minimum price (ETB)",
   "profile.priceMax": "Maximum price (ETB)",
   "profile.telegramAlerts": "Send me Telegram alerts for matching new listings",
+  "profile.telegramConnect": "Connect Telegram",
+  "profile.telegramConnectHint":
+    "Get alerts on Telegram when someone messages you, requests a callback, or a new listing matches your preferences.",
+  "profile.telegramConnected": "Telegram connected",
+  "profile.telegramDisconnect": "Disconnect",
+  "profile.telegramDisconnected": "Telegram disconnected",
   "profile.savePrefs": "Save preferences",
   "otp.title": "Verify your phone number",
   "otp.verified": "Verified",
@@ -722,6 +728,12 @@ const am: Record<keyof Dict, string> = {
   "profile.priceMin": "ዝቅተኛ ዋጋ (ETB)",
   "profile.priceMax": "ከፍተኛ ዋጋ (ETB)",
   "profile.telegramAlerts": "የሚዛመዱ አዲስ ማስታወቂያዎችን በቴሌግራም ይላኩልኝ",
+  "profile.telegramConnect": "ቴሌግራም ያገናኙ",
+  "profile.telegramConnectHint":
+    "ሰው ሲልክልዎ፣ ጥሪ ሲጠይቅ ወይም ከምርጫዎ ጋር የሚስማማ አዲስ ዕቃ ሲወጣ በቴሌግራም ማሳወቂያ ይደርስዎታል።",
+  "profile.telegramConnected": "ቴሌግራም ተገናኝቷል",
+  "profile.telegramDisconnect": "አቋርጥ",
+  "profile.telegramDisconnected": "ቴሌግራም ተቋርጧል",
   "profile.savePrefs": "ምርጫዎችን ያስቀምጡ",
   "otp.title": "ስልክ ቁጥርዎን ያረጋግጡ",
   "otp.verified": "የተረጋገጠ",
@@ -829,8 +841,7 @@ const am: Record<keyof Dict, string> = {
   "admin.deleteListingTitle": "ይህን ማስታወቂያ በቋሚነት ይሰርዙ?",
   "admin.deleteListingBody": "ይህ ማስታወቂያውንና ፎቶዎቹን ከገበያ ያስወግዳል። ወደ ኋላ መመለስ አይቻልም።",
   "admin.deleteCategoryTitle": "ይህን ምድብ ይሰርዙ?",
-  "admin.deleteCategoryBody":
-    "ይህ ምድብ ንዑስ-ምድቦች አሉት — እነሱም ይወገዳሉ። ወደ ኋላ መመለስ አይቻልም።",
+  "admin.deleteCategoryBody": "ይህ ምድብ ንዑስ-ምድቦች አሉት — እነሱም ይወገዳሉ። ወደ ኋላ መመለስ አይቻልም።",
   "nav.admin": "ዳሽቦርድ",
   "verif.becomeSeller": "ሻጭ ይሁኑ",
   "verif.becomeSellerHint":

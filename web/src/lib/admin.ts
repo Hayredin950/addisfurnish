@@ -26,36 +26,6 @@ async function currentAdminId(): Promise<string | null> {
   return isAdmin ? data.user.id : null;
 }
 
-async function sendSellerTelegramAlert(
-  sellerId: string,
-  status: "approved" | "rejected",
-  reason: string | null,
-): Promise<void> {
-  const token = process.env["TELEGRAM_BOT_TOKEN"];
-  if (!token) return;
-  try {
-    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const { data: profile } = await supabaseAdmin
-      .from("profiles")
-      .select("telegram_chat_id")
-      .eq("id", sellerId)
-      .maybeSingle();
-    const chatId = profile?.telegram_chat_id;
-    if (!chatId) return;
-    const text =
-      status === "approved"
-        ? "✅ Good news! Your shop has been verified on AddisFurnish. Your verified badge is now live."
-        : `❌ Your AddisFurnish verification was not approved${reason ? `: ${reason}` : "."} You can edit your details and resubmit.`;
-    await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ chat_id: chatId, text: text.slice(0, 4096) }),
-    });
-  } catch {
-    // Best-effort — the in-app notification already fired.
-  }
-}
-
 /**
  * Approve or reject a seller verification document. Records the decision in
  * the immutable audit trail, flips the verified badge on approval, and
@@ -103,6 +73,7 @@ export const adminVerifyDocument = createServerFn({ method: "POST" })
 
     // Notify the seller in-app. Direct insert (not the RPC): the service-role
     // client has no auth.uid(), which would make an auth.uid()-based RPC a no-op.
+    // The telegram_on_notification trigger forwards this to Telegram and push.
     await supabaseAdmin.from("notifications").insert({
       user_id: doc.seller_id,
       type: data.action === "approved" ? "seller_verified" : "seller_rejected",
@@ -111,7 +82,6 @@ export const adminVerifyDocument = createServerFn({ method: "POST" })
         reason: data.action === "rejected" ? (data.reason ?? "") : "",
       },
     });
-    await sendSellerTelegramAlert(doc.seller_id, data.action, data.reason ?? null);
 
     return { ok: true };
   });
@@ -139,7 +109,6 @@ export const adminVerifySellerDirect = createServerFn({ method: "POST" })
       type: "seller_verified",
       payload: { status: "approved" },
     });
-    await sendSellerTelegramAlert(data.userId, "approved", null);
     return { ok: true };
   });
 

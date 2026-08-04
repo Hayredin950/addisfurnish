@@ -1,1 +1,15 @@
 project_id = "ctgulhtaefzsdfemggty"
+
+# Telegram's webhook POST carries no Authorization header, so Supabase's
+# default JWT check would 401 every update before the function runs.
+# The function authenticates Telegram itself via the X-Telegram-Bot-Api-Secret-Token
+# header instead (see supabase/functions/telegram-bot/index.ts).
+[functions.telegram-bot]
+verify_jwt = false
+
+# Called two ways: by the telegram_on_notification DB trigger (anon key, and
+# guarded by a notifications row-existence check) and directly by both apps
+# (real user JWT, verified in-function). A blanket verify_jwt can't express
+# that split, so the function checks per request shape.
+[functions.telegram-notify]
+verify_jwt = false

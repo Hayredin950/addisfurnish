@@ -26,8 +26,10 @@ import {
   fetchMyProfile,
   fetchReviews,
   fetchFavoriteIds,
+  pingListingView,
   recordListingView,
   sendMessage,
+  submitReport,
   submitReview,
   toggleFavorite,
 } from "../../lib/api";
@@ -81,12 +83,19 @@ export default function ListingDetailScreen() {
   const [reviewOpen, setReviewOpen] = useState(false);
   const [rating, setRating] = useState(5);
   const [comment, setComment] = useState("");
+  const [reportOpen, setReportOpen] = useState(false);
+  const [reportReason, setReportReason] = useState("");
+  const [reportDetails, setReportDetails] = useState("");
+  const [reportBusy, setReportBusy] = useState(false);
+  const [reportSent, setReportSent] = useState(false);
   const [imageIndex, setImageIndex] = useState(0);
   const { width: screenWidth } = useWindowDimensions();
 
   useEffect(() => {
     if (!id) return;
-    void recordListingView(id);
+    // The view must be recorded before the ping: the edge function's throttle
+    // reads listing_views, and a ping that arrives first sees an empty window.
+    void recordListingView(id).then(() => pingListingView(id));
     if (user) {
       void fetchFavoriteIds(user.id).then(setFavIds);
     }
@@ -148,6 +157,29 @@ export default function ListingDetailScreen() {
       // ignore
     }
   }, [user, item, rating, comment, reviews]);
+
+  const submitReportNow = useCallback(async () => {
+    if (!user || !item) return;
+    const selected = REPORT_REASONS.find((r) => r.value === reportReason);
+    if (!selected) return;
+    setReportBusy(true);
+    try {
+      await submitReport({
+        reporterId: user.id,
+        reason: selected.labelEn,
+        details: reportDetails,
+        listingId: item.id,
+        reportedUserId: item.seller_id,
+      });
+      setReportSent(true);
+      setReportReason("");
+      setReportDetails("");
+    } catch {
+      // ignore
+    } finally {
+      setReportBusy(false);
+    }
+  }, [user, item, reportReason, reportDetails]);
 
   const similarListings = useMemo(
     () => (similar.data ?? []).filter((l) => l.id !== id),
@@ -536,9 +568,111 @@ export default function ListingDetailScreen() {
           </View>
         </View>
       </Modal>
+
+      {/* Report modal */}
+      <Modal
+        visible={reportOpen}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setReportOpen(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalSheet}>
+            {reportSent ? (
+              <>
+                <View style={{ alignItems: "center", gap: 10, paddingVertical: 10 }}>
+                  <Ionicons name="shield-checkmark" size={44} color={colors.success} />
+                  <Text style={styles.modalTitle}>{t("reportSent")}</Text>
+                  <Button
+                    title={t("back")}
+                    variant="outline"
+                    onPress={() => {
+                      setReportSent(false);
+                      setReportOpen(false);
+                    }}
+                  />
+                </View>
+              </>
+            ) : (
+              <>
+                <Text style={styles.modalTitle}>{t("reportTitle")}</Text>
+                <View style={{ gap: 8, marginTop: 12 }}>
+                  {REPORT_REASONS.map((r) => (
+                    <Pressable
+                      key={r.value}
+                      style={[
+                        styles.reasonRow,
+                        reportReason === r.value && styles.reasonRowActive,
+                      ]}
+                      onPress={() => setReportReason(r.value)}
+                    >
+                      <Ionicons
+                        name={reportReason === r.value ? "radio-button-on" : "radio-button-off"}
+                        size={18}
+                        color={reportReason === r.value ? colors.primary : colors.textSoft}
+                      />
+                      <Text style={styles.reasonText}>{t(r.labelKey)}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+                <TextInput
+                  value={reportDetails}
+                  onChangeText={setReportDetails}
+                  placeholder={t("reportDetails")}
+                  multiline
+                  style={styles.messageInput}
+                />
+                <Button
+                  title={t("reportSubmit")}
+                  onPress={submitReportNow}
+                  loading={reportBusy}
+                  disabled={!reportReason || reportBusy}
+                />
+              </>
+            )}
+          </View>
+        </View>
+      </Modal>
+
+      {/* Report trigger */}
+      <View style={styles.reportRow}>
+        <Pressable
+          style={styles.reportBtn}
+          onPress={() => {
+            if (!user) {
+              router.push("/auth");
+              return;
+            }
+            setReportOpen(true);
+          }}
+        >
+          <Ionicons name="flag-outline" size={15} color={colors.danger} />
+          <Text style={styles.reportText}>{t("reportTitle")}</Text>
+        </Pressable>
+      </View>
     </ScrollView>
   );
 }
+
+const REPORT_REASONS = [
+  { value: "scam", labelKey: "reportScam" as const, labelEn: "Suspected scam or fraud" },
+  {
+    value: "misleading",
+    labelKey: "reportMisleading" as const,
+    labelEn: "Misleading photos or description",
+  },
+  {
+    value: "unavailable",
+    labelKey: "reportUnavailable" as const,
+    labelEn: "Item is not actually available",
+  },
+  {
+    value: "offensive",
+    labelKey: "reportOffensive" as const,
+    labelEn: "Offensive or abusive behaviour",
+  },
+  { value: "other", labelKey: "reportOther" as const, labelEn: "Other" },
+] as const;
 
 function DetailItem({ label, value }: { label: string; value: string }) {
   return (
@@ -707,4 +841,24 @@ const styles = StyleSheet.create({
     gap: 14,
     margin: spacing.xl,
   },
+  reasonRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: colors.secondary,
+    borderRadius: radius.md,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+  },
+  reasonRowActive: { borderWidth: 1, borderColor: colors.primary },
+  reasonText: { fontSize: 13.5, color: colors.text, flex: 1 },
+  reportRow: { alignItems: "center", marginTop: spacing.xl },
+  reportBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  reportText: { fontSize: 13, color: colors.danger, fontWeight: "600" },
 });

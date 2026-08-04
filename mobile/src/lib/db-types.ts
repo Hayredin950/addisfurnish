@@ -284,21 +284,30 @@ export type Database = {
           body: string;
           conversation_id: string;
           created_at: string;
+          deleted_at: string | null;
+          edited_at: string | null;
           id: string;
+          read_at: string | null;
           sender_id: string;
         };
         Insert: {
           body: string;
           conversation_id: string;
           created_at?: string;
+          deleted_at?: string | null;
+          edited_at?: string | null;
           id?: string;
+          read_at?: string | null;
           sender_id: string;
         };
         Update: {
           body?: string;
           conversation_id?: string;
           created_at?: string;
+          deleted_at?: string | null;
+          edited_at?: string | null;
           id?: string;
+          read_at?: string | null;
           sender_id?: string;
         };
         Relationships: [
@@ -362,6 +371,8 @@ export type Database = {
           telegram: string | null;
           telegram_chat_id: string | null;
           telegram_link_token: string | null;
+          telegram_link_token_expires_at: string | null;
+          telegram_linked_at: string | null;
           updated_at: string;
           verified: boolean;
           whatsapp: string | null;
@@ -387,6 +398,8 @@ export type Database = {
           telegram?: string | null;
           telegram_chat_id?: string | null;
           telegram_link_token?: string | null;
+          telegram_link_token_expires_at?: string | null;
+          telegram_linked_at?: string | null;
           updated_at?: string;
           verified?: boolean;
           whatsapp?: string | null;
@@ -412,6 +425,8 @@ export type Database = {
           telegram?: string | null;
           telegram_chat_id?: string | null;
           telegram_link_token?: string | null;
+          telegram_link_token_expires_at?: string | null;
+          telegram_linked_at?: string | null;
           updated_at?: string;
           verified?: boolean;
           whatsapp?: string | null;
@@ -842,6 +857,14 @@ export type Database = {
       };
       claim_push_token: {
         Args: { _token: string; _platform: string };
+        Returns: undefined;
+      };
+      mint_telegram_link_token: {
+        Args: Record<string, never>;
+        Returns: string | null;
+      };
+      unlink_telegram: {
+        Args: Record<string, never>;
         Returns: undefined;
       };
       record_listing_view: {

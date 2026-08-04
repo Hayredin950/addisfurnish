@@ -21,6 +21,8 @@ type Profile = {
   phone_verified_at: string | null;
   whatsapp: string | null;
   telegram: string | null;
+  /** Set once the user links the notification bot; null when disconnected. */
+  telegram_chat_id: string | null;
   preferred_language: string;
   registration_number: string | null;
   /** Shop location pinned on the map (WGS84); null until the seller sets it. */

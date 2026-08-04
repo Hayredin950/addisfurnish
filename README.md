@@ -62,14 +62,19 @@ This app implements the AddisFurnish used-furniture marketplace spec:
 - **Discovery** — live view counting, recently viewed (“Seen this”), popular/trending searches, shareable listing links.
 - **Communication** — realtime chat delivery, in-app notification center (bell + `/notifications`), callback requests with contacted/closed tracking, price-drop alerts on saved items, saved-search match alerts.
 - **Seller tools** — online/offline indicator, WhatsApp & Telegram contact buttons, dashboard stats + 14-day views chart, registration/license number field, shop logo upload.
-- **Telegram** — auto-posts every new listing to a public channel; account-linking bots are scaffolded (see `supabase/functions/README.md`).
+- **Telegram** — auto-posts every new listing to a public channel, and delivers
+  buyer/seller alerts through opt-in bots (account linking via `t.me` deep link,
+  `/stop` and `/help` commands, English + Amharic). Delivery lives in the
+  `telegram-notify` edge function, so web, mobile and admin actions all use it.
+  Setup: `supabase/functions/README.md`.
 
 ### Database
 
 Apply the migrations with `supabase db push`. Migrations add `reports`,
 `notifications`, `recently_viewed`, `search_log`, `listing_views`,
 `saved_searches`, `buyer_preferences`, `seller_verification_documents`,
-`verification_decisions`, `push_tokens`, plus the phone-OTP auth columns.
+`verification_decisions`, `push_tokens`, the Telegram linking columns and
+triggers, plus the phone-OTP auth columns.
 
 ### Making yourself an admin
 
@@ -79,11 +84,14 @@ Run this once in the Supabase SQL editor, replacing the user id:
 insert into public.user_roles (user_id, role) values ('<your-auth-user-id>', 'admin');
 ```
 
-### Telegram channel posting (optional)
+### Telegram channel + notification bots (optional)
 
-Set these environment variables to enable auto-posting to a public channel:
-`TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHANNEL_ID`, `SITE_URL`. Full setup in
-`supabase/functions/README.md`.
+Create a bot with @BotFather, add it as an admin to a public channel, then set
+`TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHANNEL_ID`, `TELEGRAM_WEBHOOK_SECRET` and
+`SITE_URL` as edge-function secrets, plus `VITE_TELEGRAM_BOT_USERNAME` /
+`EXPO_PUBLIC_TELEGRAM_BOT_USERNAME` for the apps. With the token unset every
+Telegram path is a clean no-op. Full walkthrough in
+[`supabase/functions/README.md`](supabase/functions/README.md).
 
 ### Phone OTP (login + verification)
 

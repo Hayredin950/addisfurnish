@@ -40,3 +40,9 @@ web/.env.*
 *.njsproj
 *.sln
 *.sw?
+
+# Supabase CLI scratch
+supabase/.temp/
+
+# Deno lockfile from local edge-function typechecking
+deno.lock

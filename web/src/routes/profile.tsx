@@ -8,7 +8,7 @@ import { useAuth } from "@/lib/auth";
 import { useLang } from "@/lib/i18n";
 import { RequireAuth } from "@/components/RequireAuth";
 import { LocationPicker, type Coords } from "@/components/LocationPicker";
-import { getTelegramDeepLink } from "@/lib/telegram";
+import { getTelegramConnectUrl, disconnectTelegram, telegramConfigured } from "@/lib/telegram";
 import { sendPhoneOtp, verifyPhoneOtp } from "@/lib/otp";
 import {
   buyerPreferencesQuery,
@@ -75,6 +75,7 @@ function ProfilePage() {
   const [prefMin, setPrefMin] = useState<string>(prefs?.price_min ? String(prefs.price_min) : "");
   const [prefMax, setPrefMax] = useState<string>(prefs?.price_max ? String(prefs.price_max) : "");
   const [prefTelegram, setPrefTelegram] = useState(prefs?.telegram_alerts_enabled ?? false);
+  const [telegramBusy, setTelegramBusy] = useState(false);
   const [otpPhone, setOtpPhone] = useState(profile?.phone ?? "");
 
   useEffect(() => {
@@ -202,12 +203,27 @@ function ProfilePage() {
     );
 
   const linkTelegram = async () => {
-    const result = await getTelegramDeepLink({ data: { userId: user!.id } });
-    if (!result.ok || result.skipped || !result.url) {
+    setTelegramBusy(true);
+    const url = await getTelegramConnectUrl();
+    setTelegramBusy(false);
+    if (!url) {
       toast.error(t("toast.requestFailed"));
       return;
     }
-    window.open(result.url, "_blank");
+    window.open(url, "_blank");
+  };
+
+  const unlinkTelegram = async () => {
+    setTelegramBusy(true);
+    const ok = await disconnectTelegram();
+    setTelegramBusy(false);
+    if (!ok) {
+      toast.error(t("toast.requestFailed"));
+      return;
+    }
+    // The badge reads profile.telegram_chat_id, so refresh the cached profile.
+    await queryClient.invalidateQueries({ queryKey: ["profile"] });
+    toast.success(t("profile.telegramDisconnected"));
   };
 
   return (
@@ -389,14 +405,45 @@ function ProfilePage() {
           </div>
         ) : null}
 
-        <div className="rounded-lg border border-dashed bg-secondary/40 p-4">
-          <p className="text-sm font-medium">{t("nav.notifications")}</p>
-          <p className="mt-1 text-xs text-muted-foreground">{t("profile.languageNote")}</p>
-          <Button type="button" variant="outline" size="sm" className="mt-3" onClick={linkTelegram}>
-            <Send className="mr-1.5 h-4 w-4" />
-            {t("listing.telegram")}
-          </Button>
-        </div>
+        {telegramConfigured() ? (
+          <div className="rounded-lg border border-dashed bg-secondary/40 p-4">
+            <p className="text-sm font-medium">{t("profile.telegramConnect")}</p>
+            {profile?.telegram_chat_id ? (
+              <>
+                <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-success/10 px-3 py-1 text-xs font-medium text-success">
+                  <BadgeCheck className="h-3.5 w-3.5" /> {t("profile.telegramConnected")}
+                </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="mt-3 block"
+                  disabled={telegramBusy}
+                  onClick={unlinkTelegram}
+                >
+                  {t("profile.telegramDisconnect")}
+                </Button>
+              </>
+            ) : (
+              <>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {t("profile.telegramConnectHint")}
+                </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="mt-3"
+                  disabled={telegramBusy}
+                  onClick={linkTelegram}
+                >
+                  <Send className="mr-1.5 h-4 w-4" />
+                  {t("profile.telegramConnect")}
+                </Button>
+              </>
+            )}
+          </div>
+        ) : null}
 
         <div className="rounded-lg border bg-card p-4">
           <p className="flex items-center gap-2 text-sm font-medium">
