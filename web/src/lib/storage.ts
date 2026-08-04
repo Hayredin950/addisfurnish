@@ -4,15 +4,30 @@ import { supabase } from "@/integrations/supabase/client";
 const BUCKET = "listing-images";
 const DOCS_BUCKET = "verification-docs";
 
-/** Resolves a stored image reference (storage path or absolute URL) to a usable src. */
+/**
+ * Resolves a stored image reference (storage path or absolute URL) to a usable src.
+ *
+ * `listing-images` is a public bucket, so it resolves to a plain CDN URL — no
+ * round trip, no expiry, and cacheable. Signing was also actively harmful
+ * there: it makes Postgres evaluate every SELECT policy on storage.objects,
+ * including one that calls has_role(), which anon may not execute — so
+ * logged-out visitors saw no images at all.
+ *
+ * Private buckets (verification documents) still need a signed URL.
+ */
 export function useImageUrl(pathOrUrl: string | null | undefined, bucket: string = BUCKET) {
+  const isPublicBucket = bucket === BUCKET;
   return useQuery({
     queryKey: ["image-url", bucket, pathOrUrl],
     enabled: !!pathOrUrl,
-    staleTime: 1000 * 60 * 30,
+    // Signed URLs last an hour; re-fetch well before they expire.
+    staleTime: isPublicBucket ? Infinity : 1000 * 60 * 30,
     queryFn: async () => {
       const value = pathOrUrl!;
       if (value.startsWith("http")) return value;
+      if (isPublicBucket) {
+        return supabase.storage.from(bucket).getPublicUrl(value).data.publicUrl;
+      }
       const { data, error } = await supabase.storage.from(bucket).createSignedUrl(value, 60 * 60);
       if (error) throw error;
       return data.signedUrl;
