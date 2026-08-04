@@ -13,7 +13,7 @@ function formatPrice(value: number): string {
  *
  * Setup:
  *  1. Create a bot with @BotFather and add it as an admin to your channel.
- *  2. Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHANNEL_ID (e.g. "@suqbet_listings")
+ *  2. Set TELEGRAM_BOT_TOKEN and TELEGRAM_CHANNEL_ID (e.g. "@addisfurnish_listings")
  *     as environment variables on the server.
  *  3. Set SITE_URL to the public app URL so channel posts link back to the listing.
  *

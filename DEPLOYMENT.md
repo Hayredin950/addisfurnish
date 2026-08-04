@@ -140,7 +140,7 @@ bypass the SSR function and break routes/auth.
    picks it up automatically.
 7. **Environment variables** (Project → Settings → Environment Variables):
    `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`, and optionally
-   `VITE_SITE_URL` (your production domain, e.g. `https://suqbet.com` — used
+   `VITE_SITE_URL` (your production domain, e.g. `https://addisfurnish.vercel.app` — used
    for the og:image URL in social shares).
 8. Deploy, then attach your custom domain under **Settings → Domains**.
 
@@ -224,7 +224,7 @@ profiles — edit as needed.
 |---|---|---|---|
 | `web/.env` | `VITE_SUPABASE_URL` | ✅ | Public project URL |
 | `web/.env` | `VITE_SUPABASE_PUBLISHABLE_KEY` | ✅ | Public anon/publishable key |
-| `web/.env` | `VITE_SITE_URL` | optional | Production domain, e.g. `https://suqbet.com` (social share image) |
+| `web/.env` | `VITE_SITE_URL` | optional | Production domain, e.g. `https://addisfurnish.vercel.app` (social share image) |
 | `web/.env` | `SUPABASE_SERVICE_ROLE_KEY` | server-only | Secret — never in client bundles |
 | `mobile/.env` | `EXPO_PUBLIC_SUPABASE_URL` | ✅ | Public project URL |
 | `mobile/.env` | `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY` | ✅ | Public anon/publishable key |

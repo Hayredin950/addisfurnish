@@ -86,7 +86,7 @@ function ErrorComponent({ error, reset }: { error: Error; reset: () => void }) {
   );
 }
 
-// Set VITE_SITE_URL at build time (e.g. https://suqbet.com) so social
+// Set VITE_SITE_URL at build time (e.g. https://addisfurnish.vercel.app) so social
 // platforms resolve the og:image to an absolute URL. Falls back to a
 // relative path when unset.
 const siteUrl = (import.meta.env["VITE_SITE_URL"] as string | undefined) ?? "";

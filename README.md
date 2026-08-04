@@ -9,7 +9,7 @@ Vercel or Cloudflare, the mobile app ships via Expo EAS.
 ## Repository structure
 
 ```
-suqbet/
+addisfurnish/
 ├── web/          # Web app — React + TanStack Start + Vite (SSR), the marketplace UI
 ├── mobile/       # Mobile app — React Native + Expo (expo-router), companion iOS/Android app
 └── supabase/     # Shared backend — migrations, edge functions (telegram-bot, send-push)

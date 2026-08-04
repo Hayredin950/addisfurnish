@@ -14,8 +14,8 @@ Set these on the hosting environment (Vercel/Railway/Render envs):
 | Variable              | Example                      | Purpose                        |
 | --------------------- | ---------------------------- | ------------------------------ |
 | `TELEGRAM_BOT_TOKEN`  | `123456:ABC-DEF…`            | Bot from @BotFather            |
-| `TELEGRAM_CHANNEL_ID` | `@suqbet_listings`           | Channel where the bot is admin |
-| `SITE_URL`            | `https://suqbet.example.com` | Used to build the listing link |
+| `TELEGRAM_CHANNEL_ID` | `@addisfurnish_listings`           | Channel where the bot is admin |
+| `SITE_URL`            | `https://addisfurnish.vercel.app` | Used to build the listing link |
 
 ## 2. Buyer / seller notification bots (Phase 2 groundwork)
 
@@ -33,7 +33,7 @@ curl -X POST "https://api.telegram.org/bot<TOKEN>/setWebhook" \
 ```
 
 Set secrets: `TELEGRAM_BOT_TOKEN`, `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY`,
-and on the app server `TELEGRAM_BOT_USERNAME` (e.g. `suqbet_bot`).
+and on the app server `TELEGRAM_BOT_USERNAME` (e.g. `addisfurnish_bot`).
 
 Once a user has a `chat_id`, any alert is just an API call to
 `sendMessage`. Rate limits (~30 msg/s across users, ~20/min to one channel) only
