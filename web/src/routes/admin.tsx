@@ -29,7 +29,6 @@ import {
   adminVerificationQueueQuery,
   categoriesQuery,
   isAdminQuery,
-  pendingSellersQuery,
   type Category,
 } from "@/lib/marketplace";
 import {
@@ -37,7 +36,6 @@ import {
   adminRevokeSessions,
   adminUnbanUser,
   adminVerifyDocument,
-  adminVerifySellerDirect,
 } from "@/lib/admin";
 import { useAuth } from "@/lib/auth";
 import { useLang } from "@/lib/i18n";
@@ -98,7 +96,6 @@ function AdminPage() {
       <Tabs defaultValue="reports" className="mt-8">
         <TabsList className="flex-wrap">
           <TabsTrigger value="reports">{t("admin.reports")}</TabsTrigger>
-          <TabsTrigger value="sellers">{t("admin.sellers")}</TabsTrigger>
           <TabsTrigger value="users">{t("admin.users")}</TabsTrigger>
           <TabsTrigger value="verification">
             <ClipboardCheck className="mr-1.5 h-3.5 w-3.5" /> {t("admin.verification")}
@@ -114,9 +111,6 @@ function AdminPage() {
 
         <TabsContent value="reports" className="mt-6">
           <ReportsTab />
-        </TabsContent>
-        <TabsContent value="sellers" className="mt-6">
-          <SellersTab />
         </TabsContent>
         <TabsContent value="users" className="mt-6">
           <UsersTab />
@@ -205,141 +199,6 @@ function ReportsTab() {
         </li>
       ))}
     </ul>
-  );
-}
-
-function SellersTab() {
-  const { t } = useLang();
-  const queryClient = useQueryClient();
-  const { data: sellers } = useQuery(pendingSellersQuery());
-  const [banTarget, setBanTarget] = useState<{ id: string; name: string } | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  const verify = async (id: string) => {
-    // Routed through the server so the decision is audited and the seller is
-    // notified — the badge can never be granted without a log entry.
-    const res = await adminVerifySellerDirect({ data: { userId: id } });
-    if (!res.ok) {
-      toast.error(res.error ?? t("toast.updateFailed"));
-      return;
-    }
-    toast.success(t("admin.verifiedOk"));
-    queryClient.invalidateQueries({ queryKey: ["admin-sellers"] });
-    queryClient.invalidateQueries({ queryKey: ["admin-verification-decisions"] });
-  };
-
-  const revokeSessions = async (id: string) => {
-    const res = await adminRevokeSessions({ data: { userId: id } });
-    if (!res.ok) {
-      toast.error(res.error ?? t("toast.updateFailed"));
-      return;
-    }
-    toast.success(t("admin.sessionsRevoked"));
-  };
-
-  const confirmBan = async (hours: number, reason: string) => {
-    if (!banTarget) return;
-    setBusy(true);
-    const res = await adminBanUser({ data: { userId: banTarget.id, hours, reason } });
-    setBusy(false);
-    if (!res.ok) {
-      toast.error(res.error ?? t("toast.updateFailed"));
-      return;
-    }
-    toast.success(t("admin.banned"));
-    setBanTarget(null);
-    queryClient.invalidateQueries({ queryKey: ["admin-sellers"] });
-    queryClient.invalidateQueries({ queryKey: ["admin-all-users"] });
-  };
-
-  const unban = async (id: string) => {
-    const res = await adminUnbanUser({ data: { userId: id } });
-    if (!res.ok) {
-      toast.error(res.error ?? t("toast.updateFailed"));
-      return;
-    }
-    toast.success(t("admin.unbanned"));
-    queryClient.invalidateQueries({ queryKey: ["admin-sellers"] });
-    queryClient.invalidateQueries({ queryKey: ["admin-all-users"] });
-  };
-
-  if (!sellers || sellers.length === 0) {
-    return <p className="text-sm text-muted-foreground">{t("admin.noSellers")}</p>;
-  }
-
-  return (
-    <>
-      <p className="mb-3 text-xs text-muted-foreground">{t("admin.revokeSessionsHint")}</p>
-      <ul className="space-y-3">
-        {sellers.map((s) => {
-          const suspended = !!s.banned_until && new Date(s.banned_until) > new Date();
-          const name = s.shop_name ?? s.full_name;
-          return (
-            <li
-              key={s.id}
-              className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card p-4"
-            >
-              <div className="flex min-w-0 items-center gap-3">
-                <UserAvatar name={name} avatarUrl={s.shop_logo_url ?? s.avatar_url} size={36} />
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium">{name}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {s.city ?? "—"} · {timeAgo(s.created_at)}
-                  </p>
-                  {suspended ? (
-                    <p className="text-xs font-medium text-destructive">
-                      {t("admin.suspendedUntil", {
-                        date: new Date(s.banned_until!).toLocaleString(),
-                      })}
-                      {s.ban_reason ? ` — ${s.ban_reason}` : ""}
-                    </p>
-                  ) : null}
-                </div>
-              </div>
-              <div className="flex shrink-0 flex-wrap gap-2">
-                {s.shop_slug ? (
-                  <Button asChild size="sm" variant="ghost">
-                    <Link to="/shop/$slug" params={{ slug: s.shop_slug }}>
-                      {t("listing.visitShop")}
-                    </Link>
-                  </Button>
-                ) : null}
-                <Button size="sm" variant="outline" onClick={() => revokeSessions(s.id)}>
-                  <LogOut className="mr-1.5 h-3.5 w-3.5" /> {t("admin.revokeSessions")}
-                </Button>
-                {suspended ? (
-                  <Button size="sm" variant="outline" onClick={() => unban(s.id)}>
-                    <ShieldCheck className="mr-1.5 h-3.5 w-3.5" /> {t("admin.unban")}
-                  </Button>
-                ) : (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => setBanTarget({ id: s.id, name })}
-                    className="text-destructive"
-                  >
-                    <Ban className="mr-1.5 h-3.5 w-3.5" /> {t("admin.ban")}
-                  </Button>
-                )}
-                <Button size="sm" onClick={() => verify(s.id)}>
-                  <BadgeCheck className="mr-1.5 h-4 w-4" /> {t("admin.approve")}
-                </Button>
-              </div>
-            </li>
-          );
-        })}
-      </ul>
-
-      <BanDialog
-        open={!!banTarget}
-        onOpenChange={(open) => {
-          if (!open) setBanTarget(null);
-        }}
-        onConfirm={confirmBan}
-        subjectName={banTarget?.name ?? ""}
-        pending={busy}
-      />
-    </>
   );
 }
 
@@ -468,22 +327,21 @@ function UsersTab() {
                   <Button size="sm" variant="outline" onClick={() => revoke(u.id)}>
                     <LogOut className="mr-1.5 h-3.5 w-3.5" /> {t("admin.revokeSessions")}
                   </Button>
-                  {suspended ? (
-                    <Button size="sm" variant="outline" onClick={() => unban(u.id)}>
-                      <ShieldCheck className="mr-1.5 h-3.5 w-3.5" /> {t("admin.unban")}
-                    </Button>
-                  ) : (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="text-destructive"
-                      // An admin banning themselves would lock them out.
-                      disabled={u.id === user?.id}
-                      onClick={() => setBanTarget({ id: u.id, name })}
-                    >
-                      <Ban className="mr-1.5 h-3.5 w-3.5" /> {t("admin.ban")}
-                    </Button>
-                  )}
+                  {/* Both actions are always available: the profiles mirror can lag
+                      GoTrue, so "Lift suspension" must never depend on it. */}
+                  <Button size="sm" variant="outline" onClick={() => unban(u.id)}>
+                    <ShieldCheck className="mr-1.5 h-3.5 w-3.5" /> {t("admin.unban")}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="text-destructive"
+                    // An admin banning themselves would lock them out.
+                    disabled={u.id === user?.id}
+                    onClick={() => setBanTarget({ id: u.id, name })}
+                  >
+                    <Ban className="mr-1.5 h-3.5 w-3.5" /> {t("admin.ban")}
+                  </Button>
                 </div>
               </li>
             );

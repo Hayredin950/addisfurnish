@@ -372,7 +372,7 @@ const en = {
   "admin.reporterNotified": "Resolved — the reporter was notified",
   "admin.revokeSessionsHint":
     "Signs the account out on every device by deleting its sessions and refresh tokens. They can sign in again immediately.",
-  "nav.admin": "Admin dashboard",
+  "nav.admin": "Dashboard",
   "verif.becomeSeller": "Become a seller",
   "verif.becomeSellerHint":
     "Fill in your shop details above and save. You can list items right away — the verified badge comes after document review.",
@@ -820,7 +820,7 @@ const am: Record<keyof Dict, string> = {
   "admin.reporterNotified": "ተፈትቷል — ጠቋሚው ተሳውቋል",
   "admin.revokeSessionsHint":
     "ክፍለ-ጊዜዎቹንና ቶከኖቹን በመሰረዝ መለያውን ከሁሉም መሣሪያዎች ያስወጣል። ወዲያውኑ እንደገና መግባት ይችላሉ።",
-  "nav.admin": "የአስተዳዳሪ ዳሽቦርድ",
+  "nav.admin": "ዳሽቦርድ",
   "verif.becomeSeller": "ሻጭ ይሁኑ",
   "verif.becomeSellerHint":
     "ከላይ የሱቅ ዝርዝሮችዎን ይሙሉ እና ያስቀምጡ። ወዲያውኑ መሸጥ ይችላሉ — የተረጋገጠ ምልክቱ ከሰነድ ግምገማ በኋላ ይመጣል።",
