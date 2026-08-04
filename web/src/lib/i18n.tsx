@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
 
 export type Lang = "en" | "am";
 
-const STORAGE_KEY = "suqbet-lang";
+const STORAGE_KEY = "addisfurnish-lang";
 
 const en = {
   // ── Global / header ──────────────────────────────────────────────

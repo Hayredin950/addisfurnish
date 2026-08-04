@@ -1,15 +1,15 @@
 {
   "expo": {
     "name": "AddisFurnish",
-    "slug": "suqbet",
+    "slug": "addisfurnish",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "suqbet",
+    "scheme": "addisfurnish",
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.suqbet.app",
+      "bundleIdentifier": "com.addisfurnish.app",
       "infoPlist": {
         "NSCameraUsageDescription": "AddisFurnish uses the camera to take photos of the furniture you want to sell.",
         "NSPhotoLibraryUsageDescription": "AddisFurnish accesses your photos so you can add pictures to your furniture listings.",
@@ -17,7 +17,7 @@
       }
     },
     "android": {
-      "package": "com.suqbet.app",
+      "package": "com.addisfurnish.app",
       "adaptiveIcon": {
         "backgroundColor": "#FBF7F0",
         "foregroundImage": "./assets/images/android-icon-foreground.png",

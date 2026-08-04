@@ -23,7 +23,7 @@ function LanguageSync() {
   const profileLang = profile?.preferred_language === "am" ? "am" : "en";
   useEffect(() => {
     if (!profile) return;
-    const stored = window.localStorage.getItem("suqbet-lang");
+    const stored = window.localStorage.getItem("addisfurnish-lang");
     if (!stored && profileLang !== lang) setLang(profileLang);
   }, [profile, lang, profileLang, setLang]);
   return null;

@@ -3,7 +3,7 @@ import { AppWindow, Download, X } from "lucide-react";
 import { useLang } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
 
-const DISMISS_KEY = "suqbet-app-banner-dismissed";
+const DISMISS_KEY = "addisfurnish-app-banner-dismissed";
 
 /** Mobile app download banner (spec §10). Links are placeholders until the app ships. */
 export function MobileAppBanner() {

@@ -19,7 +19,7 @@ for the public and testers. The repo is split into three parts:
 | Edge functions | ⚠️ Exist (`send-push`, `telegram-bot`) but **not deployed** |
 | Web app | ⚠️ Builds clean (Nitro); not deployed to your own domain yet |
 | Mobile app | ⚠️ Builds clean; **no EAS project yet** (no `projectId` → no production push tokens) |
-| GitHub | ✅ `github.com/Hayredin950/suqbet`; `.env` correctly untracked |
+| GitHub | ✅ `github.com/Hayredin950/addisfurnish`; `.env` correctly untracked |
 | SMS OTP | ⚠️ Dev mode (code shown in console) — needs a real SMS provider |
 | Supabase CLI | ❌ Not installed on this machine yet |
 
@@ -30,7 +30,7 @@ for the public and testers. The repo is split into three parts:
 1. Commit whatever is pending and push:
 
 ```bash
-cd /home/hayredin/Documents/pro/suqbet
+cd /home/hayredin/Documents/pro/addisfurnish
 git add -A && git commit -m "Deployment prep" && git push origin main
 ```
 
@@ -59,7 +59,7 @@ git check-ignore web/.env mobile/.env && echo "ignored ✓"
 ```bash
 npm i -g supabase            # or: brew install supabase/tap/supabase
 supabase login               # opens browser; use the account that owns the project
-cd /home/hayredin/Documents/pro/suqbet
+cd /home/hayredin/Documents/pro/addisfurnish
 supabase link --project-ref ssihhmhsptlbalidutqa
 ```
 
@@ -102,7 +102,7 @@ These are **mandatory** for real users:
    password-reset/welcome emails actually arrive.
 3. **Google OAuth:** add Client ID/Secret if you want "Continue with Google".
 4. **Redirect URLs:** add your production domain(s) to the allowlist. The mobile
-   app uses the `suqbet://` deep-link scheme — add `suqbet://` too.
+   app uses the `addisfurnish://` deep-link scheme — add `addisfurnish://` too.
 5. **Rate limits:** keep the built-in OTP rate limits (default is fine).
 
 ### 1.5 Project settings
@@ -131,8 +131,8 @@ with a `functions/__server.func` serverless function), so Vercel detects
 everything automatically. Do **not** add a `vercel.json` SPA rewrite — it would
 bypass the SSR function and break routes/auth.
 
-1. Push the repo to GitHub (already at `github.com/Hayredin950/suqbet`).
-2. Vercel dashboard → **Add New… → Project** → import `Hayredin950/suqbet`.
+1. Push the repo to GitHub (already at `github.com/Hayredin950/addisfurnish`).
+2. Vercel dashboard → **Add New… → Project** → import `Hayredin950/addisfurnish`.
 3. **Root directory:** `web`
 4. **Install command:** `npm ci` (a `package-lock.json` is committed)
 5. **Build command:** `NITRO_PRESET=vercel npm run build`
@@ -209,7 +209,7 @@ profiles — edit as needed.
 - [ ] `send-push` + `telegram-bot` deployed, secrets set
 - [ ] SMS provider configured (OTP actually delivered to phones)
 - [ ] Email provider (Resend/SMTP) configured
-- [ ] Redirect URLs include production domain + `suqbet://`
+- [ ] Redirect URLs include production domain + `addisfurnish://`
 - [ ] Web app deployed and reachable on your domain over HTTPS
 - [ ] Mobile builds exist for Android + iOS; testers have a build
 - [ ] `.env` confirmed untracked; anon key rotated before going public
