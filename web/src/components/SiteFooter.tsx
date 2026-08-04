@@ -9,7 +9,7 @@ export function SiteFooter() {
       <div className="mx-auto grid max-w-6xl gap-8 px-4 py-12 sm:grid-cols-3">
         <div>
           <p className="font-display text-lg font-semibold">
-            Suq<span className="text-primary">Bet</span>
+            Addis<span className="text-primary">Furnish</span>
           </p>
           <p className="mt-2 max-w-xs text-sm text-muted-foreground">{t("footer.tagline")}</p>
         </div>
