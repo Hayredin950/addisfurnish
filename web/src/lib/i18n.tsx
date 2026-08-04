@@ -372,6 +372,12 @@ const en = {
   "admin.reporterNotified": "Resolved — the reporter was notified",
   "admin.revokeSessionsHint":
     "Signs the account out on every device by deleting its sessions and refresh tokens. They can sign in again immediately.",
+  "admin.deleteListingTitle": "Delete this listing permanently?",
+  "admin.deleteListingBody":
+    "This removes the listing and its photos from the marketplace. This cannot be undone.",
+  "admin.deleteCategoryTitle": "Delete this category?",
+  "admin.deleteCategoryBody":
+    "This category has sub-categories — they will be removed too. This cannot be undone.",
   "nav.admin": "Dashboard",
   "verif.becomeSeller": "Become a seller",
   "verif.becomeSellerHint":
@@ -820,6 +826,11 @@ const am: Record<keyof Dict, string> = {
   "admin.reporterNotified": "ተፈትቷል — ጠቋሚው ተሳውቋል",
   "admin.revokeSessionsHint":
     "ክፍለ-ጊዜዎቹንና ቶከኖቹን በመሰረዝ መለያውን ከሁሉም መሣሪያዎች ያስወጣል። ወዲያውኑ እንደገና መግባት ይችላሉ።",
+  "admin.deleteListingTitle": "ይህን ማስታወቂያ በቋሚነት ይሰርዙ?",
+  "admin.deleteListingBody": "ይህ ማስታወቂያውንና ፎቶዎቹን ከገበያ ያስወግዳል። ወደ ኋላ መመለስ አይቻልም።",
+  "admin.deleteCategoryTitle": "ይህን ምድብ ይሰርዙ?",
+  "admin.deleteCategoryBody":
+    "ይህ ምድብ ንዑስ-ምድቦች አሉት — እነሱም ይወገዳሉ። ወደ ኋላ መመለስ አይቻልም።",
   "nav.admin": "ዳሽቦርድ",
   "verif.becomeSeller": "ሻጭ ይሁኑ",
   "verif.becomeSellerHint":

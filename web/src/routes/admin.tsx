@@ -45,6 +45,7 @@ import { BanDialog } from "@/components/admin/BanDialog";
 import { DocumentViewer } from "@/components/admin/DocumentViewer";
 import { useImageUrl } from "@/lib/storage";
 import { timeAgo, formatBirr } from "@/lib/format";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -647,6 +648,8 @@ function CategoriesTab() {
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [busy, setBusy] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<{ id: string } | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const roots = (categories ?? []).filter((c) => !c.parent_id);
   const children = (categories ?? []).filter((c) => c.parent_id);
@@ -695,14 +698,10 @@ function CategoriesTab() {
     invalidate();
   };
 
-  const remove = async (id: string, hasChildren: boolean) => {
-    if (
-      hasChildren &&
-      !window.confirm("This category has sub-categories — they will be removed too.")
-    ) {
-      return;
-    }
+  const remove = async (id: string) => {
+    setDeleting(true);
     const { error } = await supabase.from("categories").delete().eq("id", id);
+    setDeleting(false);
     if (error) {
       toast.error(t("toast.updateFailed"));
       return;
@@ -744,7 +743,12 @@ function CategoriesTab() {
           <button
             type="button"
             aria-label="Delete"
-            onClick={() => remove(cat.id, !!categories?.some((c) => c.parent_id === cat.id))}
+            onClick={() => {
+              const hasChildren = !!categories?.some((c) => c.parent_id === cat.id);
+              // Only sub-category owners need the warning — plain deletes go straight through.
+              if (hasChildren) setPendingDelete({ id: cat.id });
+              else void remove(cat.id);
+            }}
             className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
           >
             <Trash2 className="h-3.5 w-3.5" />
@@ -790,6 +794,23 @@ function CategoriesTab() {
           </li>
         ))}
       </ul>
+
+      <ConfirmDialog
+        open={!!pendingDelete}
+        onOpenChange={(open) => {
+          if (!open) setPendingDelete(null);
+        }}
+        title={t("admin.deleteCategoryTitle")}
+        description={t("admin.deleteCategoryBody")}
+        confirmLabel={t("action.confirmDelete")}
+        cancelLabel={t("action.cancel")}
+        pending={deleting}
+        onConfirm={() => {
+          if (!pendingDelete) return;
+          void remove(pendingDelete.id);
+          setPendingDelete(null);
+        }}
+      />
     </div>
   );
 }
@@ -798,6 +819,8 @@ function ListingsTab() {
   const { t } = useLang();
   const queryClient = useQueryClient();
   const { data: listings } = useQuery(adminListingsQuery());
+  const [pendingDelete, setPendingDelete] = useState<{ id: string; title: string } | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   const toggleFeatured = async (id: string, featured: boolean) => {
     const { error } = await supabase.from("listings").update({ featured }).eq("id", id);
@@ -811,8 +834,9 @@ function ListingsTab() {
   };
 
   const remove = async (id: string) => {
-    if (!window.confirm("Delete this listing permanently?")) return;
+    setDeleting(true);
     const { error } = await supabase.from("listings").delete().eq("id", id);
+    setDeleting(false);
     if (error) {
       toast.error(t("toast.updateFailed"));
       return;
@@ -822,38 +846,64 @@ function ListingsTab() {
   };
 
   return (
-    <ul className="space-y-2">
-      {(listings ?? []).map((l) => (
-        <li key={l.id} className="flex flex-wrap items-center gap-3 rounded-lg border bg-card p-3">
-          <Link to="/listing/$id" params={{ id: l.id }} className="min-w-0 flex-1">
-            <span className="block truncate text-sm font-medium">{l.title}</span>
-            <span className="text-xs text-muted-foreground">
-              {formatBirr(l.price)} · {t("dash.statsViews")}: {l.view_count} ·{" "}
-              {timeAgo(l.created_at)}
+    <>
+      <ul className="space-y-2">
+        {(listings ?? []).map((l) => (
+          <li
+            key={l.id}
+            className="flex flex-wrap items-center gap-3 rounded-lg border bg-card p-3"
+          >
+            <Link to="/listing/$id" params={{ id: l.id }} className="min-w-0 flex-1">
+              <span className="block truncate text-sm font-medium">{l.title}</span>
+              <span className="text-xs text-muted-foreground">
+                {formatBirr(l.price)} · {t("dash.statsViews")}: {l.view_count} ·{" "}
+                {timeAgo(l.created_at)}
+              </span>
+            </Link>
+            <span className="rounded-full bg-secondary px-2.5 py-0.5 text-xs capitalize">
+              {l.status}
             </span>
-          </Link>
-          <span className="rounded-full bg-secondary px-2.5 py-0.5 text-xs capitalize">
-            {l.status}
-          </span>
-          <Button
-            size="sm"
-            variant={l.featured ? "default" : "outline"}
-            onClick={() => toggleFeatured(l.id, !l.featured)}
-          >
-            <Star className={`mr-1.5 h-3.5 w-3.5 ${l.featured ? "fill-current" : ""}`} />
-            {l.featured ? "Featured" : "Feature"}
-          </Button>
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => remove(l.id)}
-            className="text-destructive"
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-          </Button>
-        </li>
-      ))}
-    </ul>
+            <Button
+              size="sm"
+              variant={l.featured ? "default" : "outline"}
+              onClick={() => toggleFeatured(l.id, !l.featured)}
+            >
+              <Star className={`mr-1.5 h-3.5 w-3.5 ${l.featured ? "fill-current" : ""}`} />
+              {l.featured ? "Featured" : "Feature"}
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setPendingDelete({ id: l.id, title: l.title })}
+              className="text-destructive"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </Button>
+          </li>
+        ))}
+      </ul>
+
+      <ConfirmDialog
+        open={!!pendingDelete}
+        onOpenChange={(open) => {
+          if (!open) setPendingDelete(null);
+        }}
+        title={t("admin.deleteListingTitle")}
+        description={
+          pendingDelete
+            ? `${pendingDelete.title} — ${t("admin.deleteListingBody")}`
+            : t("admin.deleteListingBody")
+        }
+        confirmLabel={t("action.confirmDelete")}
+        cancelLabel={t("action.cancel")}
+        pending={deleting}
+        onConfirm={() => {
+          if (!pendingDelete) return;
+          void remove(pendingDelete.id);
+          setPendingDelete(null);
+        }}
+      />
+    </>
   );
 }
 
