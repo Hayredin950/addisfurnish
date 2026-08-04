@@ -473,9 +473,7 @@ const en = {
   "listing.closeViewer": "Close",
 
   // ── Location sharing ─────────────────────────────────────────────
-  "loc.copy": "Copy location",
   "loc.copied": "Location copied",
-  "loc.openInMaps": "Open in Maps",
   "loc.share": "Share location",
   "loc.directions": "Directions",
 } as const;
@@ -920,9 +918,7 @@ const am: Record<keyof Dict, string> = {
   "listing.closeViewer": "ዝጋ",
 
   // ── Location sharing ─────────────────────────────────────────────
-  "loc.copy": "ቦታ ቅዳ",
   "loc.copied": "ቦታ ተቀድቷል",
-  "loc.openInMaps": "በካርታ ክፈት",
   "loc.share": "ቦታ አጋራ",
   "loc.directions": "አቅጣጫ",
 } as const;

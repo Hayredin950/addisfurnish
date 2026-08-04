@@ -594,7 +594,18 @@ export async function submitVerificationDocument(
 }
 
 export type AdminVerificationDoc = VerificationDocument & {
-  profiles?: { full_name: string; shop_name: string | null; shop_slug: string | null } | null;
+  profiles?: {
+    full_name: string;
+    shop_name: string | null;
+    shop_slug: string | null;
+    avatar_url?: string | null;
+    shop_logo_url?: string | null;
+    phone?: string | null;
+    city?: string | null;
+    shop_address?: string | null;
+    registration_number?: string | null;
+    created_at?: string;
+  } | null;
 };
 
 export function adminVerificationQueueQuery() {
@@ -604,12 +615,15 @@ export function adminVerificationQueueQuery() {
       const { data, error } = await supabase
         .from("seller_verification_documents")
         .select(
-          "id,document_type,file_url,status,rejection_reason,reviewed_at,created_at,profiles(full_name,shop_name,shop_slug)",
+          "id,document_type,file_url,status,rejection_reason,reviewed_at,created_at,seller_id," +
+            // Two FKs point at profiles (seller_id and reviewed_by), so the embed
+            // must name the constraint or PostgREST rejects it as ambiguous.
+            "profiles!seller_verification_documents_seller_id_fkey(full_name,shop_name,shop_slug,avatar_url,shop_logo_url,phone,city,shop_address,registration_number,created_at)",
         )
         .eq("status", "pending")
         .order("created_at", { ascending: true });
       if (error) throw error;
-      return (data ?? []) as AdminVerificationDoc[];
+      return (data ?? []) as unknown as AdminVerificationDoc[];
     },
   });
 }
@@ -715,7 +729,9 @@ export function pendingSellersQuery() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("profiles")
-        .select("id,full_name,shop_name,shop_slug,verified,created_at,phone,city")
+        .select(
+          "id,full_name,shop_name,shop_slug,avatar_url,shop_logo_url,verified,created_at,phone,city,banned_until,ban_reason",
+        )
         .eq("is_seller", true)
         .eq("verified", false)
         .order("created_at", { ascending: false });

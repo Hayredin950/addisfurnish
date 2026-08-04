@@ -248,6 +248,18 @@ function SellersTab() {
     }
     toast.success(t("admin.banned"));
     setBanTarget(null);
+    queryClient.invalidateQueries({ queryKey: ["admin-sellers"] });
+    queryClient.invalidateQueries({ queryKey: ["admin-all-users"] });
+  };
+
+  const unban = async (id: string) => {
+    const res = await adminUnbanUser({ data: { userId: id } });
+    if (!res.ok) {
+      toast.error(res.error ?? t("toast.updateFailed"));
+      return;
+    }
+    toast.success(t("admin.unbanned"));
+    queryClient.invalidateQueries({ queryKey: ["admin-sellers"] });
     queryClient.invalidateQueries({ queryKey: ["admin-all-users"] });
   };
 
@@ -259,35 +271,63 @@ function SellersTab() {
     <>
       <p className="mb-3 text-xs text-muted-foreground">{t("admin.revokeSessionsHint")}</p>
       <ul className="space-y-3">
-        {sellers.map((s) => (
-          <li
-            key={s.id}
-            className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card p-4"
-          >
-            <div>
-              <p className="text-sm font-medium">{s.shop_name ?? s.full_name}</p>
-              <p className="text-xs text-muted-foreground">
-                {s.city ?? "—"} · {timeAgo(s.created_at)}
-              </p>
-            </div>
-            <div className="flex shrink-0 flex-wrap gap-2">
-              <Button size="sm" variant="outline" onClick={() => revokeSessions(s.id)}>
-                <LogOut className="mr-1.5 h-3.5 w-3.5" /> {t("admin.revokeSessions")}
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={() => setBanTarget({ id: s.id, name: s.shop_name ?? s.full_name })}
-                className="text-destructive"
-              >
-                <Ban className="mr-1.5 h-3.5 w-3.5" /> {t("admin.ban")}
-              </Button>
-              <Button size="sm" onClick={() => verify(s.id)}>
-                <BadgeCheck className="mr-1.5 h-4 w-4" /> {t("admin.approve")}
-              </Button>
-            </div>
-          </li>
-        ))}
+        {sellers.map((s) => {
+          const suspended = !!s.banned_until && new Date(s.banned_until) > new Date();
+          const name = s.shop_name ?? s.full_name;
+          return (
+            <li
+              key={s.id}
+              className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card p-4"
+            >
+              <div className="flex min-w-0 items-center gap-3">
+                <UserAvatar name={name} avatarUrl={s.shop_logo_url ?? s.avatar_url} size={36} />
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-medium">{name}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {s.city ?? "—"} · {timeAgo(s.created_at)}
+                  </p>
+                  {suspended ? (
+                    <p className="text-xs font-medium text-destructive">
+                      {t("admin.suspendedUntil", {
+                        date: new Date(s.banned_until!).toLocaleString(),
+                      })}
+                      {s.ban_reason ? ` — ${s.ban_reason}` : ""}
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+              <div className="flex shrink-0 flex-wrap gap-2">
+                {s.shop_slug ? (
+                  <Button asChild size="sm" variant="ghost">
+                    <Link to="/shop/$slug" params={{ slug: s.shop_slug }}>
+                      {t("listing.visitShop")}
+                    </Link>
+                  </Button>
+                ) : null}
+                <Button size="sm" variant="outline" onClick={() => revokeSessions(s.id)}>
+                  <LogOut className="mr-1.5 h-3.5 w-3.5" /> {t("admin.revokeSessions")}
+                </Button>
+                {suspended ? (
+                  <Button size="sm" variant="outline" onClick={() => unban(s.id)}>
+                    <ShieldCheck className="mr-1.5 h-3.5 w-3.5" /> {t("admin.unban")}
+                  </Button>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setBanTarget({ id: s.id, name })}
+                    className="text-destructive"
+                  >
+                    <Ban className="mr-1.5 h-3.5 w-3.5" /> {t("admin.ban")}
+                  </Button>
+                )}
+                <Button size="sm" onClick={() => verify(s.id)}>
+                  <BadgeCheck className="mr-1.5 h-4 w-4" /> {t("admin.approve")}
+                </Button>
+              </div>
+            </li>
+          );
+        })}
       </ul>
 
       <BanDialog
@@ -591,7 +631,18 @@ function VerificationRow({
     document_type: string;
     file_url: string;
     created_at: string;
-    profiles?: { full_name: string; shop_name: string | null; shop_slug: string | null } | null;
+    profiles?: {
+      full_name: string;
+      shop_name: string | null;
+      shop_slug: string | null;
+      avatar_url?: string | null;
+      shop_logo_url?: string | null;
+      phone?: string | null;
+      city?: string | null;
+      shop_address?: string | null;
+      registration_number?: string | null;
+      created_at?: string;
+    } | null;
   };
   busy: boolean;
   rejecting: boolean;
@@ -609,21 +660,45 @@ function VerificationRow({
   return (
     <li className="rounded-lg border bg-card p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="font-medium">{sellerName}</p>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            {t(ADMIN_DOC_TYPE_KEY[doc.document_type] ?? "verif.docTypeother")} ·{" "}
-            {timeAgo(doc.created_at)}
-          </p>
-          {doc.profiles?.shop_slug ? (
-            <Link
-              to="/shop/$slug"
-              params={{ slug: doc.profiles.shop_slug }}
-              className="mt-0.5 inline-block text-xs text-primary"
-            >
-              {t("listing.visitShop")}
-            </Link>
-          ) : null}
+        <div className="flex min-w-0 items-start gap-3">
+          <UserAvatar
+            name={sellerName}
+            avatarUrl={doc.profiles?.shop_logo_url ?? doc.profiles?.avatar_url}
+            size={44}
+          />
+          <div className="min-w-0">
+            <p className="font-medium">{sellerName}</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              {t(ADMIN_DOC_TYPE_KEY[doc.document_type] ?? "verif.docTypeother")} ·{" "}
+              {timeAgo(doc.created_at)}
+            </p>
+            {/* Everything an admin needs to judge the application, inline. */}
+            <dl className="mt-2 grid gap-x-4 gap-y-1 text-xs sm:grid-cols-2">
+              {[
+                [t("auth.fullName"), doc.profiles?.full_name],
+                [t("profile.phone"), doc.profiles?.phone],
+                [t("browse.city"), doc.profiles?.city],
+                [t("profile.shopAddress"), doc.profiles?.shop_address],
+                [t("profile.registrationNumber"), doc.profiles?.registration_number],
+              ]
+                .filter(([, value]) => !!value)
+                .map(([label, value]) => (
+                  <div key={label as string} className="flex gap-1.5">
+                    <dt className="text-muted-foreground">{label}:</dt>
+                    <dd className="truncate font-medium">{value}</dd>
+                  </div>
+                ))}
+            </dl>
+            {doc.profiles?.shop_slug ? (
+              <Link
+                to="/shop/$slug"
+                params={{ slug: doc.profiles.shop_slug }}
+                className="mt-1.5 inline-block text-xs text-primary"
+              >
+                {t("listing.visitShop")}
+              </Link>
+            ) : null}
+          </div>
         </div>
         {rejecting ? null : (
           <div className="flex shrink-0 flex-wrap gap-2">
@@ -640,7 +715,8 @@ function VerificationRow({
         )}
       </div>
 
-      {/* Inline preview doubles as the trigger for the full-size viewer. */}
+      {/* Inline preview doubles as the trigger for the full-size viewer. The
+          seeded demo row points at a file that was never uploaded. */}
       {doc.file_url && !doc.file_url.startsWith("demo/") ? (
         <button
           type="button"
@@ -659,7 +735,11 @@ function VerificationRow({
             </span>
           )}
         </button>
-      ) : null}
+      ) : (
+        <p className="mt-3 rounded-md border border-dashed p-3 text-xs text-muted-foreground">
+          {t("admin.documentMissing")}
+        </p>
+      )}
 
       <DocumentViewer
         open={viewing}
