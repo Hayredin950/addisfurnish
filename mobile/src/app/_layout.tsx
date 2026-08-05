@@ -4,6 +4,7 @@ import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { AuthProvider, useAuth } from "../lib/auth";
 import { LangProvider, useLang } from "../lib/lang";
+import { ToastProvider } from "../components/Toast";
 import { colors } from "../lib/theme";
 import {
   addNotificationTapListener,
@@ -139,8 +140,10 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <AuthProvider>
         <LangProvider>
-          <RootNavigator />
-          <StatusBar style="dark" />
+          <ToastProvider>
+            <RootNavigator />
+            <StatusBar style="dark" />
+          </ToastProvider>
         </LangProvider>
       </AuthProvider>
     </SafeAreaProvider>

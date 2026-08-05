@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Image,
   KeyboardAvoidingView,
   Linking,
@@ -40,6 +39,8 @@ import {
   uploadListingImage,
 } from "../../lib/api";
 import { Button } from "../../components/Button";
+import { ConfirmDialog } from "../../components/ConfirmDialog";
+import { useToast } from "../../components/Toast";
 import { EmptyState } from "../../components/EmptyState";
 import { colors, radius, spacing, shadows } from "../../lib/theme";
 import { imageSource } from "../../lib/storage";
@@ -51,6 +52,15 @@ const DOC_TYPES = ["National ID", "Business License", "TIN Certificate", "Other"
 export default function ProfileScreen() {
   const { user, profile, loading, signOut, refreshProfile } = useAuth();
   const { t, lang, setLang } = useLang();
+  const toast = useToast();
+  // One dialog serves every confirmation on this screen; the action to run is
+  // held alongside the copy.
+  const [confirm, setConfirm] = useState<{
+    title: string;
+    message: string;
+    label: string;
+    onConfirm: () => void;
+  } | null>(null);
 
   // Shop form state
   const [fullName, setFullName] = useState(profile?.full_name ?? "");
@@ -116,8 +126,8 @@ export default function ProfileScreen() {
         is_seller: true,
       });
       await refreshProfile();
-    } catch {
-      Alert.alert(t("oops"));
+    } catch (err) {
+      toast.error(err, t("oops"));
     } finally {
       setSaving(false);
     }
@@ -136,8 +146,8 @@ export default function ProfileScreen() {
       const path = await uploadListingImage(user.id, res.assets[0]);
       await updateProfile(user.id, { shop_logo_url: path });
       await refreshProfile();
-    } catch {
-      Alert.alert(t("oops"));
+    } catch (err) {
+      toast.error(err, t("oops"));
     }
   };
 
@@ -172,8 +182,8 @@ export default function ProfileScreen() {
       });
       if (error) throw error;
       docs.refetch();
-    } catch {
-      Alert.alert(t("oops"));
+    } catch (err) {
+      toast.error(err, t("oops"));
     } finally {
       setDocBusy(false);
     }
@@ -183,9 +193,9 @@ export default function ProfileScreen() {
     if (!user) return;
     try {
       await saveBuyerPreferences(user.id, prefs);
-      Alert.alert(t("saved"));
-    } catch {
-      Alert.alert(t("oops"));
+      toast.success(t("saved"));
+    } catch (err) {
+      toast.error(err, t("oops"));
     }
   };
 
@@ -194,39 +204,43 @@ export default function ProfileScreen() {
     const url = await getTelegramConnectUrl();
     setTelegramBusy(false);
     if (!url) {
-      Alert.alert(t("oops"));
+      toast.error(null, t("oops"));
       return;
     }
     // Opens the bot with the one-time token; pressing Start there links the
     // account. The badge below updates on the next profile refresh.
-    Linking.openURL(url).catch(() => Alert.alert(t("oops")));
+    Linking.openURL(url).catch((err) => toast.error(err, t("oops")));
   };
 
   const unlinkTelegram = () => {
-    Alert.alert(t("telegramDisconnect"), t("telegramDisconnectConfirm"), [
-      { text: t("cancel"), style: "cancel" },
-      {
-        text: t("telegramDisconnect"),
-        style: "destructive",
-        onPress: async () => {
-          setTelegramBusy(true);
-          const ok = await disconnectTelegram();
-          setTelegramBusy(false);
-          if (!ok) {
-            Alert.alert(t("oops"));
-            return;
-          }
-          await refreshProfile();
-        },
+    setConfirm({
+      title: t("telegramDisconnect"),
+      message: t("telegramDisconnectConfirm"),
+      label: t("telegramDisconnect"),
+      onConfirm: async () => {
+        setConfirm(null);
+        setTelegramBusy(true);
+        const ok = await disconnectTelegram();
+        setTelegramBusy(false);
+        if (!ok) {
+          toast.error(null, t("oops"));
+          return;
+        }
+        await refreshProfile();
       },
-    ]);
+    });
   };
 
   const confirmSignOut = () => {
-    Alert.alert(t("signOut"), t("logoutConfirm"), [
-      { text: t("cancel"), style: "cancel" },
-      { text: t("signOut"), style: "destructive", onPress: () => void signOut() },
-    ]);
+    setConfirm({
+      title: t("signOut"),
+      message: t("logoutConfirm"),
+      label: t("signOut"),
+      onConfirm: () => {
+        setConfirm(null);
+        void signOut();
+      },
+    });
   };
 
   if (loading) {
@@ -507,7 +521,7 @@ export default function ProfileScreen() {
                               ? markListingSold(l.id, l.title)
                               : updateListingStatus(l.id, s))
                               .then(() => myListings.refetch())
-                              .catch(() => Alert.alert(t("dashUpdateFailed")))
+                              .catch((err) => toast.error(err, t("dashUpdateFailed")))
                           }
                         >
                           <Text
@@ -538,17 +552,17 @@ export default function ProfileScreen() {
                       hitSlop={8}
                       style={styles.manageIconBtn}
                       onPress={() =>
-                        Alert.alert(t("delete"), t("dashDeleteConfirm"), [
-                          { text: t("cancel"), style: "cancel" },
-                          {
-                            text: t("delete"),
-                            style: "destructive",
-                            onPress: () =>
-                              void deleteListing(l.id)
-                                .then(() => myListings.refetch())
-                                .catch(() => Alert.alert(t("dashUpdateFailed"))),
+                        setConfirm({
+                          title: t("delete"),
+                          message: t("dashDeleteConfirm"),
+                          label: t("delete"),
+                          onConfirm: () => {
+                            setConfirm(null);
+                            void deleteListing(l.id)
+                              .then(() => myListings.refetch())
+                              .catch((err) => toast.error(err, t("dashUpdateFailed")));
                           },
-                        ])
+                        })
                       }
                     >
                       <Ionicons name="trash-outline" size={18} color={colors.danger} />
@@ -596,7 +610,7 @@ export default function ProfileScreen() {
                       onPress={() =>
                         void updateCallbackStatus(c.id, "contacted", c.buyer_id, c.listings?.title)
                           .then(() => callbacks.refetch())
-                          .catch(() => Alert.alert(t("dashUpdateFailed")))
+                          .catch((err) => toast.error(err, t("dashUpdateFailed")))
                       }
                     >
                       <Ionicons name="call" size={13} color={colors.onPrimary} />
@@ -607,7 +621,7 @@ export default function ProfileScreen() {
                       onPress={() =>
                         void updateCallbackStatus(c.id, "closed", c.buyer_id, c.listings?.title)
                           .then(() => callbacks.refetch())
-                          .catch(() => Alert.alert(t("dashUpdateFailed")))
+                          .catch((err) => toast.error(err, t("dashUpdateFailed")))
                       }
                     >
                       <Text style={[styles.cbBtnText, { color: colors.text }]}>
@@ -638,6 +652,16 @@ export default function ProfileScreen() {
           <Text style={styles.about}>{t("madeInEthiopia")}</Text>
         </View>
       </ScrollView>
+      <ConfirmDialog
+        visible={!!confirm}
+        title={confirm?.title ?? ""}
+        message={confirm?.message}
+        confirmLabel={confirm?.label ?? ""}
+        cancelLabel={t("cancel")}
+        destructive
+        onConfirm={() => confirm?.onConfirm()}
+        onCancel={() => setConfirm(null)}
+      />
     </KeyboardAvoidingView>
   );
 }

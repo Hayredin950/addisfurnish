@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  Alert,
   FlatList,
   Image,
   KeyboardAvoidingView,
@@ -28,6 +27,8 @@ import {
 } from "../../lib/api";
 import { colors, radius, spacing } from "../../lib/theme";
 import { imageSource } from "../../lib/storage";
+import { ConfirmDialog } from "../../components/ConfirmDialog";
+import { useToast } from "../../components/Toast";
 import { formatBirr, timeAgo } from "../../lib/format";
 import type { Message } from "../../lib/api";
 
@@ -35,9 +36,11 @@ export default function ChatScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { user } = useAuth();
   const { t } = useLang();
+  const toast = useToast();
   const [body, setBody] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editBody, setEditBody] = useState("");
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const listRef = useRef<FlatList>(null);
 
   const messages = useAsync(() => fetchMessages(id ?? ""), [id]);
@@ -122,22 +125,18 @@ export default function ChatScreen() {
     }
   };
 
-  const confirmDelete = (messageId: string) => {
-    Alert.alert(t("msgDelete"), t("msgDeleteConfirm"), [
-      { text: t("cancel"), style: "cancel" },
-      {
-        text: t("msgDelete"),
-        style: "destructive",
-        onPress: async () => {
-          try {
-            await deleteMessage(messageId);
-            messages.refetch();
-          } catch {
-            // ignore
-          }
-        },
-      },
-    ]);
+  const confirmDelete = (messageId: string) => setPendingDelete(messageId);
+
+  const runDelete = async () => {
+    const id = pendingDelete;
+    setPendingDelete(null);
+    if (!id) return;
+    try {
+      await deleteMessage(id);
+      messages.refetch();
+    } catch (err) {
+      toast.error(err, t("oops"));
+    }
   };
 
   const renderBubble = ({ item }: { item: Message }) => {
@@ -267,6 +266,16 @@ export default function ChatScreen() {
           <Ionicons name="send" size={18} color="#fff" />
         </Pressable>
       </View>
+      <ConfirmDialog
+        visible={!!pendingDelete}
+        title={t("msgDelete")}
+        message={t("msgDeleteConfirm")}
+        confirmLabel={t("msgDelete")}
+        cancelLabel={t("cancel")}
+        destructive
+        onConfirm={runDelete}
+        onCancel={() => setPendingDelete(null)}
+      />
     </KeyboardAvoidingView>
   );
 }

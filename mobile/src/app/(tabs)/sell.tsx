@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  Alert,
   Image,
   KeyboardAvoidingView,
   Platform,
@@ -29,6 +28,7 @@ import {
   uploadListingImage,
 } from "../../lib/api";
 import { Button } from "../../components/Button";
+import { useToast } from "../../components/Toast";
 import { EmptyState } from "../../components/EmptyState";
 import { colors, radius, spacing, shadows } from "../../lib/theme";
 import { coordsForSubCity } from "../../lib/format";
@@ -44,6 +44,7 @@ export default function SellScreen() {
   const editId = typeof params.edit === "string" && params.edit ? params.edit : undefined;
   const { user, profile, refreshProfile } = useAuth();
   const { t, lang } = useLang();
+  const toast = useToast();
   const cats = useAsync(fetchCategories, []);
   const editing = useAsync(
     () => (editId ? fetchListingForEdit(editId) : Promise.resolve(null)),
@@ -143,7 +144,7 @@ export default function SellScreen() {
   const createShop = async () => {
     if (!user) return;
     if (!shopName.trim() || !shopSlug.trim()) {
-      Alert.alert(t("titleRequired"));
+      toast.error(null, t("titleRequired"));
       return;
     }
     setCreatingShop(true);
@@ -157,8 +158,8 @@ export default function SellScreen() {
           .replace(/[^a-z0-9-]/g, "-"),
       });
       await refreshProfile();
-    } catch {
-      Alert.alert(t("oops"));
+    } catch (err) {
+      toast.error(err, t("oops"));
     } finally {
       setCreatingShop(false);
     }
@@ -167,12 +168,12 @@ export default function SellScreen() {
   const publish = async () => {
     if (!user || !profile?.is_seller) return;
     if (!title.trim()) {
-      Alert.alert(t("titleRequired"));
+      toast.error(null, t("titleRequired"));
       return;
     }
     const priceNum = Number(price);
     if (!priceNum || priceNum <= 0) {
-      Alert.alert(t("priceRequired"));
+      toast.error(null, t("priceRequired"));
       return;
     }
     setPublishing(true);
@@ -267,8 +268,8 @@ export default function SellScreen() {
       } else {
         router.push(`/listing/${id}`);
       }
-    } catch {
-      Alert.alert(t("oops"));
+    } catch (err) {
+      toast.error(err, t("oops"));
     } finally {
       setPublishing(false);
     }

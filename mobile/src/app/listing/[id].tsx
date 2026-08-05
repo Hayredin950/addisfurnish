@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  Alert,
   Image,
   Linking,
   Modal,
@@ -39,6 +38,7 @@ import {
 import { ListingCard } from "../../components/ListingCard";
 import { Button } from "../../components/Button";
 import { SheetOverlay } from "../../components/SheetOverlay";
+import { useToast } from "../../components/Toast";
 import { colors, radius, spacing, shadows, font } from "../../lib/theme";
 import { imageSource } from "../../lib/storage";
 import { formatBirr, timeAgo, ethiopianDate } from "../../lib/format";
@@ -62,6 +62,7 @@ function Stars({ value, size = 14 }: { value: number; size?: number }) {
 export default function ListingDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { t, lang } = useLang();
+  const toast = useToast();
   const { user } = useAuth();
 
   const listing = useAsync(() => fetchListing(id!), [id]);
@@ -165,8 +166,8 @@ export default function ListingDetailScreen() {
       setCallbackOpen(false);
       setCallbackPhone("");
       setCallbackSent(true);
-    } catch {
-      Alert.alert(t("oops"));
+    } catch (err) {
+      toast.error(err, t("oops"));
     } finally {
       setCallbackBusy(false);
     }
