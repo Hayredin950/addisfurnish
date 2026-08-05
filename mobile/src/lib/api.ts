@@ -452,6 +452,13 @@ export async function markNotificationRead(id: string) {
   if (error) throw error;
 }
 
+/** Dismiss a notification. RLS restricts the delete to the owner's own rows
+ *  (see 20260804090000_chat_edit_delete_receipts.sql). */
+export async function deleteNotification(id: string) {
+  const { error } = await supabase.from("notifications").delete().eq("id", id);
+  if (error) throw error;
+}
+
 // ── Push tokens (Expo Push Service) ──────────────────────────────────────
 
 export async function savePushToken(token: string, platform: string) {

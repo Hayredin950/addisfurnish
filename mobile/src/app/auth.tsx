@@ -11,6 +11,8 @@ import {
   View,
 } from "react-native";
 import { router } from "expo-router";
+import * as WebBrowser from "expo-web-browser";
+import * as Linking from "expo-linking";
 import { Ionicons } from "@expo/vector-icons";
 import { supabase } from "../lib/supabase";
 import { useLang } from "../lib/lang";
@@ -92,6 +94,54 @@ export default function AuthScreen() {
     }
   };
 
+  /**
+   * Google OAuth via Supabase. The authorize URL is opened in an in-app
+   * browser session; on return the tokens live in the URL fragment, which we
+   * parse and hand to setSession (same trust chain as the web flow).
+   */
+  const loginGoogle = async () => {
+    setError(null);
+    setBusy(true);
+    try {
+      const redirectTo = Linking.createURL("auth");
+      const { data, error } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: { redirectTo, skipBrowserRedirect: true },
+      });
+      if (error) throw error;
+      if (!data?.url) throw new Error("no-url");
+      const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
+      if (result.type !== "success" || !result.url) {
+        setError(t("googleSignInFailed"));
+        return;
+      }
+      // Supabase hands the tokens back in the URL *fragment* (`#access_token=`),
+      // exactly like the web flow — never in the query string.
+      const url = new URL(result.url);
+      const params = new URLSearchParams(url.hash.slice(1));
+      if (params.get("error")) {
+        setError(t("googleSignInFailed"));
+        return;
+      }
+      const accessToken = params.get("access_token");
+      const refreshToken = params.get("refresh_token");
+      if (!accessToken || !refreshToken) {
+        setError(t("googleSignInFailed"));
+        return;
+      }
+      const { error: sessionErr } = await supabase.auth.setSession({
+        access_token: accessToken,
+        refresh_token: refreshToken,
+      });
+      if (sessionErr) throw sessionErr;
+      router.replace("/(tabs)");
+    } catch {
+      setError(t("googleSignInFailed"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <KeyboardAvoidingView
       style={styles.screen}
@@ -140,6 +190,22 @@ export default function AuthScreen() {
               {t("email")}
             </Text>
           </Pressable>
+        </View>
+
+        {/* Google — mirrors the web OAuth flow (spec §3 fallback). */}
+        <Pressable
+          style={styles.googleBtn}
+          onPress={loginGoogle}
+          disabled={busy}
+        >
+          <Ionicons name="logo-google" size={18} color={colors.text} />
+          <Text style={styles.googleText}>{t("continueGoogle")}</Text>
+        </Pressable>
+
+        <View style={styles.divider}>
+          <View style={styles.dividerLine} />
+          <Text style={styles.dividerText}>{t("orEmail")}</Text>
+          <View style={styles.dividerLine} />
         </View>
 
         {mode === "phone" ? (
@@ -282,6 +348,27 @@ const styles = StyleSheet.create({
   codeInput: { flex: 1 },
   resend: { paddingVertical: 10 },
   resendText: { fontSize: 13, color: colors.primary, fontWeight: "600" },
+  googleBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    backgroundColor: colors.card,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingVertical: 13,
+    marginBottom: 4,
+  },
+  googleText: { fontSize: 14, color: colors.text, fontWeight: "700" },
+  divider: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    marginVertical: 14,
+  },
+  dividerLine: { flex: 1, height: 1, backgroundColor: colors.border },
+  dividerText: { fontSize: 12, color: colors.textSoft },
   error: { fontSize: 13, color: colors.danger, textAlign: "center" },
   footer: { fontSize: 12, color: colors.textSoft, textAlign: "center", marginTop: spacing.xl },
 });

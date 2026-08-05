@@ -122,6 +122,7 @@ function RootNavigator() {
       <Stack.Screen name="shop/[slug]" options={{ title: "" }} />
       <Stack.Screen name="chat/[id]" options={{ title: "Chat", headerBackTitle: "Back" }} />
       <Stack.Screen name="notifications" options={{ title: "", headerBackTitle: "Back" }} />
+      <Stack.Screen name="safety" options={{ title: "", headerBackTitle: "Back" }} />
     </Stack>
   );
 }

@@ -5,7 +5,12 @@ import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../lib/auth";
 import { useLang } from "../lib/lang";
 import { useAsync } from "../hooks/use-async";
-import { fetchNotifications, markNotificationRead, markNotificationsRead } from "../lib/api";
+import {
+  deleteNotification,
+  fetchNotifications,
+  markNotificationRead,
+  markNotificationsRead,
+} from "../lib/api";
 import { subscribeNotifications, notificationText } from "../lib/notifications";
 import { EmptyState } from "../components/EmptyState";
 import { colors, radius, spacing } from "../lib/theme";
@@ -44,15 +49,26 @@ export default function NotificationsScreen() {
     return [title, body].filter(Boolean).join(" — ");
   };
 
-  useEffect(() => {
-    // Mark all as read once the screen opens.
-    if (!user || notifs.length === 0) return;
-    const hasUnread = notifs.some((n) => !n.is_read);
-    if (hasUnread) {
-      void markNotificationsRead(user.id).then(refetch);
+  const markAllRead = async () => {
+    if (!user) return;
+    try {
+      await markNotificationsRead(user.id);
+      refetch();
+    } catch {
+      // Non-critical: the unread badge just persists until the next open.
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user, notifs.length]);
+  };
+
+  const dismiss = async (id: string) => {
+    try {
+      await deleteNotification(id);
+      refetch();
+    } catch {
+      // Non-critical: the row stays put.
+    }
+  };
+
+  const unread = notifs.filter((n) => !n.is_read).length;
 
   // Live delivery: refetch when a realtime INSERT arrives (the foreground
   // banner is shown app-wide by the root layout — no duplicate here).
@@ -76,6 +92,16 @@ export default function NotificationsScreen() {
 
   return (
     <View style={styles.screen}>
+      {/* Header with mark-all-read */}
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>{t("notifications")}</Text>
+        {unread > 0 ? (
+          <Pressable style={styles.markAllBtn} onPress={markAllRead} hitSlop={8}>
+            <Ionicons name="checkmark-done" size={15} color={colors.primary} />
+            <Text style={styles.markAllText}>{t("notifMarkAll")}</Text>
+          </Pressable>
+        ) : null}
+      </View>
       {loading && !data ? (
         <ActivityIndicator style={{ marginTop: 60 }} color={colors.primary} />
       ) : notifs.length === 0 ? (
@@ -87,7 +113,7 @@ export default function NotificationsScreen() {
         <FlatList
           data={notifs}
           keyExtractor={(n) => n.id}
-          contentContainerStyle={{ padding: spacing.lg }}
+          contentContainerStyle={{ padding: spacing.lg, paddingTop: 0 }}
           renderItem={({ item }) => {
             const icon =
               item.type === "new_message"
@@ -122,6 +148,13 @@ export default function NotificationsScreen() {
                   <Text style={styles.time}>{timeAgo(item.created_at)}</Text>
                 </View>
                 {!item.is_read ? <View style={styles.dot} /> : null}
+                <Pressable
+                  hitSlop={8}
+                  style={styles.dismissBtn}
+                  onPress={() => dismiss(item.id)}
+                >
+                  <Ionicons name="close" size={15} color={colors.textSoft} />
+                </Pressable>
               </Pressable>
             );
           }}
@@ -133,6 +166,17 @@ export default function NotificationsScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background },
+  header: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.md,
+  },
+  headerTitle: { fontSize: 22, fontWeight: "800", color: colors.text, fontFamily: "Georgia, serif" },
+  markAllBtn: { flexDirection: "row", alignItems: "center", gap: 5 },
+  markAllText: { fontSize: 13, color: colors.primary, fontWeight: "600" },
   row: {
     flexDirection: "row",
     alignItems: "center",
@@ -158,5 +202,13 @@ const styles = StyleSheet.create({
     height: 9,
     borderRadius: 5,
     backgroundColor: colors.primary,
+  },
+  dismissBtn: {
+    width: 26,
+    height: 26,
+    borderRadius: radius.full,
+    backgroundColor: colors.secondary,
+    alignItems: "center",
+    justifyContent: "center",
   },
 });

@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Alert,
   Image,
@@ -12,14 +12,22 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
 import * as Location from "expo-location";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../../lib/auth";
 import { useLang } from "../../lib/lang";
 import { useAsync } from "../../hooks/use-async";
-import { createListing, fetchCategories, updateProfile, uploadListingImage } from "../../lib/api";
+import {
+  createListing,
+  fetchCategories,
+  fetchListingForEdit,
+  replaceListingImages,
+  updateListing,
+  updateProfile,
+  uploadListingImage,
+} from "../../lib/api";
 import { Button } from "../../components/Button";
 import { EmptyState } from "../../components/EmptyState";
 import { colors, radius, spacing, shadows } from "../../lib/theme";
@@ -29,10 +37,18 @@ const CONDITIONS = ["New", "Used - Like New", "Used - Good", "Used - Fair"];
 const ROOM_TYPES = ["Living Room", "Bedroom", "Dining", "Office", "Outdoor", "Kitchen"];
 const CITIES = ["Addis Ababa", "Dire Dawa", "Hawassa", "Bahir Dar", "Mekelle", "Adama", "Gondar"];
 
+type Photo = { uri: string; name: string; isExisting?: boolean };
+
 export default function SellScreen() {
+  const params = useLocalSearchParams<{ edit?: string }>();
+  const editId = typeof params.edit === "string" && params.edit ? params.edit : undefined;
   const { user, profile, refreshProfile } = useAuth();
   const { t, lang } = useLang();
   const cats = useAsync(fetchCategories, []);
+  const editing = useAsync(
+    () => (editId ? fetchListingForEdit(editId) : Promise.resolve(null)),
+    [editId],
+  );
 
   const [title, setTitle] = useState("");
   const [desc, setDesc] = useState("");
@@ -50,7 +66,7 @@ export default function SellScreen() {
   const [deliveryOffered, setDeliveryOffered] = useState(false);
   const [deliveryFee, setDeliveryFee] = useState("");
   const [discountDays, setDiscountDays] = useState("");
-  const [photos, setPhotos] = useState<{ uri: string; name: string }[]>([]);
+  const [photos, setPhotos] = useState<Photo[]>([]);
   const [publishing, setPublishing] = useState(false);
 
   const isSeller = !!profile?.is_seller;
@@ -66,6 +82,38 @@ export default function SellScreen() {
       setShopSlug(profile.shop_slug ?? "");
     }
   }, [profile]);
+
+  // Edit mode: seed the form once the listing (and categories) load.
+  const item = editing.data;
+  useEffect(() => {
+    if (!item || !editId) return;
+    setTitle(item.title);
+    setDesc(item.description);
+    setPrice(String(item.price));
+    setOriginalPrice(item.original_price ? String(item.original_price) : "");
+    setNegotiable(item.negotiable);
+    setCondition(item.condition);
+    setCategoryId(item.category_id);
+    setCity(item.city);
+    setSubCity(item.sub_city ?? "");
+    setMaterial(item.material ?? "");
+    setColor(item.color ?? "");
+    setRoomType(item.room_type ?? ROOM_TYPES[0]!);
+    setBrand(item.brand ?? "");
+    setDeliveryOffered(item.delivery_offered);
+    setDeliveryFee(item.delivery_fee != null ? String(item.delivery_fee) : "");
+    const expires = item.discount_expires_at ? new Date(item.discount_expires_at).getTime() : null;
+    setDiscountDays(
+      expires && expires > Date.now()
+        ? String(Math.max(1, Math.round((expires - Date.now()) / 86_400_000)))
+        : "",
+    );
+    const existing = [...(item.listing_images ?? [])]
+      .sort((a, b) => a.position - b.position)
+      .map((img) => ({ uri: img.url, name: `existing-${img.id}.jpg`, isExisting: true }));
+    setPhotos(existing);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [item, editId]);
 
   const pickPhotos = async () => {
     const res = await ImagePicker.launchImageLibraryAsync({
@@ -129,8 +177,14 @@ export default function SellScreen() {
     }
     setPublishing(true);
     try {
-      // Upload photos first (parallel), then insert the listing.
-      const paths = await Promise.all(photos.map((p) => uploadListingImage(user.id, p)));
+      // Upload only the newly picked photos (existing ones are already stored).
+      const newPaths = await Promise.all(
+        photos
+          .filter((p) => !p.isExisting)
+          .map((p) => uploadListingImage(user.id, p)),
+      );
+      const finalUrls = photos.map((p) => (p.isExisting ? p.uri : newPaths.shift()!));
+
       let lat: number | null = null;
       let lon: number | null = null;
       const coords = coordsForSubCity(subCity.trim() || null);
@@ -154,39 +208,75 @@ export default function SellScreen() {
         ? new Date(Date.now() + Number(discountDays) * 86_400_000).toISOString()
         : null;
 
-      const id = await createListing({
-        sellerId: user.id,
+      const patch = {
         title: title.trim(),
         description: desc.trim(),
         price: priceNum,
-        originalPrice: originalPrice ? Number(originalPrice) : null,
+        original_price: originalPrice ? Number(originalPrice) : null,
         negotiable,
         condition,
         material: material.trim() || null,
         color: color.trim() || null,
-        roomType,
+        room_type: roomType,
         brand: brand.trim() || null,
         city,
-        subCity: subCity.trim() || null,
-        categoryId,
-        deliveryOffered,
-        deliveryFee: deliveryOffered && deliveryFee ? Number(deliveryFee) : null,
-        discountExpiresAt,
+        sub_city: subCity.trim() || null,
+        category_id: categoryId,
+        delivery_offered: deliveryOffered,
+        delivery_fee: deliveryOffered && deliveryFee ? Number(deliveryFee) : null,
+        discount_expires_at: discountExpiresAt,
         latitude: lat,
         longitude: lon,
-        imagePaths: paths,
-      });
+      };
+
+      let id: string;
+      if (editId && item) {
+        id = editId;
+        await updateListing(id, patch);
+        await replaceListingImages(id, finalUrls);
+      } else {
+        id = await createListing({
+          sellerId: user.id,
+          title: patch.title,
+          description: patch.description,
+          price: patch.price,
+          originalPrice: patch.original_price,
+          negotiable: patch.negotiable,
+          condition: patch.condition,
+          material: patch.material,
+          color: patch.color,
+          roomType: patch.room_type,
+          brand: patch.brand,
+          city: patch.city,
+          subCity: patch.sub_city,
+          categoryId: patch.category_id,
+          deliveryOffered: patch.delivery_offered,
+          deliveryFee: patch.delivery_fee,
+          discountExpiresAt: patch.discount_expires_at,
+          latitude: patch.latitude,
+          longitude: patch.longitude,
+          imagePaths: finalUrls,
+        });
+      }
       setPhotos([]);
       setTitle("");
       setDesc("");
       setPrice("");
-      router.push(`/listing/${id}`);
+      if (editId) {
+        router.back();
+      } else {
+        router.push(`/listing/${id}`);
+      }
     } catch {
       Alert.alert(t("oops"));
     } finally {
       setPublishing(false);
     }
   };
+
+  const removePhoto = (index: number) => setPhotos((prev) => prev.filter((_, j) => j !== index));
+
+  const isEditLoading = !!editId && editing.loading && !item;
 
   if (!user) {
     return (
@@ -197,6 +287,23 @@ export default function SellScreen() {
           onPress={() => router.push("/auth")}
           style={{ marginTop: 16 }}
         />
+      </View>
+    );
+  }
+
+  if (isEditLoading) {
+    return (
+      <View style={styles.center}>
+        <Text style={styles.loadingText}>{t("loading")}</Text>
+      </View>
+    );
+  }
+
+  if (editId && !item) {
+    return (
+      <View style={styles.center}>
+        <Text style={styles.oops}>{t("oops")}</Text>
+        <Button title={t("back")} variant="outline" onPress={() => router.back()} style={{ marginTop: 16 }} />
       </View>
     );
   }
@@ -234,7 +341,9 @@ export default function SellScreen() {
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       <ScrollView contentContainerStyle={{ paddingBottom: 48 }}>
-        <Text style={styles.heading}>{t("listFurniture")}</Text>
+        <Text style={styles.heading}>
+          {editId ? `${t("edit")} · ${item?.title ?? ""}` : t("listFurniture")}
+        </Text>
 
         {/* Photos */}
         <View style={styles.card}>
@@ -245,11 +354,16 @@ export default function SellScreen() {
                 <Image source={{ uri: p.uri }} style={styles.photoThumbImg} />
                 <Pressable
                   style={styles.photoRemove}
-                  onPress={() => setPhotos((prev) => prev.filter((_, j) => j !== i))}
+                  onPress={() => removePhoto(i)}
                   hitSlop={6}
                 >
                   <Ionicons name="close" size={12} color="#fff" />
                 </Pressable>
+                {p.isExisting ? (
+                  <View style={styles.photoBadge}>
+                    <Ionicons name="cloud-done" size={10} color="#fff" />
+                  </View>
+                ) : null}
               </View>
             ))}
             {photos.length < 6 ? (
@@ -398,7 +512,13 @@ export default function SellScreen() {
 
         <View style={{ paddingHorizontal: spacing.lg, marginTop: spacing.lg }}>
           <Button
-            title={publishing ? t("publishing") : t("publish")}
+            title={
+              publishing
+                ? t("publishing")
+                : editId
+                  ? t("save")
+                  : t("publish")
+            }
             onPress={publish}
             loading={publishing}
             disabled={publishing}
@@ -448,6 +568,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
     padding: 32,
   },
+  loadingText: { fontSize: 14, color: colors.textMuted },
+  oops: { fontSize: 16, color: colors.textMuted },
   heading: {
     fontSize: 22,
     fontWeight: "800",
@@ -507,6 +629,17 @@ const styles = StyleSheet.create({
     borderRadius: radius.full,
     width: 20,
     height: 20,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  photoBadge: {
+    position: "absolute",
+    bottom: 4,
+    left: 4,
+    backgroundColor: colors.success,
+    borderRadius: radius.full,
+    width: 18,
+    height: 18,
     alignItems: "center",
     justifyContent: "center",
   },
