@@ -27,6 +27,7 @@ import {
   sendMessage,
 } from "../../lib/api";
 import { colors, radius, spacing } from "../../lib/theme";
+import { imageSource } from "../../lib/storage";
 import { formatBirr, timeAgo } from "../../lib/format";
 import type { Message } from "../../lib/api";
 
@@ -230,7 +231,7 @@ export default function ChatScreen() {
               onPress={() => router.push(`/listing/${listing.id}`)}
             >
               {listing.listing_images?.[0]?.url ? (
-                <Image source={{ uri: listing.listing_images[0].url }} style={styles.bannerImg} />
+                <Image source={imageSource(listing.listing_images[0].url)} style={styles.bannerImg} />
               ) : (
                 <View style={[styles.bannerImg, styles.bannerImgEmpty]}>
                   <Text style={styles.bannerEmoji}>🛋️</Text>

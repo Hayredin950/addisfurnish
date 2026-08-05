@@ -16,6 +16,7 @@ import { useAsync } from "../../hooks/use-async";
 import { fetchConversations } from "../../lib/api";
 import { EmptyState } from "../../components/EmptyState";
 import { colors, radius, spacing } from "../../lib/theme";
+import { imageSource } from "../../lib/storage";
 import { formatBirr, timeAgo } from "../../lib/format";
 
 type Conv = {
@@ -67,7 +68,7 @@ export default function MessagesScreen() {
       >
         <View style={styles.avatar}>
           {img ? (
-            <Image source={{ uri: img }} style={styles.avatarImg} />
+            <Image source={imageSource(img)} style={styles.avatarImg} />
           ) : (
             <Text style={styles.avatarEmoji}>🛋️</Text>
           )}

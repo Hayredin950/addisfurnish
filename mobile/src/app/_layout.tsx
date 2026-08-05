@@ -24,12 +24,15 @@ function useProtectedRoute() {
   useEffect(() => {
     if (loading) return;
     const onAuthScreen = segments[0] === "auth";
-    // Only two redirects: signed-out users go to /auth; signed-in users leave
-    // /auth. Stack screens (listing, shop, chat, notifications, sell) are open
-    // to everyone and must NOT be redirected.
-    if (!user && !onAuthScreen) {
-      router.replace("/auth");
-    } else if (user && onAuthScreen) {
+    // Browsing is public, exactly like the web app: guests can see the home
+    // feed, search, listings and shops without an account. Only the actions
+    // that need identity (message, callback, favourite, review, report, sell)
+    // send you to /auth, and each does that at its own call site.
+    //
+    // There is deliberately no signed-out redirect here. One used to bounce
+    // every guest to /auth, which made the whole catalogue unreachable and gave
+    // first-time users nothing to look at before signing up.
+    if (user && onAuthScreen) {
       router.replace("/(tabs)");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

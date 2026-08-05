@@ -42,6 +42,7 @@ import {
 import { Button } from "../../components/Button";
 import { EmptyState } from "../../components/EmptyState";
 import { colors, radius, spacing, shadows } from "../../lib/theme";
+import { imageSource } from "../../lib/storage";
 import { formatBirr, timeAgo } from "../../lib/format";
 import type { BuyerPreferences } from "../../lib/api";
 
@@ -263,7 +264,7 @@ export default function ProfileScreen() {
           <View style={styles.avatar}>
             {profile?.shop_logo_url || profile?.avatar_url ? (
               <Image
-                source={{ uri: profile?.shop_logo_url ?? profile?.avatar_url ?? "" }}
+                source={imageSource(profile?.shop_logo_url ?? profile?.avatar_url)}
                 style={styles.avatarImg}
               />
             ) : (
@@ -483,7 +484,7 @@ export default function ProfileScreen() {
               (myListings.data ?? []).map((l) => (
                 <View key={l.id} style={styles.manageRow}>
                   {l.listing_images?.[0]?.url ? (
-                    <Image source={{ uri: l.listing_images[0].url }} style={styles.manageImg} />
+                    <Image source={imageSource(l.listing_images[0].url)} style={styles.manageImg} />
                   ) : (
                     <View style={[styles.manageImg, styles.manageImgEmpty]}>
                       <Text style={styles.manageEmoji}>🛋️</Text>

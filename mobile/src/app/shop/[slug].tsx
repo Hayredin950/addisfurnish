@@ -16,6 +16,7 @@ import { fetchListings, fetchReviews, fetchShop } from "../../lib/api";
 import { ListingCard } from "../../components/ListingCard";
 import { EmptyState } from "../../components/EmptyState";
 import { colors, radius, spacing, shadows } from "../../lib/theme";
+import { imageSource } from "../../lib/storage";
 import { timeAgo } from "../../lib/format";
 
 function Stars({ value }: { value: number }) {
@@ -73,7 +74,7 @@ export default function ShopScreen() {
       <View style={styles.header}>
         <View style={styles.logo}>
           {profile.shop_logo_url ? (
-            <Image source={{ uri: profile.shop_logo_url }} style={styles.logoImg} />
+            <Image source={imageSource(profile.shop_logo_url)} style={styles.logoImg} />
           ) : (
             <Ionicons name="storefront" size={34} color={colors.primary} />
           )}
@@ -239,7 +240,7 @@ const styles = StyleSheet.create({
   ratingText: { fontSize: 13, color: colors.textMuted },
   section: { paddingHorizontal: spacing.lg, marginTop: spacing.xl },
   sectionTitle: { fontSize: 18, fontWeight: "700", color: colors.text, marginBottom: 14 },
-  grid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" },
+  grid: { flexDirection: "row", flexWrap: "wrap", gap: 12 },
   muted: { fontSize: 13, color: colors.textMuted },
   review: {
     backgroundColor: colors.card,

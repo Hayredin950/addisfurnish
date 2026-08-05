@@ -9,6 +9,7 @@ import { ListingCard } from "../../components/ListingCard";
 import { SectionHeader } from "../../components/SectionHeader";
 import { EmptyState } from "../../components/EmptyState";
 import { colors, radius, spacing, shadows } from "../../lib/theme";
+import { categoryIcon } from "../../lib/category-icons";
 
 export default function HomeScreen() {
   const { t, lang } = useLang();
@@ -98,7 +99,7 @@ export default function HomeScreen() {
               onPress={() => router.push({ pathname: "/browse", params: { category: c.slug } })}
             >
               <View style={styles.catIcon}>
-                <Text style={styles.catEmoji}>{c.icon ?? "🛋️"}</Text>
+                <Ionicons name={categoryIcon(c.icon)} size={24} color={colors.primary} />
               </View>
               <Text numberOfLines={2} style={styles.catName}>
                 {lang === "am" ? (c.name_am ?? c.name) : c.name}
@@ -227,9 +228,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  catEmoji: {
-    fontSize: 24,
-  },
   catName: {
     fontSize: 11,
     color: colors.text,
@@ -242,6 +240,9 @@ const styles = StyleSheet.create({
   grid: {
     flexDirection: "row",
     flexWrap: "wrap",
-    justifyContent: "space-between",
+    // `gap` rather than space-between: with an odd number of cards the last row
+    // would otherwise push its single card full-width and the rows read as one
+    // block. Cards set their own 48% width.
+    gap: 12,
   },
 });

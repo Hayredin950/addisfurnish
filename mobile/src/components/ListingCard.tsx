@@ -2,14 +2,10 @@ import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { router } from "expo-router";
 import { colors, radius, shadows, font } from "../lib/theme";
 import { formatBirr, timeAgo } from "../lib/format";
+import { imageSource } from "../lib/storage";
 import { translate } from "../lib/i18n";
 import type { Lang } from "../lib/i18n";
 import type { Listing } from "../lib/api";
-
-function imageSource(url?: string | null) {
-  if (!url) return undefined;
-  return { uri: url };
-}
 
 export function ListingCard({
   listing,
@@ -91,9 +87,10 @@ const styles = StyleSheet.create({
     borderRadius: radius.lg,
     overflow: "hidden",
     ...shadows.card,
-    flex: 1,
-    maxWidth: "48.5%",
-    marginBottom: 14,
+    // Fixed 48% rather than flex:1 + maxWidth. With flex:1 a lone card on the
+    // last row stretched to full width, and rows sat flush against each other;
+    // the parent grid supplies the 12px gap.
+    width: "48%",
   },
   compact: {
     maxWidth: 180,

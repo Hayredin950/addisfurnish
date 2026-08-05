@@ -38,7 +38,9 @@ import {
 } from "../../lib/api";
 import { ListingCard } from "../../components/ListingCard";
 import { Button } from "../../components/Button";
+import { SheetOverlay } from "../../components/SheetOverlay";
 import { colors, radius, spacing, shadows, font } from "../../lib/theme";
+import { imageSource } from "../../lib/storage";
 import { formatBirr, timeAgo, ethiopianDate } from "../../lib/format";
 import type { Listing } from "../../lib/api";
 
@@ -246,7 +248,7 @@ export default function ListingDetailScreen() {
             {images.map((img) => (
               <Image
                 key={img.id}
-                source={{ uri: img.url }}
+                source={imageSource(img.url)}
                 style={[styles.heroImage, { width: screenWidth }]}
                 resizeMode="cover"
               />
@@ -378,7 +380,7 @@ export default function ListingDetailScreen() {
           <View style={styles.sellerRow}>
             <View style={styles.avatar}>
               {seller.shop_logo_url ? (
-                <Image source={{ uri: seller.shop_logo_url }} style={styles.avatarImg} />
+                <Image source={imageSource(seller.shop_logo_url)} style={styles.avatarImg} />
               ) : (
                 <Ionicons name="storefront" size={20} color={colors.primary} />
               )}
@@ -538,7 +540,7 @@ export default function ListingDetailScreen() {
         animationType="slide"
         onRequestClose={() => setMsgOpen(false)}
       >
-        <View style={styles.modalOverlay}>
+        <SheetOverlay>
           <View style={styles.modalSheet}>
             <Text style={styles.modalTitle}>{t("messageSeller")}</Text>
             <TextInput
@@ -555,7 +557,7 @@ export default function ListingDetailScreen() {
               disabled={sending}
             />
           </View>
-        </View>
+        </SheetOverlay>
       </Modal>
 
       {/* Callback request modal */}
@@ -565,7 +567,7 @@ export default function ListingDetailScreen() {
         animationType="slide"
         onRequestClose={() => setCallbackOpen(false)}
       >
-        <View style={styles.modalOverlay}>
+        <SheetOverlay>
           <View style={styles.modalSheet}>
             <Text style={styles.modalTitle}>{t("requestCallback")}</Text>
             <TextInput
@@ -583,7 +585,7 @@ export default function ListingDetailScreen() {
               style={{ marginTop: 12 }}
             />
           </View>
-        </View>
+        </SheetOverlay>
       </Modal>
 
       {/* Callback confirmation */}
@@ -593,13 +595,13 @@ export default function ListingDetailScreen() {
         animationType="fade"
         onRequestClose={() => setCallbackSent(false)}
       >
-        <View style={styles.modalOverlay}>
+        <SheetOverlay>
           <View style={styles.callbackSheet}>
             <Ionicons name="checkmark-circle" size={44} color={colors.success} />
             <Text style={styles.modalTitle}>{t("callbackSent")}</Text>
             <Button title={t("back")} variant="outline" onPress={() => setCallbackSent(false)} />
           </View>
-        </View>
+        </SheetOverlay>
       </Modal>
 
       {/* Review modal */}
@@ -609,7 +611,7 @@ export default function ListingDetailScreen() {
         animationType="slide"
         onRequestClose={() => setReviewOpen(false)}
       >
-        <View style={styles.modalOverlay}>
+        <SheetOverlay>
           <View style={styles.modalSheet}>
             <Text style={styles.modalTitle}>{t("yourReview")}</Text>
             <View style={{ flexDirection: "row", gap: 8, marginVertical: 12 }}>
@@ -632,7 +634,7 @@ export default function ListingDetailScreen() {
             />
             <Button title={t("submit")} onPress={submitReviewNow} />
           </View>
-        </View>
+        </SheetOverlay>
       </Modal>
 
       {/* Report modal */}
@@ -642,7 +644,7 @@ export default function ListingDetailScreen() {
         animationType="slide"
         onRequestClose={() => setReportOpen(false)}
       >
-        <View style={styles.modalOverlay}>
+        <SheetOverlay>
           <View style={styles.modalSheet}>
             {reportSent ? (
               <>
@@ -697,7 +699,7 @@ export default function ListingDetailScreen() {
               </>
             )}
           </View>
-        </View>
+        </SheetOverlay>
       </Modal>
 
       {/* Report trigger */}
@@ -880,7 +882,6 @@ const styles = StyleSheet.create({
   reviewAuthor: { fontSize: 13, fontWeight: "600", color: colors.text },
   reviewComment: { fontSize: 13, color: colors.textMuted, marginTop: 4 },
   section: { paddingHorizontal: spacing.lg, marginTop: spacing.xl },
-  modalOverlay: { flex: 1, backgroundColor: colors.overlay, justifyContent: "flex-end" },
   modalSheet: {
     backgroundColor: colors.card,
     borderTopLeftRadius: radius.xl,

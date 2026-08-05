@@ -1,10 +1,12 @@
 import { ActivityIndicator, FlatList, StyleSheet, View } from "react-native";
+import { router } from "expo-router";
 import { useAuth } from "../../lib/auth";
 import { useLang } from "../../lib/lang";
 import { useAsync } from "../../hooks/use-async";
 import { fetchFavorites } from "../../lib/api";
 import { ListingCard } from "../../components/ListingCard";
 import { EmptyState } from "../../components/EmptyState";
+import { Button } from "../../components/Button";
 import { colors, spacing } from "../../lib/theme";
 
 export default function FavoritesScreen() {
@@ -16,6 +18,21 @@ export default function FavoritesScreen() {
     [user?.id],
     !!user,
   );
+
+  // Guests can reach this tab now that browsing is public, and favourites are
+  // per-account — so prompt instead of showing a permanently empty list.
+  if (!user) {
+    return (
+      <View style={styles.center}>
+        <EmptyState title={t("notSignedIn")} hint={t("signInPrompt")} />
+        <Button
+          title={t("signIn")}
+          onPress={() => router.push("/auth")}
+          style={{ marginTop: 16 }}
+        />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.screen}>
@@ -31,8 +48,8 @@ export default function FavoritesScreen() {
           data={data}
           keyExtractor={(item) => item.id}
           numColumns={2}
-          columnWrapperStyle={{ justifyContent: "space-between" }}
-          contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40 }}
+          columnWrapperStyle={{ gap: 12 }}
+          contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40, gap: 12 }}
           renderItem={({ item }) => <ListingCard listing={item} lang={lang} />}
           onRefresh={refetch}
           refreshing={loading && !!data}
@@ -44,4 +61,11 @@ export default function FavoritesScreen() {
 
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background },
+  center: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.background,
+    padding: spacing.xl,
+  },
 });

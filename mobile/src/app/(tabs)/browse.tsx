@@ -25,6 +25,7 @@ import {
   fetchSavedSearches,
 } from "../../lib/api";
 import { ListingCard } from "../../components/ListingCard";
+import { SheetOverlay } from "../../components/SheetOverlay";
 import { EmptyState } from "../../components/EmptyState";
 import { Button } from "../../components/Button";
 import { colors, radius, spacing } from "../../lib/theme";
@@ -247,7 +248,7 @@ export default function BrowseScreen() {
         data={listings}
         keyExtractor={(item) => item.id}
         numColumns={2}
-        columnWrapperStyle={{ justifyContent: "space-between" }}
+        columnWrapperStyle={{ gap: 12 }}
         contentContainerStyle={{ padding: spacing.lg, paddingBottom: 96 }}
         ListHeaderComponent={header}
         ListEmptyComponent={
@@ -272,7 +273,7 @@ export default function BrowseScreen() {
         transparent
         onRequestClose={() => setShowFilters(false)}
       >
-        <View style={styles.modalOverlay}>
+        <SheetOverlay>
           <View style={styles.modalSheet}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>{t("filters")}</Text>
@@ -343,7 +344,7 @@ export default function BrowseScreen() {
               <Button title={t("apply")} onPress={applyFilters} />
             </View>
           </View>
-        </View>
+        </SheetOverlay>
       </Modal>
     </View>
   );
@@ -413,7 +414,6 @@ const styles = StyleSheet.create({
   chipText: { fontSize: 12.5, color: colors.text },
   chipTextActive: { color: colors.onPrimary, fontWeight: "600" },
   locating: { fontSize: 12, color: colors.textMuted, marginTop: 8 },
-  modalOverlay: { flex: 1, backgroundColor: colors.overlay, justifyContent: "flex-end" },
   modalSheet: {
     backgroundColor: colors.card,
     borderTopLeftRadius: radius.xl,
