@@ -9,7 +9,10 @@
       "distribution": "internal",
       "channel": "development",
       "env": {
-        "EXPO_PUBLIC_APP_ENV": "development"
+        "EXPO_PUBLIC_APP_ENV": "development",
+        "EXPO_PUBLIC_SUPABASE_URL": "https://ctgulhtaefzsdfemggty.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY": "sb_publishable_jYgnSd0CtVUoVE1nYQ_AHg_WVPjGkGF",
+        "EXPO_PUBLIC_TELEGRAM_BOT_USERNAME": "addisfurnish_bot"
       }
     },
     "preview": {
@@ -19,14 +22,20 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_APP_ENV": "preview"
+        "EXPO_PUBLIC_APP_ENV": "preview",
+        "EXPO_PUBLIC_SUPABASE_URL": "https://ctgulhtaefzsdfemggty.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY": "sb_publishable_jYgnSd0CtVUoVE1nYQ_AHg_WVPjGkGF",
+        "EXPO_PUBLIC_TELEGRAM_BOT_USERNAME": "addisfurnish_bot"
       }
     },
     "production": {
       "channel": "production",
       "autoIncrement": true,
       "env": {
-        "EXPO_PUBLIC_APP_ENV": "production"
+        "EXPO_PUBLIC_APP_ENV": "production",
+        "EXPO_PUBLIC_SUPABASE_URL": "https://ctgulhtaefzsdfemggty.supabase.co",
+        "EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY": "sb_publishable_jYgnSd0CtVUoVE1nYQ_AHg_WVPjGkGF",
+        "EXPO_PUBLIC_TELEGRAM_BOT_USERNAME": "addisfurnish_bot"
       }
     }
   },
