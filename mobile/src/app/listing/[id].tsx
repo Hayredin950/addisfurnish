@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
+  Alert,
   Image,
   Linking,
   Modal,
@@ -26,8 +27,10 @@ import {
   fetchMyProfile,
   fetchReviews,
   fetchFavoriteIds,
+  notifyUser,
   pingListingView,
   recordListingView,
+  requestCallback,
   sendMessage,
   submitReport,
   submitReview,
@@ -73,12 +76,16 @@ export default function ListingDetailScreen() {
     [listing.data?.categories?.slug],
   );
   const cats = useAsync(fetchCategories, []);
+  // Used to prefill the callback form with the buyer's own number.
+  const myProfile = useAsync(() => fetchMyProfile(user!.id), [user?.id], !!user);
 
   const [favIds, setFavIds] = useState<string[]>([]);
   const [msgOpen, setMsgOpen] = useState(false);
   const [message, setMessage] = useState("");
   const [sending, setSending] = useState(false);
   const [callbackPhone, setCallbackPhone] = useState("");
+  const [callbackOpen, setCallbackOpen] = useState(false);
+  const [callbackBusy, setCallbackBusy] = useState(false);
   const [callbackSent, setCallbackSent] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [rating, setRating] = useState(5);
@@ -109,8 +116,14 @@ export default function ListingDetailScreen() {
       ? Math.round(((item.original_price - item.price) / item.original_price) * 100)
       : 0;
 
+  // Reading the clock during render makes the component non-idempotent, so the
+  // comparison time is captured in an effect instead.
+  const [now, setNow] = useState(0);
+  useEffect(() => {
+    setNow(Date.now());
+  }, [item?.discount_expires_at]);
   const discountActive =
-    !!item?.discount_expires_at && new Date(item.discount_expires_at).getTime() > Date.now();
+    !!item?.discount_expires_at && new Date(item.discount_expires_at).getTime() > now;
 
   const openConversation = useCallback(async () => {
     if (!user || !item) return;
@@ -119,6 +132,11 @@ export default function ListingDetailScreen() {
       const conversationId = await ensureConversation(item.id, user.id, item.seller_id);
       if (message.trim()) {
         await sendMessage(conversationId, user.id, message.trim());
+        // Same fan-out as the chat screen: in-app, push and Telegram.
+        void notifyUser(item.seller_id, "new_message", {
+          title: item.title,
+          listingId: item.id,
+        });
       }
       setMsgOpen(false);
       setMessage("");
@@ -132,19 +150,25 @@ export default function ListingDetailScreen() {
 
   const sendCallback = useCallback(async () => {
     if (!user || !item || !callbackPhone.trim()) return;
+    setCallbackBusy(true);
     try {
-      const { notifyUser } = await import("../../lib/api");
-      await notifyUser(item.seller_id, "callback_request", {
-        title: item.title,
+      await requestCallback({
         listingId: item.id,
+        buyerId: user.id,
+        sellerId: item.seller_id,
+        listingTitle: item.title,
         phone: callbackPhone.trim(),
-        fromName: user.id,
+        note: message.trim() || null,
       });
+      setCallbackOpen(false);
+      setCallbackPhone("");
       setCallbackSent(true);
     } catch {
-      // ignore
+      Alert.alert(t("oops"));
+    } finally {
+      setCallbackBusy(false);
     }
-  }, [user, item, callbackPhone]);
+  }, [user, item, callbackPhone, message, t]);
 
   const submitReviewNow = useCallback(async () => {
     if (!user || !item) return;
@@ -395,6 +419,20 @@ export default function ListingDetailScreen() {
               />
             ) : null}
           </View>
+          <Button
+            title={t("requestCallback")}
+            size="sm"
+            variant="ghost"
+            style={{ marginTop: 8 }}
+            onPress={() => {
+              if (!user) {
+                router.push("/auth");
+                return;
+              }
+              setCallbackPhone(myProfile.data?.phone ?? "");
+              setCallbackOpen(true);
+            }}
+          />
           {seller.whatsapp ? (
             <Pressable
               style={styles.socialRow}
@@ -520,7 +558,35 @@ export default function ListingDetailScreen() {
         </View>
       </Modal>
 
-      {/* Callback modal */}
+      {/* Callback request modal */}
+      <Modal
+        visible={callbackOpen}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setCallbackOpen(false)}
+      >
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalSheet}>
+            <Text style={styles.modalTitle}>{t("requestCallback")}</Text>
+            <TextInput
+              value={callbackPhone}
+              onChangeText={setCallbackPhone}
+              placeholder={t("callbackPlaceholder")}
+              keyboardType="phone-pad"
+              style={styles.phoneInput}
+            />
+            <Button
+              title={t("send")}
+              loading={callbackBusy}
+              disabled={!callbackPhone.trim() || callbackBusy}
+              onPress={sendCallback}
+              style={{ marginTop: 12 }}
+            />
+          </View>
+        </View>
+      </Modal>
+
+      {/* Callback confirmation */}
       <Modal
         visible={callbackSent}
         transparent
@@ -832,6 +898,14 @@ const styles = StyleSheet.create({
     color: colors.text,
     minHeight: 90,
     textAlignVertical: "top",
+  },
+  // Single-line variant for the callback phone number.
+  phoneInput: {
+    backgroundColor: colors.secondary,
+    borderRadius: radius.md,
+    padding: 12,
+    fontSize: 14,
+    color: colors.text,
   },
   callbackSheet: {
     backgroundColor: colors.card,

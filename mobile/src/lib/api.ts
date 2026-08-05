@@ -600,6 +600,37 @@ export async function deleteListing(id: string): Promise<void> {
   }
 }
 
+/**
+ * Buyer asks the seller to call them back.
+ *
+ * The callback_requests row must be inserted BEFORE notify_user: that RPC only
+ * allows notifying someone you already share a conversation or callback thread
+ * with, so notifying first is silently dropped. The insert is what establishes
+ * the thread. Inserting it also drives push and Telegram via the notifications
+ * triggers.
+ */
+export async function requestCallback(input: {
+  listingId: string;
+  buyerId: string;
+  sellerId: string;
+  listingTitle: string;
+  phone: string;
+  note?: string | null;
+}) {
+  const { error } = await supabase.from("callback_requests").insert({
+    listing_id: input.listingId,
+    buyer_id: input.buyerId,
+    seller_id: input.sellerId,
+    phone: input.phone,
+    note: input.note || null,
+  });
+  if (error) throw error;
+  await notifyUser(input.sellerId, "callback_request", {
+    title: input.listingTitle,
+    listingId: input.listingId,
+  });
+}
+
 export async function fetchCallbacks(sellerId: string) {
   const { data, error } = await supabase
     .from("callback_requests")
