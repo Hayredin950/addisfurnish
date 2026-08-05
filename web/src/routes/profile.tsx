@@ -9,7 +9,7 @@ import { useLang } from "@/lib/i18n";
 import { RequireAuth } from "@/components/RequireAuth";
 import { LocationPicker, type Coords } from "@/components/LocationPicker";
 import { getTelegramConnectUrl, disconnectTelegram, telegramConfigured } from "@/lib/telegram";
-import { sendPhoneOtp, verifyPhoneOtp } from "@/lib/otp";
+import { startPhoneVerification, verifyPhoneOtp } from "@/lib/otp";
 import {
   buyerPreferencesQuery,
   categoriesQuery,
@@ -88,7 +88,6 @@ function ProfilePage() {
   }, [prefs]);
   const [otpCode, setOtpCode] = useState("");
   const [otpSent, setOtpSent] = useState(false);
-  const [otpDevCode, setOtpDevCode] = useState<string | null>(null);
   const [otpBusy, setOtpBusy] = useState(false);
   // Shop location pin. Seeded from the profile once it loads.
   const [shopCoords, setShopCoords] = useState<Coords | null>(null);
@@ -455,12 +454,14 @@ function ProfilePage() {
             </p>
           ) : (
             <div className="mt-3 space-y-3">
+              <p className="text-xs text-muted-foreground">{t("otp.telegramHint")}</p>
               <div className="flex gap-2">
                 <Input
                   value={otpPhone}
                   onChange={(e) => setOtpPhone(e.target.value)}
                   placeholder="09xx xxx xxx"
                   inputMode="tel"
+                  disabled={otpSent}
                 />
                 <Button
                   type="button"
@@ -468,33 +469,31 @@ function ProfilePage() {
                   disabled={otpBusy || otpPhone.trim().length < 9}
                   onClick={async () => {
                     setOtpBusy(true);
-                    const res = await sendPhoneOtp({ data: { phone: otpPhone } });
+                    const res = await startPhoneVerification({ data: { phone: otpPhone } });
                     setOtpBusy(false);
                     if (res.ok) {
+                      // The bot asks for the contact, checks it, then DMs the
+                      // code — so the input only opens once they're sent off.
                       setOtpSent(true);
-                      setOtpDevCode(res.dev ? (res.devCode ?? null) : null);
+                      window.open(res.url, "_blank");
+                    } else if (res.error === "taken") {
+                      toast.error(t("otp.phoneTaken"));
+                    } else if (res.error === "invalid_phone") {
+                      toast.error(t("otp.invalidPhone"));
                     } else if (res.error === "auth") {
                       toast.error(t("req.title"));
-                    } else if (res.error === "rate_limited") {
-                      toast.error(t("otp.rateLimited"));
                     } else {
-                      toast.error(t("otp.invalidPhone"));
+                      toast.error(t("toast.requestFailed"));
                     }
                   }}
                 >
-                  {t("otp.send")}
+                  <Send className="mr-1.5 h-4 w-4" />
+                  {t("otp.verifyViaTelegram")}
                 </Button>
               </div>
               {otpSent ? (
                 <div className="space-y-2">
-                  {otpDevCode ? (
-                    <p className="text-xs text-muted-foreground">
-                      Dev mode (no SMS provider configured) — your code is{" "}
-                      <strong className="text-foreground">{otpDevCode}</strong>
-                    </p>
-                  ) : (
-                    <p className="text-xs text-muted-foreground">{t("otp.codeSent")}</p>
-                  )}
+                  <p className="text-xs text-muted-foreground">{t("otp.codeSent")}</p>
                   <div className="flex gap-2">
                     <Input
                       value={otpCode}
@@ -516,7 +515,6 @@ function ProfilePage() {
                           toast.success(t("otp.toastVerified"));
                           setOtpSent(false);
                           setOtpCode("");
-                          setOtpDevCode(null);
                           queryClient.invalidateQueries({ queryKey: ["profile"] });
                         } else if (res.error === "wrong_code") {
                           toast.error(t("otp.wrongCode"));
@@ -524,6 +522,10 @@ function ProfilePage() {
                           toast.error(t("otp.expired"));
                         } else if (res.error === "too_many") {
                           toast.error(t("otp.tooMany"));
+                        } else if (res.error === "no_code") {
+                          toast.error(t("otp.noCodeYet"));
+                        } else if (res.error === "taken") {
+                          toast.error(t("otp.phoneTaken"));
                         } else {
                           toast.error(t("toast.requestFailed"));
                         }

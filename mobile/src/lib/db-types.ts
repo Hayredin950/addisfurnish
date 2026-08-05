@@ -372,6 +372,10 @@ export type Database = {
           telegram_chat_id: string | null;
           telegram_link_token: string | null;
           telegram_link_token_expires_at: string | null;
+          phone_verify_token: string | null;
+          phone_verify_token_expires_at: string | null;
+          phone_verify_phone: string | null;
+          phone_verify_chat_id: string | null;
           telegram_linked_at: string | null;
           updated_at: string;
           verified: boolean;
@@ -399,6 +403,10 @@ export type Database = {
           telegram_chat_id?: string | null;
           telegram_link_token?: string | null;
           telegram_link_token_expires_at?: string | null;
+          phone_verify_token?: string | null;
+          phone_verify_token_expires_at?: string | null;
+          phone_verify_phone?: string | null;
+          phone_verify_chat_id?: string | null;
           telegram_linked_at?: string | null;
           updated_at?: string;
           verified?: boolean;
@@ -426,6 +434,10 @@ export type Database = {
           telegram_chat_id?: string | null;
           telegram_link_token?: string | null;
           telegram_link_token_expires_at?: string | null;
+          phone_verify_token?: string | null;
+          phone_verify_token_expires_at?: string | null;
+          phone_verify_phone?: string | null;
+          phone_verify_chat_id?: string | null;
           telegram_linked_at?: string | null;
           updated_at?: string;
           verified?: boolean;
@@ -861,6 +873,10 @@ export type Database = {
       };
       mint_telegram_link_token: {
         Args: Record<string, never>;
+        Returns: string | null;
+      };
+      mint_phone_verify_token: {
+        Args: { _phone: string };
         Returns: string | null;
       };
       unlink_telegram: {

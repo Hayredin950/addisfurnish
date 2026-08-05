@@ -48,6 +48,18 @@ const COPY = {
         site ? `\n\n${site}` : ""
       }`,
     fallback: "I only send alerts. Use /help to see what I can do.",
+    // ── Phone verification ──
+    shareAsk: (phone: string) =>
+      `To verify <b>${phone}</b>, tap the button below to share your phone number.\n\nTelegram will send the number your account is registered with — it has to match the one you entered.`,
+    shareButton: "📱 Share my phone number",
+    shareNotOwn:
+      "⚠️ That contact isn't yours.\n\nUse the <b>Share my phone number</b> button rather than forwarding a contact — I can only verify the number this Telegram account is registered with.",
+    shareMismatch: (want: string) =>
+      `⚠️ That's not the number you're verifying.\n\nYou asked to verify <b>${want}</b>, but this Telegram account is registered with a different number. Verify the number your Telegram uses, or start again with the right one.`,
+    shareNoPending:
+      "Start from your AddisFurnish profile — open “Verify phone” there and I'll take it from here.",
+    codeSent: (code: string) =>
+      `✅ Number confirmed.\n\nYour verification code is <b>${code}</b>\n\nType it on the AddisFurnish page you came from. It expires in 10 minutes.`,
   },
   am: {
     linked: (shop: string) =>
@@ -65,21 +77,62 @@ const COPY = {
         site ? `\n\n${site}` : ""
       }`,
     fallback: "ማሳወቂያ ብቻ ነው የምልከው። /help ይጠቀሙ።",
+    // ── Phone verification ──
+    shareAsk: (phone: string) =>
+      `<b>${phone}</b>ን ለማረጋገጥ ከታች ያለውን ቁልፍ ተጭነው ስልክ ቁጥርዎን ያጋሩ።\n\nቴሌግራም መለያዎ የተመዘገበበትን ቁጥር ይልካል — ካስገቡት ጋር መመሳሰል አለበት።`,
+    shareButton: "📱 ስልክ ቁጥሬን አጋራ",
+    shareNotOwn:
+      "⚠️ ያ አድራሻ የእርስዎ አይደለም።\n\nእባክዎ የ<b>ስልክ ቁጥሬን አጋራ</b> ቁልፍ ይጠቀሙ — ማረጋገጥ የምችለው ይህ የቴሌግራም መለያ የተመዘገበበትን ቁጥር ብቻ ነው።",
+    shareMismatch: (want: string) =>
+      `⚠️ የሚያረጋግጡት ቁጥር አይደለም።\n\n<b>${want}</b>ን ለማረጋገጥ ጠይቀዋል፣ ግን ይህ የቴሌግራም መለያ በሌላ ቁጥር ተመዝግቧል። ቴሌግራምዎ የሚጠቀመውን ቁጥር ያረጋግጡ።`,
+    shareNoPending: "ከAddisFurnish መገለጫዎ ይጀምሩ — “ስልክ አረጋግጥ” የሚለውን ይክፈቱ።",
+    codeSent: (code: string) =>
+      `✅ ቁጥሩ ተረጋግጧል።\n\nየማረጋገጫ ኮድዎ <b>${code}</b> ነው\n\nመጥተውበት ባለው የAddisFurnish ገጽ ላይ ያስገቡት። በ10 ደቂቃ ውስጥ ያልፋል።`,
   },
 } as const;
 
-async function sendMessage(chatId: number, text: string) {
+// replyMarkup carries the request_contact keyboard during phone verification,
+// and { remove_keyboard: true } to clear it again afterwards.
+async function sendMessage(chatId: number, text: string, replyMarkup?: unknown) {
   if (!BOT_TOKEN) return;
   try {
     await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ chat_id: chatId, text: text.slice(0, 4096), parse_mode: "HTML" }),
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: text.slice(0, 4096),
+        parse_mode: "HTML",
+        ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
+      }),
     });
   } catch {
     // Telegram unreachable — nothing useful to do inside a webhook.
   }
 }
+
+// Mirror of normalizePhone in web/src/lib/otp.ts. Duplicated rather than
+// imported because edge functions can't reach web/src — keep the two in step.
+// Ethiopian mobile numbers: 09xxxxxxxx / 9xxxxxxxx / +2519xxxxxxxx → +2519xxxxxxxx.
+function normalizePhone(raw: string): string | null {
+  const digits = (raw ?? "").replace(/[^\d+]/g, "");
+  if (!digits) return null;
+  let n = digits.startsWith("+") ? digits.slice(1) : digits;
+  if (n.startsWith("00")) n = n.slice(2);
+  if (n.startsWith("0")) n = `251${n.slice(1)}`;
+  else if (n.length === 9 && (n.startsWith("9") || n.startsWith("7"))) n = `251${n}`;
+  if (!/^[1-9]\d{7,14}$/.test(n)) return null;
+  return `+${n}`;
+}
+
+// Clears a pending phone verification. Used on expiry, on /stop, and after a
+// successful run.
+const PENDING_CLEARED = {
+  phone_verify_token: null,
+  phone_verify_token_expires_at: null,
+  phone_verify_phone: null,
+  phone_verify_chat_id: null,
+} as const;
 
 Deno.serve(async (req) => {
   if (req.method !== "POST") return new Response("Method not allowed", { status: 405 });
@@ -116,10 +169,137 @@ Deno.serve(async (req) => {
   const lang: Lang = current?.preferred_language === "am" ? "am" : "en";
   const copy = COPY[lang];
 
+  // ── Shared contact: the phone-verification proof ───────────────────────
+  // Runs before the command branches — a shared contact arrives with no text,
+  // so it would otherwise fall through to the /help fallback. Needs its own
+  // lookup because `current` keys on telegram_chat_id, which is deliberately
+  // not set until this check passes.
+  const contact = message.contact as
+    | { phone_number?: string; user_id?: number }
+    | undefined;
+  if (contact) {
+    const { data: pending } = await supabase
+      .from("profiles")
+      .select("id, preferred_language, phone_verify_phone, phone_verify_token_expires_at")
+      .eq("phone_verify_chat_id", String(chatId))
+      .maybeSingle();
+
+    if (!pending) {
+      await sendMessage(chatId, copy.shareNoPending, { remove_keyboard: true });
+      return new Response("ok", { status: 200 });
+    }
+
+    const pendingCopy = COPY[pending.preferred_language === "am" ? "am" : "en"];
+    const expiresAt = pending.phone_verify_token_expires_at as string | null;
+    if (expiresAt && new Date(expiresAt).getTime() < Date.now()) {
+      await supabase.from("profiles").update(PENDING_CLEARED).eq("id", pending.id);
+      await sendMessage(chatId, pendingCopy.expired, { remove_keyboard: true });
+      return new Response("ok", { status: 200 });
+    }
+
+    // THE check. Telegram populates contact.user_id only when the shared
+    // contact is a real Telegram account, and it is that account's id — so a
+    // contact card forwarded from the address book carries someone else's id
+    // or none at all. Without this, anyone could verify a number they do not
+    // own by forwarding its owner's contact.
+    if (!contact.user_id || contact.user_id !== message.from?.id) {
+      await sendMessage(chatId, pendingCopy.shareNotOwn, { remove_keyboard: true });
+      return new Response("ok", { status: 200 });
+    }
+
+    const shared = normalizePhone(contact.phone_number ?? "");
+    const wanted = pending.phone_verify_phone as string | null;
+    if (!wanted || !shared || shared !== wanted) {
+      await sendMessage(chatId, pendingCopy.shareMismatch(wanted ?? "—"), {
+        remove_keyboard: true,
+      });
+      return new Response("ok", { status: 200 });
+    }
+
+    // Proven. Link the chat for notifications too, detaching it from any other
+    // account first because telegram_chat_id is UNIQUE.
+    await supabase
+      .from("profiles")
+      .update({ telegram_chat_id: null, telegram_linked_at: null })
+      .eq("telegram_chat_id", String(chatId))
+      .neq("id", pending.id);
+
+    const { error: linkErr } = await supabase
+      .from("profiles")
+      .update({
+        telegram_chat_id: String(chatId),
+        telegram_linked_at: new Date().toISOString(),
+        ...PENDING_CLEARED,
+      })
+      .eq("id", pending.id);
+    if (linkErr) {
+      console.error("phone verify link failed", linkErr);
+      await sendMessage(chatId, pendingCopy.invalid, { remove_keyboard: true });
+      return new Response("ok", { status: 200 });
+    }
+
+    // Only now does a code exist. Generated here rather than in the web app so
+    // there is no window where a code is live for an unproven number.
+    const code = String(Math.floor(100000 + Math.random() * 900000));
+    await supabase
+      .from("phone_otps")
+      .delete()
+      .eq("user_id", pending.id)
+      .eq("phone", wanted);
+    const { error: otpErr } = await supabase.from("phone_otps").insert({
+      user_id: pending.id,
+      phone: wanted,
+      code,
+      expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+    });
+    if (otpErr) {
+      console.error("phone verify code insert failed", otpErr);
+      await sendMessage(chatId, pendingCopy.invalid, { remove_keyboard: true });
+      return new Response("ok", { status: 200 });
+    }
+
+    await sendMessage(chatId, pendingCopy.codeSent(code), { remove_keyboard: true });
+    return new Response("ok", { status: 200 });
+  }
+
   if (text.startsWith("/start")) {
     const token = text.slice("/start".length).trim();
     if (!token) {
       await sendMessage(chatId, copy.noToken);
+      return new Response("ok", { status: 200 });
+    }
+
+    // Two kinds of token arrive here. A phone-verify token (minted by
+    // mint_phone_verify_token) must not link anything yet — it only asks for
+    // the contact, and the contact branch above does the linking once the
+    // number is proven. A plain link token keeps the original behaviour.
+    const { data: verifying } = await supabase
+      .from("profiles")
+      .select("id, preferred_language, phone_verify_phone, phone_verify_token_expires_at")
+      .eq("phone_verify_token", token)
+      .maybeSingle();
+
+    if (verifying) {
+      const vCopy = COPY[verifying.preferred_language === "am" ? "am" : "en"];
+      const vExpires = verifying.phone_verify_token_expires_at as string | null;
+      if (vExpires && new Date(vExpires).getTime() < Date.now()) {
+        await supabase.from("profiles").update(PENDING_CLEARED).eq("id", verifying.id);
+        await sendMessage(chatId, vCopy.expired);
+        return new Response("ok", { status: 200 });
+      }
+
+      // Remember which chat is mid-verification; the contact arrives as a
+      // separate webhook call and edge functions keep no memory between them.
+      await supabase
+        .from("profiles")
+        .update({ phone_verify_chat_id: String(chatId) })
+        .eq("id", verifying.id);
+
+      await sendMessage(chatId, vCopy.shareAsk(verifying.phone_verify_phone as string), {
+        keyboard: [[{ text: vCopy.shareButton, request_contact: true }]],
+        one_time_keyboard: true,
+        resize_keyboard: true,
+      });
       return new Response("ok", { status: 200 });
     }
 
@@ -187,9 +367,10 @@ Deno.serve(async (req) => {
         telegram_linked_at: null,
         telegram_link_token: null,
         telegram_link_token_expires_at: null,
+        ...PENDING_CLEARED,
       })
       .eq("id", current.id);
-    await sendMessage(chatId, copy.stopped);
+    await sendMessage(chatId, copy.stopped, { remove_keyboard: true });
     return new Response("ok", { status: 200 });
   }
 
