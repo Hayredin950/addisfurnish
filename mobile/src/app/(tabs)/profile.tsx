@@ -811,7 +811,6 @@ const styles = StyleSheet.create({
   langActive: { backgroundColor: colors.primary },
   langText: { fontSize: 14, color: colors.text, fontWeight: "600" },
   langTextActive: { color: colors.onPrimary },
-  grid: { flexDirection: "row", flexWrap: "wrap", justifyContent: "space-between" },
   statRow: { flexDirection: "row", gap: 8, marginTop: 4 },
   statBox: {
     flex: 1,

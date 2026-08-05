@@ -245,6 +245,7 @@ export default function BrowseScreen() {
   return (
     <View style={styles.screen}>
       <FlatList
+        keyboardShouldPersistTaps="handled"
         data={listings}
         keyExtractor={(item) => item.id}
         numColumns={2}
