@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   FlatList,
   Image,
@@ -48,11 +48,6 @@ export default function ChatScreen() {
   const all = useMemo(() => messages.data ?? [], [messages.data]);
 
   const conv = conversation.data;
-  const counterpart = conv
-    ? conv.buyer_id === user?.id
-      ? conv.seller
-      : conv.buyer
-    : null;
   const listing = conv?.listings ?? null;
 
   // Realtime delivery for this conversation — listen to *all* events so edits,

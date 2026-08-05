@@ -30,7 +30,6 @@ import { EmptyState } from "../../components/EmptyState";
 import { Button } from "../../components/Button";
 import { colors, radius, spacing } from "../../lib/theme";
 import { haversineKm } from "../../lib/format";
-import type { Listing } from "../../lib/api";
 
 type SortKey = "newest" | "price-asc" | "price-desc" | "viewed" | "nearest";
 

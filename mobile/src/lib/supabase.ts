@@ -2,6 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import { Platform } from "react-native";
 import * as SecureStore from "expo-secure-store";
 import * as Linking from "expo-linking";
+import type { Database } from "./db-types";
 
 type StorageLike = {
   getItem: (key: string) => Promise<string | null>;
@@ -61,8 +62,6 @@ function makeStorage(): StorageLike {
     },
   };
 }
-
-import type { Database } from "./db-types";
 
 const SUPABASE_URL = process.env.EXPO_PUBLIC_SUPABASE_URL;
 const SUPABASE_PUBLISHABLE_KEY = process.env.EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY;

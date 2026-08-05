@@ -20,7 +20,6 @@ import { useAsync } from "../../hooks/use-async";
 import { useAuth } from "../../lib/auth";
 import {
   ensureConversation,
-  fetchCategories,
   fetchListing,
   fetchListings,
   fetchMyProfile,
@@ -42,7 +41,6 @@ import { useToast } from "../../components/Toast";
 import { colors, radius, spacing, shadows, font } from "../../lib/theme";
 import { imageSource } from "../../lib/storage";
 import { formatBirr, timeAgo, ethiopianDate } from "../../lib/format";
-import type { Listing } from "../../lib/api";
 
 function Stars({ value, size = 14 }: { value: number; size?: number }) {
   return (
@@ -78,7 +76,6 @@ export default function ListingDetailScreen() {
       }),
     [listing.data?.categories?.slug],
   );
-  const cats = useAsync(fetchCategories, []);
   // Used to prefill the callback form with the buyer's own number.
   const myProfile = useAsync(() => fetchMyProfile(user!.id), [user?.id], !!user);
 
@@ -171,7 +168,7 @@ export default function ListingDetailScreen() {
     } finally {
       setCallbackBusy(false);
     }
-  }, [user, item, callbackPhone, message, t]);
+  }, [user, item, callbackPhone, message, t, toast]);
 
   const submitReviewNow = useCallback(async () => {
     if (!user || !item) return;
@@ -502,7 +499,7 @@ export default function ListingDetailScreen() {
           ) : null}
         </View>
         {(reviews.data ?? []).length === 0 ? (
-          <Text style={styles.muted}>{t("noResults")}</Text>
+          <Text style={styles.muted}>{t("noReviews")}</Text>
         ) : (
           (reviews.data ?? []).slice(0, 4).map((r) => (
             <View key={r.id} style={styles.review}>

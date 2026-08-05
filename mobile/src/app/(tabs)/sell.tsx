@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   Image,
   KeyboardAvoidingView,
@@ -113,7 +113,6 @@ export default function SellScreen() {
       .sort((a, b) => a.position - b.position)
       .map((img) => ({ uri: img.url, name: `existing-${img.id}.jpg`, isExisting: true }));
     setPhotos(existing);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [item, editId]);
 
   const pickPhotos = async () => {

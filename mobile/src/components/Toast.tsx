@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { Animated, StyleSheet, Text, View } from "react-native";
+import { Animated, StyleSheet, Text } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { colors, radius, spacing, shadows } from "../lib/theme";
 

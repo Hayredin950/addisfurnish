@@ -17,7 +17,6 @@ import { ListingCard } from "../../components/ListingCard";
 import { EmptyState } from "../../components/EmptyState";
 import { colors, radius, spacing, shadows } from "../../lib/theme";
 import { imageSource } from "../../lib/storage";
-import { timeAgo } from "../../lib/format";
 
 function Stars({ value }: { value: number }) {
   return (
@@ -154,7 +153,7 @@ export default function ShopScreen() {
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>{t("reviews")}</Text>
         {(reviews.data ?? []).length === 0 ? (
-          <Text style={styles.muted}>{t("noResults")}</Text>
+          <Text style={styles.muted}>{t("noReviews")}</Text>
         ) : (
           (reviews.data ?? []).map((r) => (
             <View key={r.id} style={styles.review}>

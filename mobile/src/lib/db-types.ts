@@ -352,6 +352,8 @@ export type Database = {
       profiles: {
         Row: {
           avatar_url: string | null;
+          banned_until: string | null;
+          ban_reason: string | null;
           city: string | null;
           created_at: string;
           full_name: string;
@@ -383,6 +385,8 @@ export type Database = {
         };
         Insert: {
           avatar_url?: string | null;
+          banned_until?: string | null;
+          ban_reason?: string | null;
           city?: string | null;
           created_at?: string;
           full_name?: string;
@@ -414,6 +418,8 @@ export type Database = {
         };
         Update: {
           avatar_url?: string | null;
+          banned_until?: string | null;
+          ban_reason?: string | null;
           city?: string | null;
           created_at?: string;
           full_name?: string;
@@ -865,6 +871,14 @@ export type Database = {
           _type: string;
           _payload?: Json;
         };
+        Returns: undefined;
+      };
+      admin_revoke_sessions: {
+        Args: { _user_id: string };
+        Returns: undefined;
+      };
+      admin_set_ban: {
+        Args: { _user_id: string; _until: string | null; _reason?: string | null };
         Returns: undefined;
       };
       claim_push_token: {
