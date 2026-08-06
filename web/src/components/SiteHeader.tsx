@@ -27,11 +27,12 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { UserAvatar } from "@/components/UserAvatar";
 import { useAuth } from "@/lib/auth";
 import { LanguageToggle } from "@/components/LanguageToggle";
 import { NotificationBell } from "@/components/NotificationBell";
 
-/** Neutral person silhouette — the one avatar in the nav bar for everyone. */
+/** Neutral person silhouette — used for guests, who have no profile picture. */
 function DefaultAvatar() {
   return (
     <span className="grid h-9 w-9 place-items-center rounded-full bg-secondary">
@@ -199,15 +200,25 @@ export function SiteHeader() {
               <NotificationBell />
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  {/* Always the same neutral default avatar — no shop logos or
-                      profile photos in the bar, identical for every user. */}
+                  {/* The user's own picture: shop logo for sellers, avatar for
+                      individuals; the person silhouette only when they have no
+                      photo. Guests get the neutral avatar since they're not
+                      signed in. */}
                   <Button
                     variant="outline"
                     size="icon"
                     aria-label={t("nav.accountMenu")}
                     className="overflow-hidden rounded-full p-0"
                   >
-                    <DefaultAvatar />
+                    {profile?.shop_logo_url || profile?.avatar_url ? (
+                      <UserAvatar
+                        name={profile.shop_name ?? profile.full_name}
+                        avatarUrl={profile.shop_logo_url ?? profile.avatar_url}
+                        size={36}
+                      />
+                    ) : (
+                      <DefaultAvatar />
+                    )}
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-56">
