@@ -15,6 +15,7 @@ import {
 } from "react-native";
 import { router } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
+import * as Location from "expo-location";
 import { Ionicons } from "@expo/vector-icons";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../lib/auth";
@@ -30,6 +31,7 @@ import {
   updateProfile,
   uploadListingImage,
 } from "../../lib/api";
+import { startPhoneVerification, verifyPhoneOtp } from "../../lib/otp";
 import { Button } from "../../components/Button";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { useToast } from "../../components/Toast";
@@ -40,13 +42,12 @@ import { isAdmin } from "../../lib/admin";
 import type { BuyerPreferences } from "../../lib/api";
 
 const DOC_TYPES = ["National ID", "Business License", "TIN Certificate", "Other"];
+const CITIES = ["Addis Ababa", "Dire Dawa", "Hawassa", "Bahir Dar", "Mekelle", "Adama", "Gondar"];
 
 export default function ProfileScreen() {
   const { user, profile, loading, signOut, refreshProfile } = useAuth();
   const { t, lang, setLang } = useLang();
   const toast = useToast();
-  // One dialog serves every confirmation on this screen; the action to run is
-  // held alongside the copy.
   const [confirm, setConfirm] = useState<{
     title: string;
     message: string;
@@ -54,14 +55,31 @@ export default function ProfileScreen() {
     onConfirm: () => void;
   } | null>(null);
 
-  // Shop form state
+  // Account fields (everyone)
   const [fullName, setFullName] = useState(profile?.full_name ?? "");
+  const [phone, setPhone] = useState(profile?.phone ?? "");
+  const [city, setCity] = useState(profile?.city ?? "");
+  const [bio, setBio] = useState(profile?.bio ?? "");
+  const [savingAccount, setSavingAccount] = useState(false);
+
+  // Shop fields (sellers)
   const [shopName, setShopName] = useState(profile?.shop_name ?? "");
   const [shopSlug, setShopSlug] = useState(profile?.shop_slug ?? "");
   const [shopDesc, setShopDesc] = useState(profile?.shop_description ?? "");
   const [shopAddress, setShopAddress] = useState(profile?.shop_address ?? "");
   const [regNumber, setRegNumber] = useState(profile?.registration_number ?? "");
+  const [whatsapp, setWhatsapp] = useState(profile?.whatsapp ?? "");
+  const [telegram, setTelegram] = useState(profile?.telegram ?? "");
+  const [latitude, setLatitude] = useState<number | null>(profile?.latitude ?? null);
+  const [longitude, setLongitude] = useState<number | null>(profile?.longitude ?? null);
+  const [locating, setLocating] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  // Phone verification (everyone)
+  const [otpPhone, setOtpPhone] = useState(profile?.phone ?? "");
+  const [otpCode, setOtpCode] = useState("");
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpBusy, setOtpBusy] = useState(false);
 
   // Verification
   const [docType, setDocType] = useState(DOC_TYPES[0]!);
@@ -84,11 +102,18 @@ export default function ProfileScreen() {
   useEffect(() => {
     if (profile) {
       setFullName(profile.full_name ?? "");
+      setPhone(profile.phone ?? "");
+      setCity(profile.city ?? "");
+      setBio(profile.bio ?? "");
       setShopName(profile.shop_name ?? "");
       setShopSlug(profile.shop_slug ?? "");
       setShopDesc(profile.shop_description ?? "");
       setShopAddress(profile.shop_address ?? "");
       setRegNumber(profile.registration_number ?? "");
+      setWhatsapp(profile.whatsapp ?? "");
+      setTelegram(profile.telegram ?? "");
+      setLatitude(profile.latitude ?? null);
+      setLongitude(profile.longitude ?? null);
     }
   }, [profile]);
 
@@ -105,6 +130,25 @@ export default function ProfileScreen() {
     }
   }, [user, prefsLoaded]);
 
+  const saveAccount = async () => {
+    if (!user) return;
+    setSavingAccount(true);
+    try {
+      await updateProfile(user.id, {
+        full_name: fullName.trim() || undefined,
+        phone: phone.trim() || null,
+        city: city || null,
+        bio: bio.trim() || null,
+      });
+      await refreshProfile();
+      toast.success(t("profileSaved"));
+    } catch (err) {
+      toast.error(err, t("oops"));
+    } finally {
+      setSavingAccount(false);
+    }
+  };
+
   const saveShop = async () => {
     if (!user) return;
     setSaving(true);
@@ -116,13 +160,36 @@ export default function ProfileScreen() {
         shop_description: shopDesc.trim() || null,
         shop_address: shopAddress.trim() || null,
         registration_number: regNumber.trim() || null,
+        whatsapp: whatsapp.trim() || null,
+        telegram: telegram.trim().replace(/^@/, "") || null,
+        latitude,
+        longitude,
         is_seller: true,
       });
       await refreshProfile();
+      toast.success(t("profileSaved"));
     } catch (err) {
       toast.error(err, t("oops"));
     } finally {
       setSaving(false);
+    }
+  };
+
+  const setMyLocation = async () => {
+    setLocating(true);
+    try {
+      const { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== "granted") {
+        toast.error(null, t("locationDenied"));
+        return;
+      }
+      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+      setLatitude(pos.coords.latitude);
+      setLongitude(pos.coords.longitude);
+    } catch {
+      toast.error(null, t("oops"));
+    } finally {
+      setLocating(false);
     }
   };
 
@@ -157,15 +224,14 @@ export default function ProfileScreen() {
       const asset = res.assets[0];
       const ext = asset.fileName?.split(".").pop() ?? "jpg";
       const path = `${user.id}/${Date.now()}.${ext}`;
-      const form = new FormData();
-      form.append("file", {
-        uri: asset.uri,
-        name: asset.fileName ?? `doc.${ext}`,
-        type: asset.mimeType ?? `image/${ext === "jpg" ? "jpeg" : ext}`,
-      } as unknown as Blob);
+      const body = await (await fetch(asset.uri)).arrayBuffer();
       const { error: upErr } = await supabase.storage
         .from("verification-docs")
-        .upload(path, form, { cacheControl: "3600", upsert: false });
+        .upload(path, body, {
+          cacheControl: "3600",
+          upsert: false,
+          contentType: asset.mimeType ?? `image/${ext === "jpg" ? "jpeg" : ext}`,
+        });
       if (upErr) throw upErr;
       const { error } = await supabase.from("seller_verification_documents").insert({
         seller_id: user.id,
@@ -179,6 +245,49 @@ export default function ProfileScreen() {
       toast.error(err, t("oops"));
     } finally {
       setDocBusy(false);
+    }
+  };
+
+  const startVerify = async () => {
+    setOtpBusy(true);
+    const res = await startPhoneVerification(otpPhone);
+    setOtpBusy(false);
+    if (res.ok) {
+      setOtpSent(true);
+      Linking.openURL(res.url).catch(() => {});
+    } else if (res.error === "taken") {
+      toast.error(null, t("otpPhoneTaken"));
+    } else if (res.error === "invalid_phone") {
+      toast.error(null, t("otpInvalidPhone"));
+    } else {
+      toast.error(null, t("oops"));
+    }
+  };
+
+  const confirmVerify = async () => {
+    setOtpBusy(true);
+    const res = await verifyPhoneOtp(otpPhone, otpCode);
+    setOtpBusy(false);
+    if (res.ok) {
+      toast.success(t("otpVerified"));
+      setOtpSent(false);
+      setOtpCode("");
+      setPhone(otpPhone);
+      await refreshProfile();
+    } else if (res.error === "wrong_code") {
+      toast.error(null, t("otpWrongCode"));
+    } else if (res.error === "expired") {
+      toast.error(null, t("otpExpired"));
+    } else if (res.error === "too_many") {
+      toast.error(null, t("otpTooMany"));
+    } else if (res.error === "no_code") {
+      toast.error(null, t("otpNoCodeYet"));
+    } else if (res.error === "taken") {
+      toast.error(null, t("otpPhoneTaken"));
+    } else if (res.error === "invalid_phone") {
+      toast.error(null, t("otpInvalidPhone"));
+    } else {
+      toast.error(null, t("oops"));
     }
   };
 
@@ -200,8 +309,6 @@ export default function ProfileScreen() {
       toast.error(null, t("oops"));
       return;
     }
-    // Opens the bot with the one-time token; pressing Start there links the
-    // account. The badge below updates on the next profile refresh.
     Linking.openURL(url).catch((err) => toast.error(err, t("oops")));
   };
 
@@ -248,24 +355,21 @@ export default function ProfileScreen() {
     return (
       <View style={styles.center}>
         <EmptyState title={t("notSignedIn")} hint={t("signInPrompt")} />
-        <Button
-          title={t("signIn")}
-          onPress={() => router.push("/auth")}
-          style={{ marginTop: 16 }}
-        />
+        <Button title={t("signIn")} onPress={() => router.push("/auth")} style={{ marginTop: 16 }} />
       </View>
     );
   }
 
   const latestDoc = docs.data?.[0] ?? null;
   const docStatus = latestDoc?.status ?? null;
+  const phoneVerified = !!profile?.phone_verified_at;
 
   return (
     <KeyboardAvoidingView
       style={styles.screen}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
-      <ScrollView contentContainerStyle={{ paddingBottom: 48 }}>
+      <ScrollView contentContainerStyle={{ paddingBottom: 48 }} keyboardShouldPersistTaps="handled">
         {/* Header */}
         <View style={styles.header}>
           <View style={styles.avatar}>
@@ -292,6 +396,28 @@ export default function ProfileScreen() {
           ) : null}
         </View>
 
+        {/* Quick actions — kept at the very top so nothing important hides below
+            the fold: the seller dashboard, safety, and favorites. */}
+        <View style={styles.quickRow}>
+          {profile?.is_seller ? (
+            <QuickAction
+              icon="speedometer-outline"
+              label={t("dashTitle")}
+              onPress={() => router.push("/dashboard")}
+            />
+          ) : null}
+          <QuickAction
+            icon="shield-checkmark-outline"
+            label={t("safetyTitle")}
+            onPress={() => router.push("/safety")}
+          />
+          <QuickAction
+            icon="heart-outline"
+            label={t("favorites")}
+            onPress={() => router.push("/favorites")}
+          />
+        </View>
+
         {/* Become a seller */}
         {!profile?.is_seller ? (
           <View style={styles.card}>
@@ -304,16 +430,49 @@ export default function ProfileScreen() {
           </View>
         ) : null}
 
+        {/* Account */}
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>{t("account")}</Text>
+          {user.email ? (
+            <Field label={t("email")} value={user.email ?? ""} editable={false} />
+          ) : null}
+          <Field label={t("fullName")} value={fullName} onChange={setFullName} />
+          <Field
+            label={t("phone")}
+            value={phone}
+            onChange={setPhone}
+            keyboardType="phone-pad"
+          />
+          <Text style={styles.fieldLabel}>{t("city")}</Text>
+          <View style={styles.chipWrap}>
+            {CITIES.map((c) => (
+              <Pressable
+                key={c}
+                style={[styles.chip, city === c && styles.chipActive]}
+                onPress={() => setCity(city === c ? "" : c)}
+              >
+                <Text style={[styles.chipText, city === c && styles.chipTextActive]}>{c}</Text>
+              </Pressable>
+            ))}
+          </View>
+          <Field label={t("bio")} value={bio} onChange={setBio} multiline />
+          <Button
+            title={t("saveProfile")}
+            onPress={saveAccount}
+            loading={savingAccount}
+            disabled={savingAccount}
+          />
+        </View>
+
         {/* Shop setup */}
         {profile?.is_seller ? (
           <View style={styles.card}>
             <View style={styles.cardHeader}>
-              <Text style={styles.cardTitle}>{t("profile")}</Text>
+              <Text style={styles.cardTitle}>{t("shopName")}</Text>
               <Pressable onPress={pickLogo}>
                 <Text style={styles.link}>{t("changeLogo")}</Text>
               </Pressable>
             </View>
-            <Field label={t("fullName")} value={fullName} onChange={setFullName} />
             <Field label={t("shopName")} value={shopName} onChange={setShopName} />
             <Field
               label={t("shopSlug")}
@@ -324,14 +483,104 @@ export default function ProfileScreen() {
             <Field label={t("shopDescription")} value={shopDesc} onChange={setShopDesc} multiline />
             <Field label={t("shopAddress")} value={shopAddress} onChange={setShopAddress} />
             <Field label={t("registrationNumber")} value={regNumber} onChange={setRegNumber} />
+            <View style={styles.twoCol}>
+              <View style={{ flex: 1 }}>
+                <Field label={t("whatsapp")} value={whatsapp} onChange={setWhatsapp} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Field label={t("telegram")} value={telegram} onChange={setTelegram} />
+              </View>
+            </View>
+            {/* Shop location — pin captured from GPS, stored as lat/lng (the web
+                app's map picker writes the same columns). */}
+            <Text style={styles.fieldLabel}>{t("setLocation")}</Text>
+            <View style={styles.locationBox}>
+              <Ionicons name="location-outline" size={16} color={colors.primary} />
+              <Text style={styles.locationText} numberOfLines={1}>
+                {latitude != null && longitude != null
+                  ? `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`
+                  : t("noLocation")}
+              </Text>
+            </View>
+            <View style={styles.rowBtns}>
+              <Button
+                title={t("useCurrentLocation")}
+                variant="outline"
+                size="sm"
+                onPress={setMyLocation}
+                loading={locating}
+                disabled={locating}
+                style={{ flex: 1 }}
+              />
+              {latitude != null ? (
+                <Button
+                  title={t("clear")}
+                  variant="ghost"
+                  size="sm"
+                  onPress={() => {
+                    setLatitude(null);
+                    setLongitude(null);
+                  }}
+                  style={{ flex: 1 }}
+                />
+              ) : null}
+            </View>
             <Button
               title={t("saveProfile")}
               onPress={saveShop}
               loading={saving}
               disabled={saving}
+              style={{ marginTop: 12 }}
             />
           </View>
         ) : null}
+
+        {/* Phone verification */}
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>{t("verifyPhone")}</Text>
+          {phoneVerified ? (
+            <View style={styles.prefRow}>
+              <Text style={styles.prefLabel}>{t("otpVerified")}</Text>
+              <Ionicons name="checkmark-circle" size={18} color={colors.success} />
+            </View>
+          ) : (
+            <>
+              <Text style={styles.cardHint}>{t("otpHint")}</Text>
+              <Field
+                label={t("phone")}
+                value={otpPhone}
+                onChange={setOtpPhone}
+                keyboardType="phone-pad"
+                editable={!otpSent}
+              />
+              {otpSent ? (
+                <View style={{ gap: 8, marginBottom: 10 }}>
+                  <Text style={styles.cardHint}>{t("otpCodeSent")}</Text>
+                  <Field
+                    label={t("otpPlaceholder")}
+                    value={otpCode}
+                    onChange={setOtpCode}
+                    keyboardType="number-pad"
+                  />
+                  <Button
+                    title={t("otpVerify")}
+                    onPress={confirmVerify}
+                    loading={otpBusy}
+                    disabled={otpBusy || otpCode.trim().length < 4}
+                  />
+                </View>
+              ) : (
+                <Button
+                  title={t("otpVerifyViaTelegram")}
+                  variant="outline"
+                  onPress={startVerify}
+                  loading={otpBusy}
+                  disabled={otpBusy || otpPhone.trim().length < 9}
+                />
+              )}
+            </>
+          )}
+        </View>
 
         {/* Verification */}
         {profile?.is_seller ? (
@@ -468,29 +717,6 @@ export default function ProfileScreen() {
           </Pressable>
         ) : null}
 
-        {/* Seller dashboard link */}
-        {profile?.is_seller ? (
-          <Pressable style={styles.card} onPress={() => router.push("/dashboard")}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-              <Ionicons name="speedometer-outline" size={20} color={colors.primary} />
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.cardTitle, { marginBottom: 2 }]}>{t("dashTitle")}</Text>
-                <Text style={styles.cardHint}>{t("myListings")}</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={16} color={colors.textSoft} />
-            </View>
-          </Pressable>
-        ) : null}
-
-        {/* Safety */}
-        <Pressable style={styles.card} onPress={() => router.push("/safety")}>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-            <Ionicons name="shield-checkmark-outline" size={20} color={colors.success} />
-            <Text style={[styles.cardTitle, { marginBottom: 0 }]}>{t("safetyTitle")}</Text>
-            <Ionicons name="chevron-forward" size={16} color={colors.textSoft} />
-          </View>
-        </Pressable>
-
         {/* Sign out */}
         <View style={styles.footer}>
           <Pressable onPress={confirmSignOut} hitSlop={8}>
@@ -513,18 +739,43 @@ export default function ProfileScreen() {
   );
 }
 
+function QuickAction({
+  icon,
+  label,
+  onPress,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  onPress: () => void;
+}) {
+  return (
+    <Pressable style={({ pressed }) => [styles.quick, pressed && { opacity: 0.8 }]} onPress={onPress}>
+      <View style={styles.quickIcon}>
+        <Ionicons name={icon} size={19} color={colors.primary} />
+      </View>
+      <Text style={styles.quickLabel} numberOfLines={2}>
+        {label}
+      </Text>
+    </Pressable>
+  );
+}
+
 function Field({
   label,
   value,
   onChange,
   multiline,
   autoCapitalize,
+  keyboardType,
+  editable = true,
 }: {
   label: string;
   value: string;
-  onChange: (v: string) => void;
+  onChange?: (v: string) => void;
   multiline?: boolean;
   autoCapitalize?: "none";
+  keyboardType?: "phone-pad" | "number-pad" | "email-address";
+  editable?: boolean;
 }) {
   return (
     <View style={styles.field}>
@@ -536,7 +787,13 @@ function Field({
         placeholderTextColor={colors.textSoft}
         multiline={multiline}
         autoCapitalize={autoCapitalize}
-        style={[styles.fieldInput, multiline && { minHeight: 70, textAlignVertical: "top" }]}
+        keyboardType={keyboardType}
+        editable={editable}
+        style={[
+          styles.fieldInput,
+          multiline && { minHeight: 70, textAlignVertical: "top" },
+          !editable && { opacity: 0.65 },
+        ]}
       />
     </View>
   );
@@ -581,6 +838,26 @@ const styles = StyleSheet.create({
     marginTop: 10,
   },
   sellerPillText: { fontSize: 12.5, color: colors.primary, fontWeight: "700" },
+  quickRow: { flexDirection: "row", gap: 10, paddingHorizontal: spacing.lg, marginTop: spacing.lg },
+  quick: {
+    flex: 1,
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: colors.card,
+    borderRadius: radius.lg,
+    paddingVertical: 14,
+    paddingHorizontal: 6,
+    ...shadows.card,
+  },
+  quickIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.full,
+    backgroundColor: colors.primaryLight,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  quickLabel: { fontSize: 11.5, color: colors.text, fontWeight: "600", textAlign: "center" },
   card: {
     backgroundColor: colors.card,
     borderRadius: radius.lg,
@@ -592,7 +869,6 @@ const styles = StyleSheet.create({
   cardHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   cardTitle: { fontSize: 16, fontWeight: "700", color: colors.text, marginBottom: 8 },
   cardHint: { fontSize: 13, color: colors.textMuted, lineHeight: 19 },
-  // Telegram connect block, separated from the alert toggles below it.
   telegramBlock: {
     paddingBottom: 12,
     marginBottom: 12,
@@ -621,6 +897,19 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.text,
   },
+  twoCol: { flexDirection: "row", gap: 10 },
+  locationBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: colors.secondary,
+    borderRadius: radius.md,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+    marginBottom: 8,
+  },
+  locationText: { flex: 1, fontSize: 13, color: colors.textMuted },
+  rowBtns: { flexDirection: "row", gap: 10, marginTop: 2 },
   docStatusRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   rejection: {
     fontSize: 12.5,
@@ -630,7 +919,7 @@ const styles = StyleSheet.create({
     padding: 10,
     marginTop: 8,
   },
-  chipWrap: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginVertical: 12 },
+  chipWrap: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginVertical: 10 },
   chip: {
     backgroundColor: colors.secondary,
     borderRadius: radius.full,
@@ -658,7 +947,6 @@ const styles = StyleSheet.create({
   langActive: { backgroundColor: colors.primary },
   langText: { fontSize: 14, color: colors.text, fontWeight: "600" },
   langTextActive: { color: colors.onPrimary },
-  muted: { fontSize: 13, color: colors.textMuted },
   footer: { alignItems: "center", gap: 8, paddingTop: spacing.xl },
   signOut: { fontSize: 15, color: colors.danger, fontWeight: "700" },
   about: { fontSize: 12, color: colors.textSoft, textAlign: "center" },

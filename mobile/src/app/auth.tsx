@@ -1,5 +1,6 @@
 import { useState } from "react";
 import {
+  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -104,15 +105,20 @@ export default function AuthScreen() {
   return (
     <KeyboardAvoidingView
       style={styles.screen}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <View style={styles.brand}>
           <View style={styles.logo}>
-            <Ionicons name="storefront" size={34} color={colors.primary} />
+            <Image
+              source={require("../../assets/images/logo-mark.png")}
+              style={styles.logoImg}
+            />
           </View>
-          <Text style={styles.title}>{t("welcome")}</Text>
-          <Text style={styles.subtitle}>{t("loginEmail")}</Text>
+          <Text style={styles.title}>
+            Addis<Text style={{ color: colors.primary }}>Furnish</Text>
+          </Text>
+          <Text style={styles.subtitle}>{t("welcome")}</Text>
         </View>
 
         {/* Google — mirrors the web OAuth flow (spec §3 fallback). */}
@@ -172,12 +178,14 @@ const styles = StyleSheet.create({
   logo: {
     width: 72,
     height: 72,
-    borderRadius: radius.full,
+    borderRadius: radius.lg,
     backgroundColor: colors.primaryLight,
     alignItems: "center",
     justifyContent: "center",
+    overflow: "hidden",
     marginBottom: 14,
   },
+  logoImg: { width: 72, height: 72 },
   title: { fontSize: 24, fontWeight: "800", color: colors.text, fontFamily: "Georgia, serif" },
   subtitle: {
     fontSize: 13.5,

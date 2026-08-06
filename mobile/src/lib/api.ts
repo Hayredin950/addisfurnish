@@ -708,16 +708,17 @@ export async function uploadListingImage(
 ): Promise<string> {
   const ext = (file.name ?? "photo.jpg").split(".").pop() ?? "jpg";
   const path = `${userId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-  // React Native: uploads must be FormData with the file descriptor, not a raw path.
-  const form = new FormData();
-  form.append("file", {
-    uri: file.uri,
-    name: file.name ?? `photo.${ext}`,
-    type: file.mimeType ?? `image/${ext === "jpg" ? "jpeg" : ext}`,
-  } as unknown as Blob);
-  const { error } = await supabase.storage.from("listing-images").upload(path, form, {
+  // supabase-js 2.111's fetch layer rejects the old React Native FormData
+  // pattern ("Unsupported form data part implementation") — RN's opaque file
+  // descriptors can't be inspected the way the browser's can. The supported
+  // approach is to hand the SDK a raw binary body: read the local file into an
+  // ArrayBuffer first, then upload that with an explicit contentType.
+  const res = await fetch(file.uri);
+  const body = await res.arrayBuffer();
+  const { error } = await supabase.storage.from("listing-images").upload(path, body, {
     cacheControl: "3600",
     upsert: false,
+    contentType: file.mimeType ?? `image/${ext === "jpg" ? "jpeg" : ext}`,
   });
   if (error) throw error;
   return path;

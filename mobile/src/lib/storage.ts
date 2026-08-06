@@ -23,7 +23,17 @@ export function imageUrl(
   bucket: string = BUCKET,
 ): string | null {
   if (!pathOrUrl) return null;
-  if (pathOrUrl.startsWith("http")) return pathOrUrl;
+  // Already a URL of any flavour — http(s), a local camera/gallery file, or a
+  // data URI. Only storage *paths* need resolving; treating local URIs as
+  // paths would build "…/object/public/<bucket>/file:///…" garbage.
+  if (
+    pathOrUrl.startsWith("http") ||
+    pathOrUrl.startsWith("file:") ||
+    pathOrUrl.startsWith("content:") ||
+    pathOrUrl.startsWith("data:")
+  ) {
+    return pathOrUrl;
+  }
   return supabase.storage.from(bucket).getPublicUrl(pathOrUrl).data.publicUrl;
 }
 

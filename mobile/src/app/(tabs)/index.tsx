@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useLang } from "../../lib/lang";
@@ -7,6 +7,7 @@ import { useAsync } from "../../hooks/use-async";
 import { fetchCategories, fetchListings, fetchTrendingSearches, logSearch } from "../../lib/api";
 import { ListingCard } from "../../components/ListingCard";
 import { SectionHeader } from "../../components/SectionHeader";
+import { NotificationBell } from "../../components/NotificationBell";
 import { EmptyState } from "../../components/EmptyState";
 import { colors, radius, spacing, shadows } from "../../lib/theme";
 import { categoryIcon } from "../../lib/category-icons";
@@ -37,7 +38,18 @@ export default function HomeScreen() {
     >
       {/* Hero */}
       <View style={styles.hero}>
-        <Text style={styles.heroTitle}>{t("appName")}</Text>
+        <View style={styles.heroTop}>
+          <View style={styles.heroBrand}>
+            <Image
+              source={require("../../../assets/images/logo-mark.png")}
+              style={styles.heroLogo}
+            />
+            <Text style={styles.heroTitle}>
+              Addis<Text style={styles.heroTitleAccent}>Furnish</Text>
+            </Text>
+          </View>
+          <NotificationBell />
+        </View>
         <Text style={styles.heroTagline}>{t("tagline")}</Text>
         <View style={styles.searchBox}>
           <Ionicons name="search" size={18} color={colors.textMuted} />
@@ -159,16 +171,24 @@ const styles = StyleSheet.create({
   },
   hero: {
     paddingHorizontal: spacing.lg,
-    paddingTop: spacing.xl,
+    paddingTop: spacing.lg,
     paddingBottom: spacing.lg,
     backgroundColor: colors.background,
   },
-  heroTitle: {
-    fontSize: 30,
-    fontWeight: "700",
-    fontFamily: "Georgia, serif",
-    color: colors.primaryDark,
+  heroTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
   },
+  heroBrand: { flexDirection: "row", alignItems: "center", gap: 10 },
+  heroLogo: { width: 34, height: 34, borderRadius: 8 },
+  heroTitle: {
+    fontSize: 28,
+    fontWeight: "800",
+    fontFamily: "Georgia, serif",
+    color: colors.text,
+  },
+  heroTitleAccent: { color: colors.primary },
   heroTagline: {
     fontSize: 14,
     color: colors.textMuted,

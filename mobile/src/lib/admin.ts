@@ -1,4 +1,5 @@
 import { supabase } from "./supabase";
+import { fetchTrendingSearches } from "./api";
 
 /**
  * Admin-only moderation actions for the mobile app.
@@ -245,4 +246,147 @@ export async function unbanUser(userId: string): Promise<void> {
     _reason: null,
   });
   if (error) throw error;
+}
+
+// ── Categories / Listings / Stats (admin tabs) ────────────────────────────
+// All three ride existing RLS: "admins manage categories" (FOR ALL) and the
+// listings policies (admin delete) — the same policies the web admin screen
+// relies on through its server actions.
+
+export type AdminCategory = {
+  id: string;
+  name: string;
+  slug: string;
+  parent_id: string | null;
+  icon: string | null;
+  sort_order: number;
+};
+
+export async function fetchAdminCategories(): Promise<AdminCategory[]> {
+  const { data, error } = await supabase.from("categories").select("*").order("sort_order");
+  if (error) throw error;
+  return (data ?? []) as AdminCategory[];
+}
+
+export async function createCategory(name: string, parentId?: string | null) {
+  const slug = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+  const { error } = await supabase.from("categories").insert({
+    name: name.trim(),
+    slug,
+    parent_id: parentId || null,
+    sort_order: 1,
+  });
+  if (error) throw error;
+}
+
+export async function renameCategory(id: string, name: string) {
+  const slug = name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-|-$/g, "");
+  const { error } = await supabase.from("categories").update({ name: name.trim(), slug }).eq("id", id);
+  if (error) throw error;
+}
+
+export async function deleteCategory(id: string) {
+  const { error } = await supabase.from("categories").delete().eq("id", id);
+  if (error) throw error;
+}
+
+export type AdminListing = {
+  id: string;
+  title: string;
+  price: number;
+  status: string;
+  city: string | null;
+  featured: boolean;
+  created_at: string;
+  seller_id: string;
+  listing_images: { url: string }[];
+  profiles?: { full_name: string; shop_name: string | null; shop_slug: string | null } | null;
+};
+
+export async function fetchAdminListings(): Promise<AdminListing[]> {
+  const { data, error } = await supabase
+    .from("listings")
+    .select(
+      "id,title,price,status,city,featured,created_at,seller_id,listing_images(url),profiles(full_name,shop_name,shop_slug)",
+    )
+    .order("created_at", { ascending: false })
+    .limit(60);
+  if (error) throw error;
+  return (data ?? []) as unknown as AdminListing[];
+}
+
+export async function toggleFeatured(id: string, featured: boolean) {
+  const { error } = await supabase.from("listings").update({ featured }).eq("id", id);
+  if (error) throw error;
+}
+
+export async function deleteListingAdmin(id: string) {
+  const { data: listing } = await supabase
+    .from("listings")
+    .select("listing_images(url)")
+    .eq("id", id)
+    .maybeSingle();
+  const paths = ((listing?.listing_images ?? []) as { url: string }[])
+    .map((img) => img.url)
+    .filter((url) => !!url && !url.startsWith("http"));
+  const { error } = await supabase.from("listings").delete().eq("id", id);
+  if (error) throw error;
+  if (paths.length) {
+    await supabase.storage.from("listing-images").remove(paths).catch(() => {});
+  }
+}
+
+export type AdminStats = {
+  listings: number;
+  users: number;
+  sellers: number;
+  totalViews: number;
+  topSearches: string[];
+};
+
+export async function fetchAdminStats(): Promise<AdminStats> {
+  const [listings, users, sellers, views, trending] = await Promise.all([
+    supabase.from("listings").select("id", { count: "exact", head: true }),
+    supabase.from("profiles").select("id", { count: "exact", head: true }),
+    supabase
+      .from("profiles")
+      .select("id", { count: "exact", head: true })
+      .eq("is_seller", true),
+    supabase.from("listings").select("view_count").neq("status", "draft"),
+    fetchTrendingSearches(6),
+  ]);
+  const totalViews = (views.data ?? []).reduce(
+    (sum: number, l: { view_count: number }) => sum + (l.view_count ?? 0),
+    0,
+  );
+  return {
+    listings: listings.count ?? 0,
+    users: users.count ?? 0,
+    sellers: sellers.count ?? 0,
+    totalViews,
+    topSearches: trending,
+  };
+}
+
+export async function fetchAdminTopCategories(): Promise<{ name: string; count: number }[]> {
+  const { data, error } = await supabase
+    .from("listings")
+    .select("categories(name)")
+    .neq("status", "draft");
+  if (error) throw error;
+  const counts = new Map<string, number>();
+  for (const row of data ?? []) {
+    const name = (row.categories as { name: string } | null)?.name ?? "Uncategorised";
+    counts.set(name, (counts.get(name) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10)
+    .map(([name, count]) => ({ name, count }));
 }

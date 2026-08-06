@@ -269,7 +269,10 @@ function ListingDetail() {
           ) : null}
         </div>
 
-        <aside className="space-y-6">
+        {/* `relative z-0 isolate` keeps the OSM embed iframe inside its own
+            stacking context — without it the iframe can paint over the sticky
+            navbar while scrolling. */}
+        <aside className="relative z-0 isolate space-y-6">
           <div className="rounded-xl border bg-card p-6 shadow-soft">
             <div className="flex items-start justify-between gap-3">
               <h1 className="font-display text-2xl font-semibold leading-snug">{listing.title}</h1>

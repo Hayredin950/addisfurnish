@@ -71,6 +71,10 @@ export default function TabsLayout() {
           ),
         }}
       />
+      {/* Favourites is deliberately not a tab — the bar stays at five (Home,
+          Browse, Sell, Messages, Profile). The route lives on for deep links;
+          access comes from the heart card on the Profile screen. */}
+      <Tabs.Screen name="favorites" options={{ href: null }} />
     </Tabs>
   );
 }

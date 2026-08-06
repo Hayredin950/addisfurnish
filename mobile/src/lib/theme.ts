@@ -1,19 +1,19 @@
 /**
- * AddisFurnish design tokens — warm wood/amber palette that mirrors the web app
- * (oklch ~0.52 0.146 40 → warm brown, cream backgrounds).
+ * AddisFurnish design tokens — matches the web app palette exactly (terracotta
+ * #AC451B primary on warm cream #F5EEE2), so both apps share the same brand.
  */
 export const colors = {
-  primary: "#8A5A2B",
-  primaryDark: "#6F4720",
-  primaryLight: "#F3E7D9",
+  primary: "#AC451B",
+  primaryDark: "#7C2D12",
+  primaryLight: "#F5EEE2",
   onPrimary: "#FFFFFF",
 
-  accent: "#6B4A2B",
+  accent: "#7C2D12",
 
   background: "#FBF7F0",
   card: "#FFFFFF",
   cardPressed: "#F5EEE2",
-  secondary: "#F1E7D8",
+  secondary: "#F3EBDE",
   secondaryForeground: "#5C4A33",
 
   text: "#26221C",

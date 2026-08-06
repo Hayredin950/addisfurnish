@@ -32,6 +32,7 @@ import { useToast } from "../../components/Toast";
 import { EmptyState } from "../../components/EmptyState";
 import { colors, radius, spacing, shadows } from "../../lib/theme";
 import { coordsForSubCity } from "../../lib/format";
+import { imageSource } from "../../lib/storage";
 
 const CONDITIONS = ["New", "Used - Like New", "Used - Good", "Used - Fair"];
 const ROOM_TYPES = ["Living Room", "Bedroom", "Dining", "Office", "Outdoor", "Kitchen"];
@@ -338,7 +339,7 @@ export default function SellScreen() {
   return (
     <KeyboardAvoidingView
       style={styles.screen}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
       <ScrollView contentContainerStyle={{ paddingBottom: 48 }}>
         <Text style={styles.heading}>
@@ -351,7 +352,7 @@ export default function SellScreen() {
           <View style={styles.photoRow}>
             {photos.map((p, i) => (
               <View key={`${p.uri}-${i}`} style={styles.photoThumb}>
-                <Image source={{ uri: p.uri }} style={styles.photoThumbImg} />
+                <Image source={imageSource(p.uri)} style={styles.photoThumbImg} />
                 <Pressable
                   style={styles.photoRemove}
                   onPress={() => removePhoto(i)}

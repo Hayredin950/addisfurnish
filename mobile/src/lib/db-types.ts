@@ -354,6 +354,7 @@ export type Database = {
           avatar_url: string | null;
           banned_until: string | null;
           ban_reason: string | null;
+          bio: string | null;
           city: string | null;
           created_at: string;
           full_name: string;
@@ -361,6 +362,8 @@ export type Database = {
           is_online: boolean;
           is_seller: boolean;
           last_seen: string;
+          latitude: number | null;
+          longitude: number | null;
           phone: string | null;
           phone_verified_at: string | null;
           preferred_language: string;
@@ -387,6 +390,7 @@ export type Database = {
           avatar_url?: string | null;
           banned_until?: string | null;
           ban_reason?: string | null;
+          bio?: string | null;
           city?: string | null;
           created_at?: string;
           full_name?: string;
@@ -394,6 +398,8 @@ export type Database = {
           is_online?: boolean;
           is_seller?: boolean;
           last_seen?: string;
+          latitude?: number | null;
+          longitude?: number | null;
           phone?: string | null;
           phone_verified_at?: string | null;
           preferred_language?: string;
@@ -420,6 +426,7 @@ export type Database = {
           avatar_url?: string | null;
           banned_until?: string | null;
           ban_reason?: string | null;
+          bio?: string | null;
           city?: string | null;
           created_at?: string;
           full_name?: string;
@@ -427,6 +434,8 @@ export type Database = {
           is_online?: boolean;
           is_seller?: boolean;
           last_seen?: string;
+          latitude?: number | null;
+          longitude?: number | null;
           phone?: string | null;
           phone_verified_at?: string | null;
           preferred_language?: string;
@@ -892,6 +901,10 @@ export type Database = {
       mint_phone_verify_token: {
         Args: { _phone: string };
         Returns: string | null;
+      };
+      verify_phone_otp: {
+        Args: { _phone: string; _code: string };
+        Returns: string;
       };
       unlink_telegram: {
         Args: Record<string, never>;

@@ -27,10 +27,18 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
-import { UserAvatar } from "@/components/UserAvatar";
 import { useAuth } from "@/lib/auth";
 import { LanguageToggle } from "@/components/LanguageToggle";
 import { NotificationBell } from "@/components/NotificationBell";
+
+/** Neutral person silhouette — the one avatar in the nav bar for everyone. */
+function DefaultAvatar() {
+  return (
+    <span className="grid h-9 w-9 place-items-center rounded-full bg-secondary">
+      <User className="h-4 w-4 text-muted-foreground" />
+    </span>
+  );
+}
 
 export function SiteHeader() {
   const { user, profile, signOut } = useAuth();
@@ -68,7 +76,7 @@ export function SiteHeader() {
   ];
 
   return (
-    <header className="sticky top-0 z-40 border-b bg-background/90 backdrop-blur">
+    <header className="sticky top-0 z-50 border-b bg-background/90 backdrop-blur">
       <div className="mx-auto flex h-16 max-w-6xl items-center gap-3 px-4">
         <Link
           to="/"
@@ -191,21 +199,15 @@ export function SiteHeader() {
               <NotificationBell />
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
+                  {/* Always the same neutral default avatar — no shop logos or
+                      profile photos in the bar, identical for every user. */}
                   <Button
                     variant="outline"
                     size="icon"
                     aria-label={t("nav.accountMenu")}
-                    className="overflow-hidden p-0"
+                    className="overflow-hidden rounded-full p-0"
                   >
-                    {profile?.shop_logo_url || profile?.avatar_url ? (
-                      <UserAvatar
-                        name={profile.shop_name ?? profile.full_name}
-                        avatarUrl={profile.shop_logo_url ?? profile.avatar_url}
-                        size={36}
-                      />
-                    ) : (
-                      <User className="h-4 w-4" />
-                    )}
+                    <DefaultAvatar />
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-56">
@@ -260,8 +262,16 @@ export function SiteHeader() {
               </DropdownMenu>
             </>
           ) : (
-            <Button asChild variant="outline" size="sm">
-              <Link to="/auth">{t("nav.signIn")}</Link>
+            <Button
+              asChild
+              variant="outline"
+              size="icon"
+              className="overflow-hidden rounded-full p-0"
+              aria-label={t("nav.signIn")}
+            >
+              <Link to="/auth">
+                <DefaultAvatar />
+              </Link>
             </Button>
           )}
 

@@ -1,8 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Image,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -10,20 +12,30 @@ import {
   TextInput,
   View,
 } from "react-native";
+import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../lib/auth";
 import { useLang } from "../lib/lang";
 import { useAsync } from "../hooks/use-async";
 import {
   banUser,
+  createCategory,
   decideDocument,
+  deleteCategory,
+  deleteListingAdmin,
+  fetchAdminCategories,
+  fetchAdminListings,
   fetchAdminReports,
+  fetchAdminStats,
+  fetchAdminTopCategories,
   fetchAdminUsers,
   fetchVerificationDecisions,
   fetchVerificationQueue,
   isAdmin,
+  renameCategory,
   resolveReport,
   revokeSessions,
+  toggleFeatured,
   unbanUser,
   type AdminReport,
   type AdminVerificationDoc,
@@ -33,22 +45,36 @@ import { ConfirmDialog } from "../components/ConfirmDialog";
 import { useToast } from "../components/Toast";
 import { EmptyState } from "../components/EmptyState";
 import { colors, radius, spacing, shadows } from "../lib/theme";
-import { signedDocumentUrl } from "../lib/storage";
-import { timeAgo } from "../lib/format";
+import { signedDocumentUrl, imageSource } from "../lib/storage";
+import { formatBirr, timeAgo } from "../lib/format";
+import type { DictKey } from "../lib/i18n";
 
-type Tab = "reports" | "verification" | "users";
+type Tab = "reports" | "verification" | "users" | "categories" | "listings" | "stats";
 
-const TAB_LABELS: Record<Tab, "adminTabReports" | "adminTabVerification" | "adminTabUsers"> = {
+const TAB_LABELS: Record<Tab, DictKey> = {
   reports: "adminTabReports",
   verification: "adminTabVerification",
   users: "adminTabUsers",
+  categories: "adminTabCategories",
+  listings: "adminTabListings",
+  stats: "adminTabStats",
+};
+
+const TAB_ICONS: Record<Tab, keyof typeof Ionicons.glyphMap> = {
+  reports: "flag",
+  verification: "shield-checkmark",
+  users: "people",
+  categories: "grid",
+  listings: "list",
+  stats: "bar-chart",
 };
 
 /**
  * Moderation console for admins (mirrors the web /admin screen, scaled to a
  * phone): report resolution, the seller-verification queue with document
- * preview and audit trail, and user suspension. Every action re-verifies the
- * admin role server-side — the UI is only the trigger.
+ * preview and audit trail, user suspension, plus categories / listings /
+ * platform stats. Every action re-verifies the admin role server-side — the
+ * UI is only the trigger.
  */
 export default function AdminScreen() {
   const { user } = useAuth();
@@ -76,32 +102,43 @@ export default function AdminScreen() {
     );
   }
 
+  const tabs = Object.keys(TAB_LABELS) as Tab[];
+
   return (
-    <View style={styles.screen}>
-      <View style={styles.tabs}>
-        {(
-          [
-            ["reports", "flag"],
-            ["verification", "shield-checkmark"],
-            ["users", "people"],
-          ] as [Tab, keyof typeof Ionicons.glyphMap][]
-        ).map(([key, icon]) => (
+    <KeyboardAvoidingView
+      style={styles.screen}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+    >
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.tabsScroller}
+        contentContainerStyle={styles.tabs}
+      >
+        {tabs.map((key) => (
           <Pressable
             key={key}
             style={[styles.tabBtn, tab === key && styles.tabBtnActive]}
             onPress={() => setTab(key)}
           >
-            <Ionicons name={icon} size={15} color={tab === key ? colors.onPrimary : colors.textMuted} />
+            <Ionicons
+              name={TAB_ICONS[key]}
+              size={14}
+              color={tab === key ? colors.onPrimary : colors.textMuted}
+            />
             <Text style={[styles.tabText, tab === key && styles.tabTextActive]}>
               {t(TAB_LABELS[key])}
             </Text>
           </Pressable>
         ))}
-      </View>
+      </ScrollView>
       {tab === "reports" ? <ReportsTab /> : null}
       {tab === "verification" ? <VerificationTab /> : null}
       {tab === "users" ? <UsersTab /> : null}
-    </View>
+      {tab === "categories" ? <CategoriesTab /> : null}
+      {tab === "listings" ? <ListingsTab /> : null}
+      {tab === "stats" ? <StatsTab /> : null}
+    </KeyboardAvoidingView>
   );
 }
 
@@ -293,7 +330,9 @@ function VerificationTab() {
           <Text style={styles.cardTitle}>
             {d.seller?.shop_name ?? d.seller?.full_name ?? d.seller_id}
           </Text>
-          <Text style={[styles.muted, { color: d.action === "approved" ? colors.success : colors.danger }]}>
+          <Text
+            style={[styles.muted, { color: d.action === "approved" ? colors.success : colors.danger }]}
+          >
             {d.action}
           </Text>
           {d.reason ? <Text style={styles.muted}>{d.reason}</Text> : null}
@@ -329,13 +368,39 @@ function VerificationTab() {
   );
 }
 
+const BAN_OPTIONS = [
+  { key: "24h", hours: 24, label: "24h" },
+  { key: "7d", hours: 24 * 7, label: "7d" },
+  { key: "30d", hours: 24 * 30, label: "30d" },
+  { key: "permanent", hours: 24 * 365 * 10, label: "permanent" },
+];
+
 function UsersTab() {
   const { t } = useLang();
   const toast = useToast();
   const { user } = useAuth();
   const users = useAsync(fetchAdminUsers, []);
+  const [filter, setFilter] = useState<"all" | "sellers" | "buyers">("all");
+  const [search, setSearch] = useState("");
   const [banTarget, setBanTarget] = useState<{ id: string; name: string } | null>(null);
+  const [banDuration, setBanDuration] = useState(BAN_OPTIONS[0]!);
+  const [banReason, setBanReason] = useState("");
   const [busy, setBusy] = useState(false);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return (users.data ?? []).filter((u) => {
+      if (filter === "sellers" && !u.is_seller) return false;
+      if (filter === "buyers" && u.is_seller) return false;
+      if (!q) return true;
+      const name = (u.shop_name ?? u.full_name ?? "").toLowerCase();
+      return (
+        name.includes(q) ||
+        (u.phone ?? "").toLowerCase().includes(q) ||
+        (u.city ?? "").toLowerCase().includes(q)
+      );
+    });
+  }, [users.data, filter, search]);
 
   const revoke = async (id: string) => {
     try {
@@ -346,13 +411,14 @@ function UsersTab() {
     }
   };
 
-  const confirmBan = async (hours: number) => {
+  const confirmBan = async () => {
     if (!banTarget) return;
     setBusy(true);
     try {
-      await banUser(banTarget.id, hours);
+      await banUser(banTarget.id, banDuration.hours, banReason.trim() || undefined);
       toast.success(t("adminBanned"));
       setBanTarget(null);
+      setBanReason("");
       users.refetch();
     } catch (err) {
       toast.error(err, t("oops"));
@@ -381,7 +447,33 @@ function UsersTab() {
 
   return (
     <ScrollView contentContainerStyle={{ padding: spacing.lg, gap: 12 }}>
-      {(users.data ?? []).map((u) => {
+      <View style={styles.searchRow}>
+        <View style={styles.searchBox}>
+          <Ionicons name="search" size={15} color={colors.textMuted} />
+          <TextInput
+            value={search}
+            onChangeText={setSearch}
+            placeholder={t("adminSearchUsers")}
+            placeholderTextColor={colors.textSoft}
+            style={styles.searchInput}
+          />
+        </View>
+      </View>
+      <View style={styles.chipWrap}>
+        {(["all", "sellers", "buyers"] as const).map((f) => (
+          <Pressable
+            key={f}
+            style={[styles.chip, filter === f && styles.chipActive]}
+            onPress={() => setFilter(f)}
+          >
+            <Text style={[styles.chipText, filter === f && styles.chipTextActive]}>
+              {f === "all" ? t("adminFilterAll") : f === "sellers" ? t("adminFilterSellers") : t("adminFilterBuyers")}
+            </Text>
+          </Pressable>
+        ))}
+      </View>
+
+      {filtered.map((u) => {
         const suspended = !!u.banned_until && new Date(u.banned_until) > new Date();
         const name = u.shop_name ?? u.full_name;
         return (
@@ -395,54 +487,441 @@ function UsersTab() {
             <Text style={styles.muted}>
               {u.phone ?? "—"} · {u.city ?? "—"} · {timeAgo(u.created_at)}
             </Text>
+            {u.is_seller ? <Text style={styles.muted}>{t("adminFilterSellers")}</Text> : null}
             {suspended ? (
               <Text style={[styles.muted, { color: colors.danger }]}>
                 {t("adminSuspendedUntil")}: {new Date(u.banned_until!).toLocaleString()}
                 {u.ban_reason ? ` — ${u.ban_reason}` : ""}
               </Text>
             ) : null}
-            <View style={styles.rowBtns}>
-              <Button
-                title={t("adminRevokeSessions")}
-                variant="outline"
-                size="sm"
-                onPress={() => revoke(u.id)}
-                style={{ flex: 1 }}
-              />
-              {suspended ? (
-                <Button
-                  title={t("adminUnban")}
-                  size="sm"
-                  onPress={() => lift(u.id)}
-                  style={{ flex: 1 }}
+            {u.shop_slug ? (
+              <Pressable
+                style={styles.shopLink}
+                onPress={() => router.push(`/shop/${u.shop_slug}`)}
+              >
+                <Ionicons name="storefront-outline" size={13} color={colors.primary} />
+                <Text style={styles.shopLinkText}>{t("adminVisitShop")}</Text>
+              </Pressable>
+            ) : null}
+
+            {banTarget?.id === u.id ? (
+              <View style={{ marginTop: 10, gap: 8 }}>
+                <Text style={styles.fieldLabel}>{t("adminBanDuration")}</Text>
+                <View style={styles.chipWrap}>
+                  {BAN_OPTIONS.map((o) => (
+                    <Pressable
+                      key={o.key}
+                      style={[styles.chip, banDuration.key === o.key && styles.chipActive]}
+                      onPress={() => setBanDuration(o)}
+                    >
+                      <Text style={[styles.chipText, banDuration.key === o.key && styles.chipTextActive]}>
+                        {o.key === "permanent" ? t("adminBanPermanent") : o.label}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+                <TextInput
+                  value={banReason}
+                  onChangeText={setBanReason}
+                  placeholder={t("adminBanReasonPlaceholder")}
+                  placeholderTextColor={colors.textSoft}
+                  style={styles.input}
                 />
-              ) : (
+                <View style={styles.rowBtns}>
+                  <Button
+                    title={t("cancel")}
+                    variant="outline"
+                    size="sm"
+                    onPress={() => setBanTarget(null)}
+                    style={{ flex: 1 }}
+                  />
+                  <Button
+                    title={t("adminBan")}
+                    variant="danger"
+                    size="sm"
+                    loading={busy}
+                    disabled={busy}
+                    onPress={confirmBan}
+                    style={{ flex: 1 }}
+                  />
+                </View>
+              </View>
+            ) : (
+              <View style={styles.rowBtns}>
                 <Button
-                  title={t("adminBan")}
+                  title={t("adminRevokeSessions")}
                   variant="outline"
                   size="sm"
-                  disabled={u.id === user?.id}
-                  onPress={() => setBanTarget({ id: u.id, name })}
+                  onPress={() => revoke(u.id)}
                   style={{ flex: 1 }}
                 />
-              )}
-            </View>
+                {suspended ? (
+                  <Button
+                    title={t("adminUnban")}
+                    size="sm"
+                    onPress={() => lift(u.id)}
+                    style={{ flex: 1 }}
+                  />
+                ) : (
+                  <Button
+                    title={t("adminBan")}
+                    variant="outline"
+                    size="sm"
+                    disabled={u.id === user?.id}
+                    onPress={() => {
+                      setBanTarget({ id: u.id, name });
+                      setBanDuration(BAN_OPTIONS[0]!);
+                      setBanReason("");
+                    }}
+                    style={{ flex: 1 }}
+                  />
+                )}
+              </View>
+            )}
           </View>
         );
       })}
+    </ScrollView>
+  );
+}
+
+function CategoriesTab() {
+  const { t } = useLang();
+  const toast = useToast();
+  const cats = useAsync(fetchAdminCategories, []);
+  const [name, setName] = useState("");
+  const [parentId, setParentId] = useState<string>("");
+  const [renamingId, setRenamingId] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [pendingDelete, setPendingDelete] = useState<{ id: string } | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const roots = (cats.data ?? []).filter((c) => !c.parent_id);
+  const children = (cats.data ?? []).filter((c) => c.parent_id);
+
+  const add = async () => {
+    if (!name.trim() || busy) return;
+    setBusy(true);
+    try {
+      await createCategory(name, parentId || null);
+      setName("");
+      setParentId("");
+      cats.refetch();
+    } catch (err) {
+      toast.error(err, t("oops"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const rename = async (id: string) => {
+    if (!renameValue.trim()) return;
+    try {
+      await renameCategory(id, renameValue);
+      setRenamingId(null);
+      cats.refetch();
+    } catch (err) {
+      toast.error(err, t("oops"));
+    }
+  };
+
+  const remove = async (id: string) => {
+    setDeleting(true);
+    try {
+      await deleteCategory(id);
+      cats.refetch();
+    } catch (err) {
+      toast.error(err, t("oops"));
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  const Row = ({ cat, depth }: { cat: { id: string; name: string; slug: string }; depth: number }) => (
+    <View style={[styles.catRow, depth > 0 && { marginLeft: 18 }]}>
+      {renamingId === cat.id ? (
+        <>
+          <TextInput
+            value={renameValue}
+            onChangeText={setRenameValue}
+            style={[styles.input, { flex: 1, minHeight: 36 }]}
+          />
+          <Button title={t("save")} size="sm" onPress={() => rename(cat.id)} />
+        </>
+      ) : (
+        <>
+          <View style={{ flex: 1 }}>
+            <Text style={styles.catName}>{cat.name}</Text>
+            <Text style={styles.catSlug}>/{cat.slug}</Text>
+          </View>
+          <Pressable
+            style={styles.iconBtn}
+            hitSlop={6}
+            onPress={() => {
+              setRenamingId(cat.id);
+              setRenameValue(cat.name);
+            }}
+          >
+            <Ionicons name="pencil" size={15} color={colors.textMuted} />
+          </Pressable>
+          <Pressable
+            style={styles.iconBtn}
+            hitSlop={6}
+            onPress={() => {
+              const hasChildren = !!cats.data?.some((c) => c.parent_id === cat.id);
+              if (hasChildren) setPendingDelete({ id: cat.id });
+              else void remove(cat.id);
+            }}
+          >
+            <Ionicons name="trash-outline" size={15} color={colors.danger} />
+          </Pressable>
+        </>
+      )}
+    </View>
+  );
+
+  return (
+    <ScrollView contentContainerStyle={{ padding: spacing.lg, gap: 12 }}>
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>{t("adminAddCategory")}</Text>
+        <TextInput
+          value={name}
+          onChangeText={setName}
+          placeholder={t("adminCategoryName")}
+          placeholderTextColor={colors.textSoft}
+          style={styles.input}
+        />
+        <Text style={styles.fieldLabel}>{t("adminCategoryParent")}</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+          <Pressable style={[styles.chip, !parentId && styles.chipActive]} onPress={() => setParentId("")}>
+            <Text style={[styles.chipText, !parentId && styles.chipTextActive]}>{t("adminCategoryRoot")}</Text>
+          </Pressable>
+          {roots.map((r) => (
+            <Pressable
+              key={r.id}
+              style={[styles.chip, parentId === r.id && styles.chipActive]}
+              onPress={() => setParentId(parentId === r.id ? "" : r.id)}
+            >
+              <Text style={[styles.chipText, parentId === r.id && styles.chipTextActive]}>{r.name}</Text>
+            </Pressable>
+          ))}
+        </ScrollView>
+        <Button title={t("adminAddCategory")} onPress={add} loading={busy} disabled={busy || !name.trim()} />
+      </View>
+
+      {roots.length === 0 ? (
+        <Text style={styles.muted}>{t("adminNoCategories")}</Text>
+      ) : (
+        roots.map((r) => (
+          <View key={r.id} style={{ gap: 8 }}>
+            <Row cat={r} depth={0} />
+            {children
+              .filter((c) => c.parent_id === r.id)
+              .map((c) => (
+                <Row key={c.id} cat={c} depth={1} />
+              ))}
+          </View>
+        ))
+      )}
 
       <ConfirmDialog
-        visible={!!banTarget}
-        title={t("adminBan")}
-        message={`${t("adminBanConfirm")} ${banTarget?.name ?? ""}`}
-        confirmLabel={t("adminBan")}
+        visible={!!pendingDelete}
+        title={t("adminDeleteCategoryTitle")}
+        message={t("adminDeleteCategoryBody")}
+        confirmLabel={t("delete")}
         cancelLabel={t("cancel")}
         destructive
-        busy={busy}
-        onConfirm={() => confirmBan(24)}
-        onCancel={() => setBanTarget(null)}
+        busy={deleting}
+        onConfirm={() => {
+          if (!pendingDelete) return;
+          void remove(pendingDelete.id);
+          setPendingDelete(null);
+        }}
+        onCancel={() => setPendingDelete(null)}
       />
     </ScrollView>
+  );
+}
+
+function ListingsTab() {
+  const { t } = useLang();
+  const toast = useToast();
+  const listings = useAsync(fetchAdminListings, []);
+  const [pendingDelete, setPendingDelete] = useState<{ id: string; title: string } | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  const flipFeatured = async (id: string, featured: boolean) => {
+    try {
+      await toggleFeatured(id, featured);
+      listings.refetch();
+    } catch (err) {
+      toast.error(err, t("oops"));
+    }
+  };
+
+  const remove = async (id: string) => {
+    setDeleting(true);
+    try {
+      await deleteListingAdmin(id);
+      listings.refetch();
+    } catch (err) {
+      toast.error(err, t("oops"));
+    } finally {
+      setDeleting(false);
+    }
+  };
+
+  if (listings.loading && !listings.data) {
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator color={colors.primary} />
+      </View>
+    );
+  }
+
+  return (
+    <ScrollView contentContainerStyle={{ padding: spacing.lg, gap: 12 }}>
+      {(listings.data ?? []).length === 0 ? (
+        <Text style={styles.muted}>{t("adminNoListings")}</Text>
+      ) : null}
+      {(listings.data ?? []).map((l) => (
+        <View key={l.id} style={styles.card}>
+          <View style={{ flexDirection: "row", gap: 10, alignItems: "center" }}>
+            {l.listing_images?.[0]?.url ? (
+              <Image source={imageSource(l.listing_images[0].url)} style={styles.listingImg} />
+            ) : (
+              <View style={[styles.listingImg, styles.listingImgEmpty]}>
+                <Ionicons name="image-outline" size={18} color={colors.textSoft} />
+              </View>
+            )}
+            <View style={{ flex: 1 }}>
+              <Text style={styles.cardTitle} numberOfLines={1}>
+                {l.title}
+              </Text>
+              <Text style={styles.muted}>
+                {formatBirr(l.price)} · {l.status} · {l.city ?? "—"}
+              </Text>
+              <Text style={styles.muted}>
+                {l.profiles?.shop_name ?? l.profiles?.full_name ?? l.seller_id} · {timeAgo(l.created_at)}
+              </Text>
+            </View>
+          </View>
+          <View style={styles.rowBtns}>
+            <Button
+              title={l.featured ? t("adminUnfeature") : t("adminFeature")}
+              variant="outline"
+              size="sm"
+              onPress={() => flipFeatured(l.id, !l.featured)}
+              style={{ flex: 1 }}
+            />
+            <Button
+              title={t("delete")}
+              variant="danger"
+              size="sm"
+              onPress={() => setPendingDelete({ id: l.id, title: l.title })}
+              style={{ flex: 1 }}
+            />
+          </View>
+        </View>
+      ))}
+
+      <ConfirmDialog
+        visible={!!pendingDelete}
+        title={t("delete")}
+        message={`${t("adminDeleteListingBody")} "${pendingDelete?.title ?? ""}"`}
+        confirmLabel={t("delete")}
+        cancelLabel={t("cancel")}
+        destructive
+        busy={deleting}
+        onConfirm={() => {
+          if (!pendingDelete) return;
+          void remove(pendingDelete.id);
+          setPendingDelete(null);
+        }}
+        onCancel={() => setPendingDelete(null)}
+      />
+    </ScrollView>
+  );
+}
+
+function StatsTab() {
+  const { t } = useLang();
+  const stats = useAsync(fetchAdminStats, []);
+  const topCats = useAsync(fetchAdminTopCategories, []);
+
+  if (stats.loading && !stats.data) {
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator color={colors.primary} />
+      </View>
+    );
+  }
+
+  const s = stats.data;
+  const maxCat = Math.max(1, ...(topCats.data ?? []).map((c) => c.count));
+
+  return (
+    <ScrollView contentContainerStyle={{ padding: spacing.lg, gap: 12 }}>
+      <View style={styles.statGrid}>
+        <StatBox label={t("adminStatListings")} value={s?.listings ?? 0} icon="pricetags" />
+        <StatBox label={t("adminStatUsers")} value={s?.users ?? 0} icon="people" />
+        <StatBox label={t("adminStatSellers")} value={s?.sellers ?? 0} icon="storefront" />
+        <StatBox label={t("adminStatViews")} value={s?.totalViews ?? 0} icon="eye" />
+      </View>
+
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>{t("adminTopCategories")}</Text>
+        {(topCats.data ?? []).length === 0 ? (
+          <Text style={styles.muted}>{t("adminNoListings")}</Text>
+        ) : (
+          (topCats.data ?? []).map((c) => (
+            <View key={c.name} style={{ marginBottom: 8 }}>
+              <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                <Text style={styles.catName}>{c.name}</Text>
+                <Text style={styles.catSlug}>{c.count}</Text>
+              </View>
+              <View style={styles.barTrack}>
+                <View style={[styles.barFill, { width: `${(c.count / maxCat) * 100}%` }]} />
+              </View>
+            </View>
+          ))
+        )}
+      </View>
+
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>{t("adminTopSearches")}</Text>
+        {(s?.topSearches ?? []).length === 0 ? (
+          <Text style={styles.muted}>{t("adminNoListings")}</Text>
+        ) : (
+          <View style={styles.chipWrap}>
+            {(s?.topSearches ?? []).map((q) => (
+              <View key={q} style={styles.chip}>
+                <Text style={styles.chipText}>{q}</Text>
+              </View>
+            ))}
+          </View>
+        )}
+      </View>
+    </ScrollView>
+  );
+}
+
+function StatBox({
+  label,
+  value,
+  icon,
+}: {
+  label: string;
+  value: number;
+  icon: keyof typeof Ionicons.glyphMap;
+}) {
+  return (
+    <View style={styles.statBox}>
+      <Ionicons name={icon} size={18} color={colors.primary} />
+      <Text style={styles.statValue}>{value}</Text>
+      <Text style={styles.statLabel}>{label}</Text>
+    </View>
   );
 }
 
@@ -455,24 +934,23 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
     padding: 32,
   },
+  tabsScroller: { flexGrow: 0 },
   tabs: {
     flexDirection: "row",
     gap: 8,
     padding: spacing.md,
-    backgroundColor: colors.background,
   },
   tabBtn: {
-    flex: 1,
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
+    gap: 5,
     paddingVertical: 9,
+    paddingHorizontal: 12,
     borderRadius: radius.md,
     backgroundColor: colors.secondary,
   },
   tabBtnActive: { backgroundColor: colors.primary },
-  tabText: { fontSize: 12.5, color: colors.textMuted, fontWeight: "600" },
+  tabText: { fontSize: 12, color: colors.textMuted, fontWeight: "600" },
   tabTextActive: { color: colors.onPrimary },
   card: {
     backgroundColor: colors.card,
@@ -491,9 +969,41 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     fontSize: 14,
     color: colors.text,
-    minHeight: 56,
-    textAlignVertical: "top",
+    minHeight: 44,
   },
+  searchRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  searchBox: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: colors.card,
+    borderRadius: radius.full,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  searchInput: { flex: 1, fontSize: 14, color: colors.text, padding: 0 },
+  chipWrap: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  chip: {
+    backgroundColor: colors.secondary,
+    borderRadius: radius.full,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  chipActive: { backgroundColor: colors.primary },
+  chipText: { fontSize: 12, color: colors.textMuted, fontWeight: "600" },
+  chipTextActive: { color: colors.onPrimary },
+  shopLink: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    alignSelf: "flex-start",
+    marginTop: 8,
+  },
+  shopLinkText: { fontSize: 12.5, color: colors.primary, fontWeight: "700" },
+  fieldLabel: { fontSize: 12, color: colors.textMuted, marginBottom: 5, fontWeight: "600", marginTop: 8 },
   docPreview: {
     flexDirection: "row",
     alignItems: "center",
@@ -523,4 +1033,50 @@ const styles = StyleSheet.create({
     backgroundColor: colors.secondary,
   },
   docImageEmpty: { alignItems: "center", justifyContent: "center" },
+  catRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: colors.card,
+    borderRadius: radius.md,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  catName: { fontSize: 14, fontWeight: "600", color: colors.text },
+  catSlug: { fontSize: 11, color: colors.textSoft, marginTop: 1 },
+  iconBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: radius.full,
+    backgroundColor: colors.secondary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  listingImg: { width: 52, height: 52, borderRadius: radius.md },
+  listingImgEmpty: {
+    backgroundColor: colors.secondary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  statGrid: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
+  statBox: {
+    width: "48%",
+    backgroundColor: colors.card,
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+    alignItems: "center",
+    gap: 4,
+    ...shadows.card,
+  },
+  statValue: { fontSize: 22, fontWeight: "800", color: colors.primary },
+  statLabel: { fontSize: 11, color: colors.textMuted, textAlign: "center" },
+  barTrack: {
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: colors.secondary,
+    marginTop: 4,
+    overflow: "hidden",
+  },
+  barFill: { height: 7, borderRadius: 4, backgroundColor: colors.primary },
 });

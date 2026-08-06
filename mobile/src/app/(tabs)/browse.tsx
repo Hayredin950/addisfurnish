@@ -31,6 +31,9 @@ import { Button } from "../../components/Button";
 import { colors, radius, spacing } from "../../lib/theme";
 import { haversineKm } from "../../lib/format";
 
+const CITIES = ["Addis Ababa", "Dire Dawa", "Hawassa", "Bahir Dar", "Mekelle", "Adama", "Gondar"];
+const ROOM_TYPES = ["Living Room", "Bedroom", "Dining", "Office", "Outdoor", "Kitchen"];
+
 type SortKey = "newest" | "price-asc" | "price-desc" | "viewed" | "nearest";
 
 export default function BrowseScreen() {
@@ -44,6 +47,8 @@ export default function BrowseScreen() {
   const [min, setMin] = useState("");
   const [max, setMax] = useState("");
   const [condition, setCondition] = useState("");
+  const [city, setCity] = useState("");
+  const [room, setRoom] = useState("");
   const [sort, setSort] = useState<SortKey>("newest");
   const [showFilters, setShowFilters] = useState(false);
   const [location, setLocation] = useState<{ lat: number; lon: number } | null>(null);
@@ -60,10 +65,12 @@ export default function BrowseScreen() {
         min: min ? Number(min) : undefined,
         max: max ? Number(max) : undefined,
         condition: condition || undefined,
+        city: city || undefined,
+        room: room || undefined,
         sort: sort === "nearest" ? undefined : sort,
         limit: 60,
       }),
-    [appliedQ, category, min, max, condition, sort],
+    [appliedQ, category, min, max, condition, city, room, sort],
   );
 
   const listings = useMemo(() => {
@@ -114,6 +121,8 @@ export default function BrowseScreen() {
     setMin("");
     setMax("");
     setCondition("");
+    setCity("");
+    setRoom("");
     setSort("newest");
     setLocation(null);
   };
@@ -166,7 +175,12 @@ export default function BrowseScreen() {
   };
 
   const activeFilterCount =
-    (category ? 1 : 0) + (condition ? 1 : 0) + (min || max ? 1 : 0) + (sort !== "newest" ? 1 : 0);
+    (category ? 1 : 0) +
+    (condition ? 1 : 0) +
+    (city ? 1 : 0) +
+    (room ? 1 : 0) +
+    (min || max ? 1 : 0) +
+    (sort !== "newest" ? 1 : 0);
 
   const options: { key: SortKey; label: string }[] = [
     { key: "newest", label: t("sortNewest") },
@@ -314,6 +328,32 @@ export default function BrowseScreen() {
                   <Text style={[styles.chipText, condition === c && styles.chipTextActive]}>
                     {c}
                   </Text>
+                </Pressable>
+              ))}
+            </View>
+
+            <Text style={styles.label}>{t("city")}</Text>
+            <View style={styles.chipWrap}>
+              {CITIES.map((c) => (
+                <Pressable
+                  key={c}
+                  style={[styles.chip, city === c && styles.chipActive]}
+                  onPress={() => setCity(city === c ? "" : c)}
+                >
+                  <Text style={[styles.chipText, city === c && styles.chipTextActive]}>{c}</Text>
+                </Pressable>
+              ))}
+            </View>
+
+            <Text style={styles.label}>{t("roomType")}</Text>
+            <View style={styles.chipWrap}>
+              {ROOM_TYPES.map((r) => (
+                <Pressable
+                  key={r}
+                  style={[styles.chip, room === r && styles.chipActive]}
+                  onPress={() => setRoom(room === r ? "" : r)}
+                >
+                  <Text style={[styles.chipText, room === r && styles.chipTextActive]}>{r}</Text>
                 </Pressable>
               ))}
             </View>
