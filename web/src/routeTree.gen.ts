@@ -21,6 +21,7 @@ import { Route as NotificationsRouteImport } from './routes/notifications'
 import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as SafetyRouteImport } from './routes/safety'
 import { Route as SellRouteImport } from './routes/sell'
+import { Route as ApiLatestApkRouteImport } from './routes/api.latest-apk'
 import { Route as ListingIdRouteImport } from './routes/listing.$id'
 import { Route as ShopSlugRouteImport } from './routes/shop.$slug'
 
@@ -84,6 +85,11 @@ const SellRoute = SellRouteImport.update({
   path: '/sell',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiLatestApkRoute = ApiLatestApkRouteImport.update({
+  id: '/api/latest-apk',
+  path: '/api/latest-apk',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ListingIdRoute = ListingIdRouteImport.update({
   id: '/listing/$id',
   path: '/listing/$id',
@@ -108,6 +114,7 @@ export interface FileRoutesByFullPath {
   '/profile': typeof ProfileRoute
   '/safety': typeof SafetyRoute
   '/sell': typeof SellRoute
+  '/api/latest-apk': typeof ApiLatestApkRoute
   '/listing/$id': typeof ListingIdRoute
   '/shop/$slug': typeof ShopSlugRoute
 }
@@ -124,6 +131,7 @@ export interface FileRoutesByTo {
   '/profile': typeof ProfileRoute
   '/safety': typeof SafetyRoute
   '/sell': typeof SellRoute
+  '/api/latest-apk': typeof ApiLatestApkRoute
   '/listing/$id': typeof ListingIdRoute
   '/shop/$slug': typeof ShopSlugRoute
 }
@@ -141,6 +149,7 @@ export interface FileRoutesById {
   '/profile': typeof ProfileRoute
   '/safety': typeof SafetyRoute
   '/sell': typeof SellRoute
+  '/api/latest-apk': typeof ApiLatestApkRoute
   '/listing/$id': typeof ListingIdRoute
   '/shop/$slug': typeof ShopSlugRoute
 }
@@ -159,6 +168,7 @@ export interface FileRouteTypes {
     | '/profile'
     | '/safety'
     | '/sell'
+    | '/api/latest-apk'
     | '/listing/$id'
     | '/shop/$slug'
   fileRoutesByTo: FileRoutesByTo
@@ -175,6 +185,7 @@ export interface FileRouteTypes {
     | '/profile'
     | '/safety'
     | '/sell'
+    | '/api/latest-apk'
     | '/listing/$id'
     | '/shop/$slug'
   id:
@@ -191,6 +202,7 @@ export interface FileRouteTypes {
     | '/profile'
     | '/safety'
     | '/sell'
+    | '/api/latest-apk'
     | '/listing/$id'
     | '/shop/$slug'
   fileRoutesById: FileRoutesById
@@ -208,6 +220,7 @@ export interface RootRouteChildren {
   ProfileRoute: typeof ProfileRoute
   SafetyRoute: typeof SafetyRoute
   SellRoute: typeof SellRoute
+  ApiLatestApkRoute: typeof ApiLatestApkRoute
   ListingIdRoute: typeof ListingIdRoute
   ShopSlugRoute: typeof ShopSlugRoute
 }
@@ -298,6 +311,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SellRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/latest-apk': {
+      id: '/api/latest-apk'
+      path: '/api/latest-apk'
+      fullPath: '/api/latest-apk'
+      preLoaderRoute: typeof ApiLatestApkRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/listing/$id': {
       id: '/listing/$id'
       path: '/listing/$id'
@@ -328,6 +348,7 @@ const rootRouteChildren: RootRouteChildren = {
   ProfileRoute: ProfileRoute,
   SafetyRoute: SafetyRoute,
   SellRoute: SellRoute,
+  ApiLatestApkRoute: ApiLatestApkRoute,
   ListingIdRoute: ListingIdRoute,
   ShopSlugRoute: ShopSlugRoute,
 }

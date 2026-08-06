@@ -5,7 +5,15 @@ import { Button } from "@/components/ui/button";
 
 const DISMISS_KEY = "addisfurnish-app-banner-dismissed";
 
-/** Mobile app download banner (spec §10). Links are placeholders until the app ships. */
+/**
+ * The button links to /api/latest-apk, which 302-redirects to the newest
+ * finished Android build. With EXPO_TOKEN set (see web/.env.example) that
+ * stays current forever; without it the route falls back to the latest
+ * pinned APK. Google Play stays a placeholder until the store listing exists.
+ */
+const ANDROID_APK_URL = "/api/latest-apk";
+
+/** Mobile app download banner. */
 export function MobileAppBanner() {
   const { t } = useLang();
   const [dismissed, setDismissed] = useState(
@@ -31,8 +39,8 @@ export function MobileAppBanner() {
             </a>
           </Button>
           <Button asChild size="sm" className="hidden sm:inline-flex">
-            <a href="#" onClick={(e) => e.preventDefault()}>
-              Android APK
+            <a href={ANDROID_APK_URL} target="_blank" rel="noopener noreferrer">
+              <Download className="mr-1.5 h-3.5 w-3.5" /> Android APK
             </a>
           </Button>
           <button

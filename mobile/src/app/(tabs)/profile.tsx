@@ -15,6 +15,7 @@ import {
 } from "react-native";
 import { router } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
+import * as Updates from "expo-updates";
 import { Ionicons } from "@expo/vector-icons";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../lib/auth";
@@ -95,6 +96,7 @@ export default function ProfileScreen() {
   });
   const [prefsLoaded, setPrefsLoaded] = useState(false);
   const [telegramBusy, setTelegramBusy] = useState(false);
+  const [updateBusy, setUpdateBusy] = useState(false);
   const [admin, setAdmin] = useState(false);
 
   const docs = useAsync(() => fetchMyVerificationDocs(user?.id ?? ""), [user?.id], !!user);
@@ -300,6 +302,40 @@ export default function ProfileScreen() {
         await refreshProfile();
       },
     });
+  };
+
+  /**
+   * Manual update check. The app also checks automatically on launch
+   * (app.json → updates.checkAutomatically = ON_LOAD), so this is just an
+   * explicit "check now" for the profile footer.
+   */
+  const checkForUpdates = async () => {
+    if (!Updates.isEnabled) {
+      toast.error(null, t("updateDevOnly"));
+      return;
+    }
+    setUpdateBusy(true);
+    try {
+      toast.success(t("updateChecking"));
+      const check = await Updates.checkForUpdateAsync();
+      if (!check.isAvailable) {
+        toast.success(t("updateUpToDate"));
+        return;
+      }
+      toast.success(t("updateDownloading"));
+      const fetchResult = await Updates.fetchUpdateAsync();
+      if (fetchResult.isNew) {
+        toast.success(t("updateReady"));
+        // Give the toast a moment to render before the app reloads.
+        setTimeout(() => void Updates.reloadAsync(), 700);
+      } else {
+        toast.success(t("updateUpToDate"));
+      }
+    } catch (err) {
+      toast.error(err, t("updateFailed"));
+    } finally {
+      setUpdateBusy(false);
+    }
   };
 
   const confirmSignOut = () => {
@@ -671,6 +707,20 @@ export default function ProfileScreen() {
             </View>
           </Pressable>
         ) : null}
+
+        {/* App update — manual check. Automatic checks happen on launch. */}
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>{t("appUpdate")}</Text>
+          <Text style={styles.cardHint}>{t("appUpdateHint")}</Text>
+          <Button
+            title={t("checkForUpdates")}
+            variant="outline"
+            onPress={checkForUpdates}
+            loading={updateBusy}
+            disabled={updateBusy}
+            style={{ marginTop: 12 }}
+          />
+        </View>
 
         {/* Sign out */}
         <View style={styles.footer}>

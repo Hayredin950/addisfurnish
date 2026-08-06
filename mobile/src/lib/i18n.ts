@@ -299,6 +299,17 @@ const dict = {
     openInMaps: "Open in Maps",
     copyCoordinates: "Copy coordinates",
     coordinatesCopied: "Coordinates copied",
+    // App update
+    appUpdate: "App update",
+    appUpdateHint:
+      "New versions are installed automatically. Use this to check right now.",
+    checkForUpdates: "Check for updates",
+    updateChecking: "Checking for updates…",
+    updateUpToDate: "You're on the latest version",
+    updateDownloading: "Update found — downloading…",
+    updateReady: "Update ready — restarting…",
+    updateFailed: "Couldn't check for updates",
+    updateDevOnly: "Updates are only available in the installed app, not Expo Go.",
     // Safety
     safetyTitle: "Safety guidelines",
     safetySubtitle:
@@ -635,6 +646,16 @@ const dict = {
     openInMaps: "በካርታ ክፈት",
     copyCoordinates: "መጋጠሚያዎችን ቅዳ",
     coordinatesCopied: "መጋጠሚያዎች ተቀድተዋል",
+    // App update
+    appUpdate: "የመተግበሪያ ማዘመን",
+    appUpdateHint: "አዳዲስ ስሪቶች በራስ-ሰር ይጫናሉ። አሁን ለማጣራት ይህን ይጠቀሙ።",
+    checkForUpdates: "ማዘመኛ ያጣሩ",
+    updateChecking: "ማዘመኛ በመፈለግ ላይ…",
+    updateUpToDate: "በአዲሱ ስሪት ላይ ነዎት",
+    updateDownloading: "ማዘመኛ ተገኝቷል — በመውረድ ላይ…",
+    updateReady: "ማዘመኛ ዝግጁ ነው — በድጋሚ በመከፈት ላይ…",
+    updateFailed: "ማዘመኛን ማጣራት አልተቻለም",
+    updateDevOnly: "ማዘመኛ የሚገኘው በተጫነው መተግበሪያ ውስጥ ብቻ ነው፣ በExpo Go አይደለም።",
     // Safety
     safetyTitle: "የደህንነት መመሪያዎች",
     safetySubtitle:
