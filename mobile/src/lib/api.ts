@@ -1,3 +1,4 @@
+import { File } from "expo-file-system";
 import { supabase } from "./supabase";
 import type { Database } from "./db-types";
 
@@ -702,26 +703,67 @@ export async function submitReport(input: {
 
 // ── Sell ─────────────────────────────────────────────────────────────────
 
-export async function uploadListingImage(
+/**
+ * Uploads a local file (camera roll / camera / document picker) to a storage
+ * bucket and returns the stored path.
+ *
+ * Reads the bytes with expo-file-system rather than building a FormData. The
+ * old React Native pattern — appending a `{ uri, name, type }` descriptor —
+ * stopped working in Expo SDK 54: Expo replaces the global `fetch` with its own
+ * WinterCG implementation, whose FormData encoder accepts only a string, a real
+ * Blob, or an object exposing `.bytes()`, and throws "Unsupported FormDataPart
+ * implementation" on anything else. Passing `fetch(uri)` through instead is no
+ * better — that same replacement does not resolve `file://` URIs.
+ *
+ * contentType is not optional: on the raw-body path storage-js falls back to
+ * `text/plain;charset=UTF-8`, which would store every photo as text and serve
+ * it back unusable.
+ */
+async function uploadToBucket(
+  bucket: string,
   userId: string,
   file: { uri: string; name?: string; mimeType?: string },
+  folder?: string,
 ): Promise<string> {
-  const ext = (file.name ?? "photo.jpg").split(".").pop() ?? "jpg";
-  const path = `${userId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-  // supabase-js 2.111's fetch layer rejects the old React Native FormData
-  // pattern ("Unsupported form data part implementation") — RN's opaque file
-  // descriptors can't be inspected the way the browser's can. The supported
-  // approach is to hand the SDK a raw binary body: read the local file into an
-  // ArrayBuffer first, then upload that with an explicit contentType.
-  const res = await fetch(file.uri);
-  const body = await res.arrayBuffer();
-  const { error } = await supabase.storage.from("listing-images").upload(path, body, {
+  const ext = (file.name ?? "photo.jpg").split(".").pop()?.toLowerCase() ?? "jpg";
+  const prefix = folder ? `${userId}/${folder}` : userId;
+  const path = `${prefix}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+
+  const bytes = await new File(file.uri).bytes();
+  const { error } = await supabase.storage.from(bucket).upload(path, bytes, {
     cacheControl: "3600",
     upsert: false,
     contentType: file.mimeType ?? `image/${ext === "jpg" ? "jpeg" : ext}`,
   });
   if (error) throw error;
   return path;
+}
+
+export function uploadListingImage(
+  userId: string,
+  file: { uri: string; name?: string; mimeType?: string },
+): Promise<string> {
+  return uploadToBucket("listing-images", userId, file);
+}
+
+/**
+ * Shop logos live in the same public bucket but under a `logos/` folder — the
+ * bucket's INSERT policy checks that the first path segment is the uploader's
+ * id, so the user id has to stay first.
+ */
+export function uploadShopLogo(
+  userId: string,
+  file: { uri: string; name?: string; mimeType?: string },
+): Promise<string> {
+  return uploadToBucket("listing-images", userId, file, "logos");
+}
+
+/** Verification documents go to the private (owner + admin only) bucket. */
+export function uploadVerificationDocument(
+  userId: string,
+  file: { uri: string; name?: string; mimeType?: string },
+): Promise<string> {
+  return uploadToBucket("verification-docs", userId, file);
 }
 
 export async function createListing(input: {

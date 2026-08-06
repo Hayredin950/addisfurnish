@@ -29,7 +29,8 @@ import {
   saveBuyerPreferences,
   telegramConfigured,
   updateProfile,
-  uploadListingImage,
+  uploadShopLogo,
+  uploadVerificationDocument,
 } from "../../lib/api";
 import { startPhoneVerification, verifyPhoneOtp } from "../../lib/otp";
 import { Button } from "../../components/Button";
@@ -203,7 +204,7 @@ export default function ProfileScreen() {
     });
     if (res.canceled || !res.assets?.[0]) return;
     try {
-      const path = await uploadListingImage(user.id, res.assets[0]);
+      const path = await uploadShopLogo(user.id, res.assets[0]);
       await updateProfile(user.id, { shop_logo_url: path });
       await refreshProfile();
     } catch (err) {
@@ -220,19 +221,8 @@ export default function ProfileScreen() {
         quality: 0.85,
       });
       if (res.canceled || !res.assets?.[0]) return;
-      // Upload to the private verification-docs bucket (owner+admin only).
-      const asset = res.assets[0];
-      const ext = asset.fileName?.split(".").pop() ?? "jpg";
-      const path = `${user.id}/${Date.now()}.${ext}`;
-      const body = await (await fetch(asset.uri)).arrayBuffer();
-      const { error: upErr } = await supabase.storage
-        .from("verification-docs")
-        .upload(path, body, {
-          cacheControl: "3600",
-          upsert: false,
-          contentType: asset.mimeType ?? `image/${ext === "jpg" ? "jpeg" : ext}`,
-        });
-      if (upErr) throw upErr;
+      // Private bucket — owner and admins only.
+      const path = await uploadVerificationDocument(user.id, res.assets[0]);
       const { error } = await supabase.from("seller_verification_documents").insert({
         seller_id: user.id,
         document_type: docType,
