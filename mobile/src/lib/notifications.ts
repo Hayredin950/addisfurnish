@@ -28,9 +28,23 @@ export async function showLocalNotification(title: string, body: string) {
  * this user and raises a local notification while the app is foregrounded
  * (background delivery goes through Expo push — see registerForPushNotifications).
  */
+let notifChannelSeq = 0;
+
+/**
+ * Subscribes to realtime INSERTs on `notifications` for this user.
+ *
+ * The channel topic is unique per call on purpose: supabase's RealtimeClient
+ * reuses an existing channel instance when the topic already exists, and
+ * adding a `postgres_changes` listener to an already-subscribed instance
+ * throws ("cannot add postgres_changes callbacks after subscribe()"). Because
+ * `removeChannel` is async, an effect re-run can re-subscribe before the old
+ * channel is gone — a shared topic would then return that subscribed instance
+ * and crash the app. Unique topics make every call a fresh channel.
+ */
 export function subscribeNotifications(userId: string, onNotify: (n: unknown) => void) {
+  const topic = `notif-${userId}-${++notifChannelSeq}`;
   const channel = supabase
-    .channel(`notif-${userId}`)
+    .channel(topic)
     .on(
       "postgres_changes",
       {

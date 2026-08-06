@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, useCallback } from "react";
+import { createContext, useContext, useEffect, useState, useCallback, useMemo } from "react";
 import type { ReactNode } from "react";
 import { supabase } from "./supabase";
 import type { Profile } from "./api";
@@ -67,13 +67,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setProfile(null);
   }, []);
 
+  // Memoize `user` so its identity is stable across renders: a freshly-built
+  // object here caused every consumer effect depending on `user` to re-run on
+  // each render (tearing down and re-subscribing realtime channels).
+  const user = useMemo(
+    () =>
+      session?.user
+        ? { id: session.user.id, phone: session.user.phone, email: session.user.email }
+        : null,
+    [session],
+  );
+
   return (
     <AuthContext.Provider
       value={{
         session,
-        user: session?.user
-          ? { id: session.user.id, phone: session.user.phone, email: session.user.email }
-          : null,
+        user,
         profile,
         loading,
         signOut,

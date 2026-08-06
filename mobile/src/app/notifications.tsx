@@ -79,7 +79,7 @@ export default function NotificationsScreen() {
     });
     return unsub;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user]);
+  }, [user?.id]);
 
   const openNotif = (n: Notif) => {
     void markNotificationRead(n.id);

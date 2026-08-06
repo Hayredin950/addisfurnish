@@ -104,7 +104,10 @@ function useRealtimeBanner() {
       void showLocalNotification(title, body || title);
     });
     return unsub;
-  }, [user, lang]);
+    // `user` is memoized in AuthProvider but its shape could still change;
+    // only the id matters for the subscription lifecycle.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id, lang]);
 }
 
 function RootNavigator() {

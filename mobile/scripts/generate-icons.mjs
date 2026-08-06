@@ -9,6 +9,7 @@
 // Pure Node — no image libraries. Same sofa glyph + palette as the web app's
 // generate-brand-assets.mjs, so both apps ship the identical mark.
 // Run:  node scripts/generate-icons.mjs
+/* global Buffer */
 import { deflateSync } from "node:zlib";
 import { writeFileSync, mkdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -59,8 +60,13 @@ function sample(x, y) {
  */
 function render(size, mode, inset = 1) {
   const buf = Buffer.alloc(size * size * 4);
-  const o = (size * (1 - inset)) / 2; // inset origin
-  const s = size * inset; // inset scale
+  // `inset` = the fraction of the canvas the glyph box occupies (adaptive
+  // safe zone). Pixel p maps to u = p/size in [0,1); the box covers
+  // u ∈ [(1-inset)/2, (1+inset)/2], so the box coordinate is
+  // (u - (1-inset)/2) / inset * 64. (The previous formula — which skipped the
+  // division by inset — pushed nearly the whole canvas outside the 0..64 box
+  // and produced fully transparent images.)
+  const half = (1 - inset) / 2;
   for (let py = 0; py < size; py++) {
     for (let px = 0; px < size; px++) {
       const i = (py * size + px) * 4;
@@ -82,8 +88,10 @@ function render(size, mode, inset = 1) {
         [0.75, 0.25],
         [0.75, 0.75],
       ]) {
-        const x = ((o + (px + sx) * s) / size) * 64;
-        const y = ((o + (py + sy) * s) / size) * 64;
+        const u = (px + sx) / size;
+        const v = (py + sy) / size;
+        const x = ((u - half) / inset) * 64;
+        const y = ((v - half) / inset) * 64;
         const hit = sample(x, y);
         let cr = null;
         if (hit === "tile") cr = TERRACOTTA;
@@ -161,5 +169,6 @@ writeFileSync(
 writeFileSync(join(OUT, "android-icon-background.png"), encodePng(1024, 1024, render(1024, "bg")));
 writeFileSync(join(OUT, "android-icon-monochrome.png"), encodePng(1024, 1024, render(1024, "mono", 0.62)));
 writeFileSync(join(OUT, "logo-mark.png"), encodePng(512, 512, render(512, "full")));
+writeFileSync(join(OUT, "favicon.png"), encodePng(48, 48, render(48, "full")));
 
 console.log("Generated icons into assets/images/");
