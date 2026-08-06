@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
-import MapView, { Marker, PROVIDER_DEFAULT } from "react-native-maps";
+import { WebView } from "react-native-webview";
 import * as Location from "expo-location";
 import { Ionicons } from "@expo/vector-icons";
 import { colors, radius } from "../lib/theme";
@@ -11,16 +11,80 @@ export type Coords = { latitude: number; longitude: number };
 
 /** Addis Ababa — a sensible default view for an Ethiopian marketplace. */
 const DEFAULT_CENTER = { latitude: 9.03, longitude: 38.74 };
-const DEFAULT_DELTA = 0.12;
 
 /**
- * Draggable-pin location picker (mirrors the web app's Leaflet LocationPicker).
+ * Draggable-pin location picker — mirrors the web app's Leaflet LocationPicker.
  *
- * Web has a full map with a draggable marker; this is the mobile equivalent
- * using react-native-maps. The user can drag the pin to fine-tune, or use the
- * GPS button to jump to where they actually are. On Android a Google Maps API
- * key is required (see app.json `android.config.googleMaps.apiKey`).
+ * The web app renders its maps with Leaflet + OpenStreetMap, which needs no
+ * API key. The mobile app does the same inside a WebView: the same Leaflet
+ * setup, a draggable marker, and postMessage bridging so RN sees drag/tap
+ * events and can move the pin from the GPS button.
  */
+function mapHtml(initial: Coords | null): string {
+  const center = initial
+    ? [initial.latitude, initial.longitude]
+    : [DEFAULT_CENTER.latitude, DEFAULT_CENTER.longitude];
+  const zoom = initial ? 15 : 13;
+  const pinJs = initial
+    ? `L.marker([${initial.latitude}, ${initial.longitude}], { draggable: true }).addTo(map).on("dragend", send);`
+    : "";
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+  html, body, #map { height: 100%; margin: 0; padding: 0; }
+  .leaflet-container { background: #f3ebde; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<script>
+  var map = L.map("map", { scrollWheelZoom: false }).setView([${center[0]}, ${center[1]}], ${zoom});
+  L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
+  }).addTo(map);
+
+  var marker = null;
+
+  function send(e) {
+    if (!marker) return;
+    var p = marker.getLatLng();
+    if (window.ReactNativeWebView) {
+      window.ReactNativeWebView.postMessage(JSON.stringify({ lat: p.lat, lng: p.lng }));
+    }
+  }
+
+  // Tap anywhere drops/repositions the pin.
+  map.on("click", function (e) {
+    place(e.latlng.lat, e.latlng.lng);
+  });
+
+  function place(lat, lng) {
+    if (marker) {
+      marker.setLatLng([lat, lng]);
+    } else {
+      marker = L.marker([lat, lng], { draggable: true }).addTo(map);
+      marker.on("dragend", send);
+    }
+    send(null);
+  }
+
+  // Called from RN via injectJavaScript when the user taps "Use my location".
+  window.setPin = function (lat, lng) {
+    place(lat, lng);
+    map.panTo([lat, lng]);
+  };
+
+  ${pinJs}
+</script>
+</body>
+</html>`;
+}
+
 export function DraggablePinMap({
   value,
   onChange,
@@ -31,15 +95,8 @@ export function DraggablePinMap({
   const { t } = useLang();
   const toast = useToast();
   const [locating, setLocating] = useState(false);
-  const mapRef = useRef<MapView>(null);
+  const webRef = useRef<WebView>(null);
 
-  const center = value
-    ? { ...value, latitudeDelta: 0.02, longitudeDelta: 0.02 }
-    : { ...DEFAULT_CENTER, latitudeDelta: DEFAULT_DELTA, longitudeDelta: DEFAULT_DELTA };
-
-  // Only the GPS button recentres the map — dragging the pin must not animate
-  // back to itself (visible "settle"). Dragging the marker, or tapping the
-  // map, updates `value` and the marker simply moves with the map.
   const useMyLocation = async () => {
     setLocating(true);
     try {
@@ -53,10 +110,7 @@ export function DraggablePinMap({
       });
       const picked = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
       onChange(picked);
-      mapRef.current?.animateToRegion(
-        { ...picked, latitudeDelta: 0.02, longitudeDelta: 0.02 },
-        400,
-      );
+      webRef.current?.injectJavaScript(`window.setPin(${picked.latitude}, ${picked.longitude}); true;`);
     } catch {
       toast.error(null, t("oops"));
     } finally {
@@ -67,24 +121,25 @@ export function DraggablePinMap({
   return (
     <View style={styles.wrap}>
       <View style={styles.mapBox}>
-        <MapView
-          ref={mapRef}
+        <WebView
+          ref={webRef}
+          originWhitelist={["*"]}
+          source={{ html: mapHtml(value) }}
           style={styles.map}
-          provider={PROVIDER_DEFAULT}
-          initialRegion={center}
-          onPress={(e) => onChange(e.nativeEvent.coordinate)}
-        >
-          {value ? (
-            <Marker
-              coordinate={value}
-              draggable
-              title={t("setLocation")}
-              onDragEnd={(e) => onChange(e.nativeEvent.coordinate)}
-            />
-          ) : null}
-        </MapView>
-
-        {/* Crosshair hint when no pin is set yet: tapping the map drops one. */}
+          onMessage={(e) => {
+            try {
+              const data = JSON.parse(e.nativeEvent.data) as { lat: number; lng: number };
+              if (typeof data.lat === "number" && typeof data.lng === "number") {
+                onChange({ latitude: data.lat, longitude: data.lng });
+              }
+            } catch {
+              // ignore malformed messages from the page
+            }
+          }}
+          javaScriptEnabled
+          domStorageEnabled
+          setSupportMultipleWindows={false}
+        />
         {!value ? (
           <View style={styles.tapHint}>
             <Ionicons name="finger-print-outline" size={14} color={colors.onPrimary} />
@@ -94,11 +149,7 @@ export function DraggablePinMap({
       </View>
 
       <View style={styles.row}>
-        <Pressable
-          style={styles.gpsBtn}
-          onPress={useMyLocation}
-          disabled={locating}
-        >
+        <Pressable style={styles.gpsBtn} onPress={useMyLocation} disabled={locating}>
           {locating ? (
             <ActivityIndicator size="small" color={colors.primary} />
           ) : (
@@ -125,7 +176,7 @@ export function DraggablePinMap({
 const styles = StyleSheet.create({
   wrap: { gap: 10 },
   mapBox: { borderRadius: radius.lg, overflow: "hidden", position: "relative" },
-  map: { height: 220, width: "100%" },
+  map: { height: 220, width: "100%", backgroundColor: "#f3ebde" },
   tapHint: {
     position: "absolute",
     top: 10,

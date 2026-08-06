@@ -1,5 +1,5 @@
 import { Linking, Pressable, StyleSheet, Text, View } from "react-native";
-import MapView, { Marker, PROVIDER_DEFAULT } from "react-native-maps";
+import { WebView } from "react-native-webview";
 import * as Clipboard from "expo-clipboard";
 import { Ionicons } from "@expo/vector-icons";
 import { colors, radius, spacing, shadows } from "../lib/theme";
@@ -10,6 +10,8 @@ import { useToast } from "./Toast";
  * Read-only map for buyers, mirroring the web app's LocationCard: an embedded
  * map with a pin, a link to open it in Google Maps (which deep-links to the
  * native app when installed), and a copy-coordinates action.
+ *
+ * Uses the same OpenStreetMap embed iframe as the web card — no API key.
  */
 export function LocationCardMap({
   latitude,
@@ -32,6 +34,12 @@ export function LocationCardMap({
   const pinUrl = `https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`;
   const directionsUrl = `https://www.google.com/maps/dir/?api=1&destination=${latitude},${longitude}`;
 
+  // The exact OSM embed URL the web LocationCard iframe uses.
+  const bbox = [longitude - 0.006, latitude - 0.004, longitude + 0.006, latitude + 0.004]
+    .map((n) => encodeURIComponent(String(n)))
+    .join("%2C");
+  const embedUrl = `https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${latitude}%2C${longitude}`;
+
   const copyCoords = async () => {
     try {
       await Clipboard.setStringAsync(`${latitude}, ${longitude}`);
@@ -51,22 +59,14 @@ export function LocationCardMap({
       </View>
 
       <View style={styles.mapBox}>
-        <MapView
+        <WebView
+          source={{ uri: embedUrl }}
           style={styles.map}
-          provider={PROVIDER_DEFAULT}
-          scrollEnabled={false}
-          zoomEnabled={false}
-          pitchEnabled={false}
-          rotateEnabled={false}
-          initialRegion={{
-            latitude,
-            longitude,
-            latitudeDelta: 0.02,
-            longitudeDelta: 0.02,
-          }}
-        >
-          <Marker coordinate={{ latitude, longitude }} title={title} />
-        </MapView>
+          originWhitelist={["*"]}
+          javaScriptEnabled
+          domStorageEnabled
+          setSupportMultipleWindows={false}
+        />
       </View>
 
       <View style={styles.actions}>
