@@ -17,14 +17,11 @@ export function LocationCardMap({
   latitude,
   longitude,
   label,
-  title,
 }: {
   latitude: number;
   longitude: number;
   /** Human-readable place, e.g. "Bole, Addis Ababa". */
   label: string;
-  /** Listing title, used in the share/open sheet. */
-  title: string;
 }) {
   const { t } = useLang();
   const toast = useToast();
@@ -66,6 +63,12 @@ export function LocationCardMap({
           javaScriptEnabled
           domStorageEnabled
           setSupportMultipleWindows={false}
+          // Only the embed itself may load — OSM attribution / "larger map"
+          // links must not navigate the card away. Anything else opens in the
+          // browser instead.
+          onShouldStartLoadWithRequest={(req) =>
+            req.url === embedUrl || req.url.startsWith("about:") || req.url.startsWith("data:")
+          }
         />
       </View>
 

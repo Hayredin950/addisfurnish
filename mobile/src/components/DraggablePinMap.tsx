@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from "react-native";
 import { WebView } from "react-native-webview";
 import * as Location from "expo-location";
@@ -19,6 +19,10 @@ const DEFAULT_CENTER = { latitude: 9.03, longitude: 38.74 };
  * API key. The mobile app does the same inside a WebView: the same Leaflet
  * setup, a draggable marker, and postMessage bridging so RN sees drag/tap
  * events and can move the pin from the GPS button.
+ *
+ * The WebView source is built ONCE (from the initial value) and kept stable —
+ * every pin move afterwards goes through injectJavaScript, because changing
+ * the `html` source would tear down and reload the map on each interaction.
  */
 function mapHtml(initial: Coords | null): string {
   const center = initial
@@ -26,7 +30,7 @@ function mapHtml(initial: Coords | null): string {
     : [DEFAULT_CENTER.latitude, DEFAULT_CENTER.longitude];
   const zoom = initial ? 15 : 13;
   const pinJs = initial
-    ? `L.marker([${initial.latitude}, ${initial.longitude}], { draggable: true }).addTo(map).on("dragend", send);`
+    ? `window.__place(${initial.latitude}, ${initial.longitude});`
     : "";
 
   return `<!DOCTYPE html>
@@ -50,7 +54,7 @@ function mapHtml(initial: Coords | null): string {
 
   var marker = null;
 
-  function send(e) {
+  function send() {
     if (!marker) return;
     var p = marker.getLatLng();
     if (window.ReactNativeWebView) {
@@ -58,25 +62,30 @@ function mapHtml(initial: Coords | null): string {
     }
   }
 
+  function makeMarker(lat, lng) {
+    marker = L.marker([lat, lng], { draggable: true }).addTo(map);
+    marker.on("dragend", send);
+  }
+
   // Tap anywhere drops/repositions the pin.
   map.on("click", function (e) {
-    place(e.latlng.lat, e.latlng.lng);
+    window.__place(e.latlng.lat, e.latlng.lng);
   });
 
-  function place(lat, lng) {
+  window.__place = function (lat, lng) {
     if (marker) {
       marker.setLatLng([lat, lng]);
     } else {
-      marker = L.marker([lat, lng], { draggable: true }).addTo(map);
-      marker.on("dragend", send);
+      makeMarker(lat, lng);
     }
-    send(null);
-  }
+    send();
+  };
 
-  // Called from RN via injectJavaScript when the user taps "Use my location".
-  window.setPin = function (lat, lng) {
-    place(lat, lng);
-    map.panTo([lat, lng]);
+  window.__clear = function () {
+    if (marker) {
+      map.removeLayer(marker);
+      marker = null;
+    }
   };
 
   ${pinJs}
@@ -95,7 +104,10 @@ export function DraggablePinMap({
   const { t } = useLang();
   const toast = useToast();
   const [locating, setLocating] = useState(false);
+  const [loaded, setLoaded] = useState(false);
   const webRef = useRef<WebView>(null);
+  // The page (and its pin) is seeded from the value at first mount only.
+  const initialValue = useRef(value).current;
 
   const useMyLocation = async () => {
     setLocating(true);
@@ -108,9 +120,7 @@ export function DraggablePinMap({
       const pos = await Location.getCurrentPositionAsync({
         accuracy: Location.Accuracy.Balanced,
       });
-      const picked = { latitude: pos.coords.latitude, longitude: pos.coords.longitude };
-      onChange(picked);
-      webRef.current?.injectJavaScript(`window.setPin(${picked.latitude}, ${picked.longitude}); true;`);
+      onChange({ latitude: pos.coords.latitude, longitude: pos.coords.longitude });
     } catch {
       toast.error(null, t("oops"));
     } finally {
@@ -118,14 +128,30 @@ export function DraggablePinMap({
     }
   };
 
+  // Drive pin changes from RN (GPS) without reloading the page. Drags come
+  // back through postMessage, so injecting the same coords is a harmless no-op.
+  useEffect(() => {
+    if (!loaded) return;
+    if (value) {
+      webRef.current?.injectJavaScript(
+        `window.__place(${value.latitude}, ${value.longitude}); true;`,
+      );
+    } else {
+      webRef.current?.injectJavaScript("window.__clear(); true;");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loaded, value?.latitude, value?.longitude]);
+
   return (
     <View style={styles.wrap}>
       <View style={styles.mapBox}>
         <WebView
           ref={webRef}
           originWhitelist={["*"]}
-          source={{ html: mapHtml(value) }}
+          // Stable source — the map is built once and never reloaded.
+          source={{ html: mapHtml(initialValue) }}
           style={styles.map}
+          onLoadEnd={() => setLoaded(true)}
           onMessage={(e) => {
             try {
               const data = JSON.parse(e.nativeEvent.data) as { lat: number; lng: number };

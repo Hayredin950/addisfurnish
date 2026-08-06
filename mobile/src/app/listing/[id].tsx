@@ -466,7 +466,6 @@ export default function ListingDetailScreen() {
           latitude={item.latitude}
           longitude={item.longitude}
           label={`${item.sub_city ? `${item.sub_city}, ` : ""}${item.city}`}
-          title={item.title}
         />
       ) : null}
 
