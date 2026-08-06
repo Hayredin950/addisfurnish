@@ -4,6 +4,18 @@
 /* Leaflet tile/marker positioning — the map renders scrambled without it. */
 @import "leaflet/dist/leaflet.css";
 
+/*
+ * Leaflet panes use z-indexes 400-1000 internally, and .leaflet-container sets
+ * no z-index of its own — so without this the map's controls/panes resolve
+ * against the page root and paint OVER the sticky navbar (z-50). Trapping the
+ * map inside its own stacking context fixes it without chasing each pane.
+ */
+.leaflet-container {
+  position: relative;
+  z-index: 0;
+  isolation: isolate;
+}
+
 @custom-variant dark (&:is(.dark *));
 
 /*

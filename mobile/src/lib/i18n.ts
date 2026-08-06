@@ -294,6 +294,11 @@ const dict = {
     noLocation: "No location set",
     useCurrentLocation: "Use my location",
     clear: "Clear",
+    dragPinHint: "Drag the pin to set the exact spot",
+    directions: "Directions",
+    openInMaps: "Open in Maps",
+    copyCoordinates: "Copy coordinates",
+    coordinatesCopied: "Coordinates copied",
     // Safety
     safetyTitle: "Safety guidelines",
     safetySubtitle:
@@ -625,6 +630,11 @@ const dict = {
     noLocation: "አካባቢ አልተመረጠም",
     useCurrentLocation: "አካባቢዬን ተጠቀም",
     clear: "አጽዳ",
+    dragPinHint: "ትክክለኛውን ቦታ ለማስቀመጥ ፒኑን ይጎትቱ",
+    directions: "አቅጣጫ",
+    openInMaps: "በካርታ ክፈት",
+    copyCoordinates: "መጋጠሚያዎችን ቅዳ",
+    coordinatesCopied: "መጋጠሚያዎች ተቀድተዋል",
     // Safety
     safetyTitle: "የደህንነት መመሪያዎች",
     safetySubtitle:

@@ -35,6 +35,7 @@ import {
   toggleFavorite,
 } from "../../lib/api";
 import { ListingCard } from "../../components/ListingCard";
+import { LocationCardMap } from "../../components/LocationCardMap";
 import { Button } from "../../components/Button";
 import { SheetOverlay } from "../../components/SheetOverlay";
 import { useToast } from "../../components/Toast";
@@ -456,6 +457,17 @@ export default function ListingDetailScreen() {
             </Pressable>
           ) : null}
         </Pressable>
+      ) : null}
+
+      {/* Location map — buyers can see where the item is, open it in Google
+          Maps, and copy the coordinates (web parity). */}
+      {item.latitude != null && item.longitude != null ? (
+        <LocationCardMap
+          latitude={item.latitude}
+          longitude={item.longitude}
+          label={`${item.sub_city ? `${item.sub_city}, ` : ""}${item.city}`}
+          title={item.title}
+        />
       ) : null}
 
       {/* Details */}

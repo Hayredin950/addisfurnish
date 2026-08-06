@@ -15,7 +15,6 @@ import {
 } from "react-native";
 import { router } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
-import * as Location from "expo-location";
 import { Ionicons } from "@expo/vector-icons";
 import { supabase } from "../../lib/supabase";
 import { useAuth } from "../../lib/auth";
@@ -33,6 +32,7 @@ import {
   uploadVerificationDocument,
 } from "../../lib/api";
 import { startPhoneVerification, verifyPhoneOtp } from "../../lib/otp";
+import { DraggablePinMap } from "../../components/DraggablePinMap";
 import { Button } from "../../components/Button";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { useToast } from "../../components/Toast";
@@ -73,7 +73,6 @@ export default function ProfileScreen() {
   const [telegram, setTelegram] = useState(profile?.telegram ?? "");
   const [latitude, setLatitude] = useState<number | null>(profile?.latitude ?? null);
   const [longitude, setLongitude] = useState<number | null>(profile?.longitude ?? null);
-  const [locating, setLocating] = useState(false);
   const [saving, setSaving] = useState(false);
 
   // Phone verification (everyone)
@@ -173,24 +172,6 @@ export default function ProfileScreen() {
       toast.error(err, t("oops"));
     } finally {
       setSaving(false);
-    }
-  };
-
-  const setMyLocation = async () => {
-    setLocating(true);
-    try {
-      const { status } = await Location.requestForegroundPermissionsAsync();
-      if (status !== "granted") {
-        toast.error(null, t("locationDenied"));
-        return;
-      }
-      const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
-      setLatitude(pos.coords.latitude);
-      setLongitude(pos.coords.longitude);
-    } catch {
-      toast.error(null, t("oops"));
-    } finally {
-      setLocating(false);
     }
   };
 
@@ -481,40 +462,24 @@ export default function ProfileScreen() {
                 <Field label={t("telegram")} value={telegram} onChange={setTelegram} />
               </View>
             </View>
-            {/* Shop location — pin captured from GPS, stored as lat/lng (the web
-                app's map picker writes the same columns). */}
+            {/* Shop location — draggable pin map, stored as lat/lng (the web
+                app's Leaflet picker writes the same columns). */}
             <Text style={styles.fieldLabel}>{t("setLocation")}</Text>
-            <View style={styles.locationBox}>
-              <Ionicons name="location-outline" size={16} color={colors.primary} />
-              <Text style={styles.locationText} numberOfLines={1}>
-                {latitude != null && longitude != null
-                  ? `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`
-                  : t("noLocation")}
+            {latitude != null && longitude != null ? (
+              <Text style={styles.locationSummary} numberOfLines={1}>
+                <Ionicons name="location" size={13} color={colors.primary} />{" "}
+                {latitude.toFixed(5)}, {longitude.toFixed(5)}
               </Text>
-            </View>
-            <View style={styles.rowBtns}>
-              <Button
-                title={t("useCurrentLocation")}
-                variant="outline"
-                size="sm"
-                onPress={setMyLocation}
-                loading={locating}
-                disabled={locating}
-                style={{ flex: 1 }}
-              />
-              {latitude != null ? (
-                <Button
-                  title={t("clear")}
-                  variant="ghost"
-                  size="sm"
-                  onPress={() => {
-                    setLatitude(null);
-                    setLongitude(null);
-                  }}
-                  style={{ flex: 1 }}
-                />
-              ) : null}
-            </View>
+            ) : null}
+            <DraggablePinMap
+              value={
+                latitude != null && longitude != null ? { latitude, longitude } : null
+              }
+              onChange={(c) => {
+                setLatitude(c?.latitude ?? null);
+                setLongitude(c?.longitude ?? null);
+              }}
+            />
             <Button
               title={t("saveProfile")}
               onPress={saveShop}
@@ -888,18 +853,12 @@ const styles = StyleSheet.create({
     color: colors.text,
   },
   twoCol: { flexDirection: "row", gap: 10 },
-  locationBox: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    backgroundColor: colors.secondary,
-    borderRadius: radius.md,
-    paddingHorizontal: 12,
-    paddingVertical: 11,
-    marginBottom: 8,
+  locationSummary: {
+    fontSize: 12.5,
+    color: colors.textMuted,
+    marginBottom: 10,
+    fontFamily: "monospace",
   },
-  locationText: { flex: 1, fontSize: 13, color: colors.textMuted },
-  rowBtns: { flexDirection: "row", gap: 10, marginTop: 2 },
   docStatusRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   rejection: {
     fontSize: 12.5,
