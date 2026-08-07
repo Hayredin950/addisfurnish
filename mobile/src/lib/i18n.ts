@@ -348,7 +348,15 @@ const dict = {
     reportSent: "Report sent. Thank you for keeping AddisFurnish safe.",
     // Google sign-in
     continueGoogle: "Continue with Google",
-    googleSignInFailed: "Google sign-in failed. Try again or use your phone number.",
+    googleSignInFailed: "Google sign-in failed. Try again or use your email.",
+    // Sign-up (email + password)
+    createAccount: "Create account",
+    passwordMinLength: "Password must be at least 6 characters.",
+    checkEmail: "Check your email",
+    checkEmailHint:
+      "We sent a confirmation link to your inbox. Tap it to activate your account, then sign in.",
+    resendConfirmation: "Resend confirmation email",
+    confirmationResent: "Confirmation email sent — check your inbox (and spam).",
   },
   am: {
     appName: "ሱቅቤት",
@@ -694,7 +702,15 @@ const dict = {
     reportSent: "ሪፖርት ተልኳል። አዲስፈርኒሽን ደህንነትን ለመጠበቅ እናመሰግናለን።",
     // Google sign-in
     continueGoogle: "በጉግል ይቀጥሉ",
-    googleSignInFailed: "የጉግል መግቢያ አልተሳካም። እንደገና ይሞክሩ ወይም ስልክ ቁጥርዎን ይጠቀሙ።",
+    googleSignInFailed: "የጉግል መግቢያ አልተሳካም። እንደገና ይሞክሩ ወይም ኢሜይልዎን ይጠቀሙ።",
+    // Sign-up (email + password)
+    createAccount: "መለያ ይፍጠሩ",
+    passwordMinLength: "የይለፍ ቃል ቢያንስ 6 ቁምፊ መሆን አለበት።",
+    checkEmail: "ኢሜይልዎን ያረጋግጡ",
+    checkEmailHint:
+      "የማረጋገጫ ሊንክ ወደ ኢሜይልዎ ልከናል። መለያዎን ለማግበር ይንኩት፣ ከዚያ ይግቡ።",
+    resendConfirmation: "የማረጋገጫ ኢሜይል እንደገና ይላኩ",
+    confirmationResent: "የማረጋገጫ ኢሜይል ተልኳል — ኢንቦክስዎን (እና ስፓም) ያረጋግጡ።",
   },
 } as const;
 
