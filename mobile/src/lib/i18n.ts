@@ -357,6 +357,10 @@ const dict = {
       "We sent a confirmation link to your inbox. Tap it to activate your account, then sign in.",
     resendConfirmation: "Resend confirmation email",
     confirmationResent: "Confirmation email sent — check your inbox (and spam).",
+    emailOtpHint:
+      "We sent a 6-digit code to your email — enter it below. (Check your spam folder, it often lands there.)",
+    emailOtpVerify: "Verify account",
+    emailOtpNoEmail: "Didn't get the code?",
   },
   am: {
     appName: "ሱቅቤት",
@@ -711,6 +715,10 @@ const dict = {
       "የማረጋገጫ ሊንክ ወደ ኢሜይልዎ ልከናል። መለያዎን ለማግበር ይንኩት፣ ከዚያ ይግቡ።",
     resendConfirmation: "የማረጋገጫ ኢሜይል እንደገና ይላኩ",
     confirmationResent: "የማረጋገጫ ኢሜይል ተልኳል — ኢንቦክስዎን (እና ስፓም) ያረጋግጡ።",
+    emailOtpHint:
+      "ባለ 6 አሃዝ ኮድ ወደ ኢሜይልዎ ልከናል — ከታች ያስገቡት። (የስፓም ፎልደርዎንም ይመልከቱ።)",
+    emailOtpVerify: "መለያ ያረጋግጡ",
+    emailOtpNoEmail: "ኮዱ አልደረሰዎትም?",
   },
 } as const;
 

@@ -76,6 +76,10 @@ export default function AuthScreen() {
   // — confirmation mail lands in spam often enough that a dead end here would
   // strand people who can't find it.
   const [pendingEmail, setPendingEmail] = useState<string | null>(null);
+  // 6-digit code entry for the {{ .Token }} in the confirmation email — typing
+  // it (verifyOtp) beats a magic-link tap on a phone, and works even when the
+  // email lands in spam.
+  const [otpCode, setOtpCode] = useState("");
   const handledDeepLink = useRef(false);
 
   // Email-confirmation return: the verification page redirects the browser to
@@ -163,6 +167,29 @@ export default function AuthScreen() {
     }
   };
 
+  const verifyEmailOtp = async () => {
+    if (!pendingEmail) return;
+    setError(null);
+    setNotice(null);
+    setBusy(true);
+    try {
+      const { data, error: err } = await supabase.auth.verifyOtp({
+        email: pendingEmail,
+        token: otpCode.trim(),
+        type: "signup",
+      });
+      if (err) {
+        setError(err.message);
+        return;
+      }
+      if (data.session) {
+        router.replace("/(tabs)");
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
   /**
    * Google OAuth via Supabase. The authorize URL is opened in an in-app
    * browser session; on return the tokens live in the URL fragment, which we
@@ -244,16 +271,34 @@ export default function AuthScreen() {
         </View>
 
         {pendingEmail ? (
-          /* Confirmation email sent — offer a resend instead of a dead end. */
+          /* Confirmation email sent — enter the 6-digit code (or resend). */
           <View style={styles.confirmCard}>
             <Ionicons name="mail-outline" size={22} color={colors.primary} />
             <Text style={styles.confirmTitle}>{t("checkEmail")}</Text>
-            <Text style={styles.confirmHint}>{t("checkEmailHint")}</Text>
+            <Text style={styles.confirmHint}>{t("emailOtpHint")}</Text>
+            <TextInput
+              value={otpCode}
+              onChangeText={(v) => setOtpCode(v.replace(/[^0-9]/g, ""))}
+              placeholder="123456"
+              placeholderTextColor={colors.textSoft}
+              keyboardType="number-pad"
+              maxLength={6}
+              style={[styles.input, styles.otpInput]}
+            />
+            <Button
+              title={t("emailOtpVerify")}
+              onPress={verifyEmailOtp}
+              loading={busy}
+              disabled={busy || otpCode.trim().length < 6}
+              size="md"
+            />
+            <Text style={styles.otpNoEmail}>{t("emailOtpNoEmail")}</Text>
             <Button
               title={t("resendConfirmation")}
               onPress={resendConfirmation}
               loading={busy}
               disabled={busy}
+              variant="outline"
               size="md"
             />
             {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -412,6 +457,19 @@ const styles = StyleSheet.create({
     textAlign: "center",
     lineHeight: 19,
     marginBottom: 4,
+  },
+  otpInput: {
+    textAlign: "center",
+    fontSize: 20,
+    fontWeight: "700",
+    letterSpacing: 10,
+    paddingVertical: 12,
+    width: "100%",
+  },
+  otpNoEmail: {
+    fontSize: 12.5,
+    color: colors.textSoft,
+    marginTop: 4,
   },
   googleBtn: {
     flexDirection: "row",

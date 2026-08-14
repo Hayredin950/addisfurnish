@@ -37,6 +37,10 @@ function AuthPage() {
   // — confirmation mail lands in spam often enough that a dead end here would
   // strand people who can't find it.
   const [pendingEmail, setPendingEmail] = useState<string | null>(null);
+  // 6-digit code entry for the {{ .Token }} in the confirmation email — typing
+  // it (verifyOtp) is far more reliable than a magic-link tap, especially on
+  // phones where the link often lands in spam.
+  const [otpCode, setOtpCode] = useState("");
 
   if (user) {
     navigate({ to: "/dashboard", replace: true });
@@ -73,10 +77,29 @@ function AuthPage() {
     }
     if (!data.session) {
       setPendingEmail(email);
-      toast.success(t("toast.checkEmail"));
       return;
     }
     navigate({ to: "/dashboard" });
+  };
+
+  const verifyEmailOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!pendingEmail) return;
+    setBusy(true);
+    const { data, error } = await supabase.auth.verifyOtp({
+      email: pendingEmail,
+      token: otpCode.trim(),
+      type: "signup",
+    });
+    setBusy(false);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    if (data.session) {
+      toast.success(t("auth.otpVerified"));
+      navigate({ to: "/dashboard" });
+    }
   };
 
   const resendConfirmation = async () => {
@@ -113,11 +136,26 @@ function AuthPage() {
       {pendingEmail ? (
         <div className="mt-8 rounded-xl border bg-card p-5 shadow-soft">
           <p className="text-sm font-semibold">{t("auth.confirmSent")}</p>
-          <p className="mt-2 text-xs text-muted-foreground">{t("auth.confirmHint")}</p>
+          <p className="mt-2 text-xs text-muted-foreground">{t("auth.otpHint")}</p>
+          <form className="mt-4 space-y-3" onSubmit={verifyEmailOtp}>
+            <Input
+              value={otpCode}
+              onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ""))}
+              placeholder="123456"
+              inputMode="numeric"
+              maxLength={6}
+              autoFocus
+              required
+            />
+            <Button type="submit" className="w-full" disabled={busy || otpCode.trim().length < 6}>
+              {t("auth.otpVerify")}
+            </Button>
+          </form>
+          <p className="mt-5 text-center text-xs text-muted-foreground">{t("auth.otpNoEmail")}</p>
           <Button
             variant="outline"
             size="sm"
-            className="mt-4"
+            className="mt-2 w-full"
             disabled={busy}
             onClick={resendConfirmation}
           >
