@@ -145,6 +145,7 @@ const en = {
   "auth.confirmResent": "Confirmation email sent again",
   "auth.otpHint":
     "We sent you a 6-digit code. Enter it below — and check your spam folder, it often lands there.",
+  "auth.otpSentTo": "We sent the code to {email} — check that inbox (and spam).",
   "auth.otpVerify": "Verify account",
   "auth.otpNoEmail": "Didn't get the code?",
   "auth.otpVerified": "Email verified — welcome!",
@@ -629,6 +630,7 @@ const am: Record<keyof Dict, string> = {
   "auth.confirmResend": "የማረጋገጫ ኢሜይል እንደገና ላክ",
   "auth.confirmResent": "የማረጋገጫ ኢሜይል እንደገና ተልኳል",
   "auth.otpHint": "ባለ 6 አሃዝ ኮድ ልከንልዎታለን። ከታች ያስገቡት — የስፓም ፎልደርዎንም ይመልከቱ።",
+  "auth.otpSentTo": "ኮዱን ወደ {email} ልከናል — ያን ኢንቦክስ (እና ስፓም) ይመልከቱ።",
   "auth.otpVerify": "መለያ ያረጋግጡ",
   "auth.otpNoEmail": "ኮዱ አልደረሰዎትም?",
   "auth.otpVerified": "ኢሜይል ተረጋግጧል — እንኳን ደህና መጡ!",

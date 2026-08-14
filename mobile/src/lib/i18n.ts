@@ -359,6 +359,7 @@ const dict = {
     confirmationResent: "Confirmation email sent — check your inbox (and spam).",
     emailOtpHint:
       "We sent a 6-digit code to your email — enter it below. (Check your spam folder, it often lands there.)",
+    emailOtpSentTo: "We sent the code to",
     emailOtpVerify: "Verify account",
     emailOtpNoEmail: "Didn't get the code?",
   },
@@ -717,6 +718,7 @@ const dict = {
     confirmationResent: "የማረጋገጫ ኢሜይል ተልኳል — ኢንቦክስዎን (እና ስፓም) ያረጋግጡ።",
     emailOtpHint:
       "ባለ 6 አሃዝ ኮድ ወደ ኢሜይልዎ ልከናል — ከታች ያስገቡት። (የስፓም ፎልደርዎንም ይመልከቱ።)",
+    emailOtpSentTo: "ኮዱን ወደ ተልኳል",
     emailOtpVerify: "መለያ ያረጋግጡ",
     emailOtpNoEmail: "ኮዱ አልደረሰዎትም?",
   },

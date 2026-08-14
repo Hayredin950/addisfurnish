@@ -137,6 +137,9 @@ function AuthPage() {
         <div className="mt-8 rounded-xl border bg-card p-5 shadow-soft">
           <p className="text-sm font-semibold">{t("auth.confirmSent")}</p>
           <p className="mt-2 text-xs text-muted-foreground">{t("auth.otpHint")}</p>
+          <p className="mt-1 text-xs font-medium text-muted-foreground">
+            {t("auth.otpSentTo", { email: pendingEmail })}
+          </p>
           <form className="mt-4 space-y-3" onSubmit={verifyEmailOtp}>
             <Input
               value={otpCode}

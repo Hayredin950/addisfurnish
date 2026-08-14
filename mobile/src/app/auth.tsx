@@ -276,6 +276,10 @@ export default function AuthScreen() {
             <Ionicons name="mail-outline" size={22} color={colors.primary} />
             <Text style={styles.confirmTitle}>{t("checkEmail")}</Text>
             <Text style={styles.confirmHint}>{t("emailOtpHint")}</Text>
+            <Text style={styles.confirmSentTo}>
+              {t("emailOtpSentTo")}{" "}
+              <Text style={styles.confirmSentToEmail}>{pendingEmail}</Text>
+            </Text>
             <TextInput
               value={otpCode}
               onChangeText={(v) => setOtpCode(v.replace(/[^0-9]/g, ""))}
@@ -458,6 +462,13 @@ const styles = StyleSheet.create({
     lineHeight: 19,
     marginBottom: 4,
   },
+  confirmSentTo: {
+    fontSize: 12.5,
+    color: colors.textSoft,
+    textAlign: "center",
+    lineHeight: 18,
+  },
+  confirmSentToEmail: { color: colors.primary, fontWeight: "700" },
   otpInput: {
     textAlign: "center",
     fontSize: 20,
