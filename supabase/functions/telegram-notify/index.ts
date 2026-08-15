@@ -296,6 +296,22 @@ async function sendMessage(chatId: string, text: string): Promise<boolean> {
   return (await sendMessageFull(chatId, text)).ok;
 }
 
+/**
+ * Resolve a stored image reference to a URL Telegram can fetch.
+ *
+ * Shop logos and old-era media are Supabase storage *paths* (`<user>/logos/x.jpg`),
+ * which Telegram rejects as a bare string. Both apps resolve them under the
+ * `listing-images` bucket, so the same prefix applies here.
+ */
+function resolvePhotoUrl(photoUrl: string | null): string | null {
+  if (!photoUrl) return null;
+  if (/^https?:\/\//i.test(photoUrl)) return photoUrl;
+  if (SUPABASE_URL && !photoUrl.startsWith("/")) {
+    return `${SUPABASE_URL}/storage/v1/object/public/listing-images/${photoUrl}`;
+  }
+  return null;
+}
+
 /** Download a photo URL's bytes for direct re-upload (size-capped). */
 async function downloadBytes(url: string, cap: number): Promise<Uint8Array | null> {
   try {
@@ -403,13 +419,14 @@ async function sendCard(
     }
   };
 
-  const sent = await sendUrl(photoUrl || ADDISFURNISH_LOGO_URL);
+const photo = resolvePhotoUrl(photoUrl) || ADDISFURNISH_LOGO_URL;
+  const sent = await sendUrl(photo);
   if (sent) return sent;
 
   // The real listing photo failed as a URL (large/truncated fetch) — relay
   // the bytes directly instead of giving up on the photo.
-  if (photoUrl) {
-    const bytes = await downloadBytes(photoUrl, MAX_PHOTO_BYTES);
+  if (photo && photo !== ADDISFURNISH_LOGO_URL) {
+    const bytes = await downloadBytes(photo, MAX_PHOTO_BYTES);
     if (bytes) {
       const upload = await uploadPhotoBytes(chatId, bytes, caption, reply_markup, kind);
       if (upload?.ok) return upload;
@@ -703,6 +720,35 @@ async function handleNotification(
     const text = `💬 <b>New message from ${sender}</b>${preview ? `\n\n“${preview}”` : ""}`;
     await sendCard(chatId, text, null, replyButton(payload.conversationId));
     return new Response("ok", { status: 200 });
+  }
+
+  // shop_reviewed carries no listingId — render a photo card with the shop
+  // logo and a "View shop" button instead of falling back to plain text.
+  if (type === "shop_reviewed") {
+    const shopSlug = (payload as { shopSlug?: string }).shopSlug;
+    if (shopSlug && SITE_URL) {
+      const { data: shop } = await supabase
+        .from("profiles")
+        .select("shop_name, shop_logo_url")
+        .eq("id", userId)
+        .maybeSingle();
+      const stars =
+        payload.rating != null
+          ? "⭐".repeat(Math.max(1, Math.min(5, Number(payload.rating))))
+          : "⭐";
+      let html = `⭐ <b>New review on your shop</b> ${stars}${
+        payload.rating != null ? ` (${esc(String(payload.rating))}/5)` : ""
+      }`;
+      if (payload.title) html += `\n\n“${esc(payload.title)}”`;
+      if (shop?.shop_name) html += `\n\n🏪 ${esc(shop.shop_name)}`;
+      await sendCard(
+        chatId,
+        html,
+        (shop?.shop_logo_url as string | null | undefined) ?? null,
+        [{ text: "🏪 View shop", url: `${SITE_URL}/shop/${encodeURIComponent(shopSlug)}` }],
+      );
+      return new Response("ok", { status: 200 });
+    }
   }
 
   await sendMessage(chatId, copyFor(type, payload, lang));

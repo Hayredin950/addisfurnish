@@ -86,6 +86,10 @@ export default function NotificationsScreen() {
     if (p.note) rows.push({ label: t("notifNote"), value: p.note });
     if (p.messagePreview) rows.push({ label: t("notifMessage"), value: p.messagePreview });
     if (p.status) rows.push({ label: t("notifStatus"), value: p.status });
+    if (n.type === "shop_reviewed") {
+      if (p.rating != null) rows.push({ label: t("notifRating"), value: `${p.rating}/5` });
+      if (p.title) rows.push({ label: t("notifReview"), value: p.title });
+    }
     return rows;
   };
 
@@ -262,7 +266,9 @@ export default function NotificationsScreen() {
         <SheetOverlay onClose={() => setDetail(null)}>
           <View style={styles.modalSheet}>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>{t("notifShowDetails")}</Text>
+              <Text style={styles.modalTitle} numberOfLines={2}>
+                {detail ? labelFor(detail) : t("notifShowDetails")}
+              </Text>
               <Pressable onPress={() => setDetail(null)} hitSlop={8}>
                 <Ionicons name="close" size={20} color={colors.text} />
               </Pressable>

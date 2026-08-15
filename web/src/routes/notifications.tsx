@@ -86,6 +86,7 @@ type NotifPayload = {
   shopSlug?: string | null;
   newPrice?: number | null;
   query?: string | null;
+  rating?: number | null;
 };
 
 type Notif = {
@@ -157,6 +158,28 @@ function NotificationsPage() {
   const unread = (notifications ?? []).filter((n) => !n.is_read).length;
   const [detail, setDetail] = useState<Notif | null>(null);
 
+  /** Vars for the {placeholder} notification templates — shared by the list
+   * rows, the detail-dialog heading and the header bell so nothing ever
+   * renders a raw template. */
+  const templateVars = (n: Notif) =>
+    n.type === "price_drop"
+      ? {
+          title: n.payload?.title ?? "",
+          price: n.payload?.newPrice ? `ETB ${n.payload.newPrice}` : "",
+        }
+      : n.type === "saved_search_match"
+        ? { title: n.payload?.title ?? "", query: n.payload?.query ?? "" }
+        : n.type === "callback_response"
+          ? { status: n.payload?.status ?? "" }
+          : n.type === "offer_received"
+            ? {
+                title: n.payload?.title ?? "",
+                amount: n.payload?.amount ? `ETB ${n.payload.amount}` : "",
+              }
+            : n.type === "offer_response"
+              ? { title: n.payload?.title ?? "", status: n.payload?.status ?? "" }
+              : { title: n.payload?.title ?? "" };
+
   /** Label/value rows for the detail dialog, driven by the payload. */
   const detailRows = (n: Notif) => {
     const p = n.payload ?? {};
@@ -171,6 +194,10 @@ function NotificationsPage() {
     if (p.note) rows.push({ label: t("notif.note"), value: p.note });
     if (p.messagePreview) rows.push({ label: t("notif.message"), value: p.messagePreview });
     if (p.status) rows.push({ label: t("notif.status"), value: p.status });
+    if (n.type === "shop_reviewed") {
+      if (p.rating != null) rows.push({ label: t("notif.rating"), value: `${p.rating}/5` });
+      if (p.title) rows.push({ label: t("notif.review"), value: p.title });
+    }
     return rows;
   };
 
@@ -195,24 +222,7 @@ function NotificationsPage() {
         ) : (
           (notifications ?? []).map((n) => {
             const key = TYPE_KEY[n.type] ?? "notif.newMessage";
-            const vars =
-              n.type === "price_drop"
-                ? {
-                    title: n.payload?.title ?? "",
-                    price: n.payload?.newPrice ? `ETB ${n.payload.newPrice}` : "",
-                  }
-                : n.type === "saved_search_match"
-                  ? { title: n.payload?.title ?? "", query: n.payload?.query ?? "" }
-                  : n.type === "callback_response"
-                    ? { status: n.payload?.status ?? "" }
-                    : n.type === "offer_received"
-                      ? {
-                          title: n.payload?.title ?? "",
-                          amount: n.payload?.amount ? `ETB ${n.payload.amount}` : "",
-                        }
-                      : n.type === "offer_response"
-                        ? { title: n.payload?.title ?? "", status: n.payload?.status ?? "" }
-                        : { title: n.payload?.title ?? "" };
+            const vars = templateVars(n);
             const body = t(key, vars);
             const inner = (
               <>
@@ -303,7 +313,7 @@ function NotificationsPage() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>
-              {detail ? t(TYPE_KEY[detail.type] ?? "notif.newMessage") : ""}
+              {detail ? t(TYPE_KEY[detail.type] ?? "notif.newMessage", templateVars(detail)) : ""}
             </DialogTitle>
             <DialogDescription>
               {detail
@@ -326,16 +336,15 @@ function NotificationsPage() {
                     detail.type === "offer_received" ||
                     detail.type === "offer_response") &&
                   !!p.conversationId;
-                const to =
-                  isConversation
-                    ? ({ to: "/messages", search: { conv: p.conversationId } } as const)
-                    : detail.type === "offer_received"
-                      ? ({ to: "/dashboard" } as const)
-                      : p.shopSlug
-                        ? ({ to: "/shop/$slug", params: { slug: p.shopSlug } } as const)
-                        : p.listingId
-                          ? ({ to: "/listing/$id", params: { id: p.listingId } } as const)
-                          : null;
+                const to = isConversation
+                  ? ({ to: "/messages", search: { conv: p.conversationId } } as const)
+                  : detail.type === "offer_received"
+                    ? ({ to: "/dashboard" } as const)
+                    : p.shopSlug
+                      ? ({ to: "/shop/$slug", params: { slug: p.shopSlug } } as const)
+                      : p.listingId
+                        ? ({ to: "/listing/$id", params: { id: p.listingId } } as const)
+                        : null;
                 return to ? (
                   <Button asChild className="mt-2 w-full" onClick={() => setDetail(null)}>
                     <Link {...to}>
