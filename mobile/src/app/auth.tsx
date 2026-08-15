@@ -16,6 +16,7 @@ import * as Linking from "expo-linking";
 import { Ionicons } from "@expo/vector-icons";
 import { supabase } from "../lib/supabase";
 import { useLang } from "../lib/lang";
+import { authFlow } from "../lib/authFlow";
 import { Button } from "../components/Button";
 import { colors, radius, spacing } from "../lib/theme";
 
@@ -88,6 +89,16 @@ export default function AuthScreen() {
   const [resetOtp, setResetOtp] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const handledDeepLink = useRef(false);
+
+  // While the reset card is open, hold the root layout's route guard: entering
+  // the code signs the user in (verifyOtp returns a session), and the guard
+  // must not yank them into the app before they set a new password.
+  useEffect(() => {
+    authFlow.holdRedirect = resetStep !== "hidden";
+    return () => {
+      authFlow.holdRedirect = false;
+    };
+  }, [resetStep]);
 
   // Email-confirmation return: the verification page redirects the browser to
   // addisfurnish://auth#access_token=… (or ?code=… for PKCE projects). Capture
@@ -275,6 +286,7 @@ export default function AuthScreen() {
   };
 
   const closeReset = () => {
+    authFlow.holdRedirect = false;
     setResetStep("hidden");
     setResetEmail("");
     setResetOtp("");

@@ -49,8 +49,11 @@ function AuthPage() {
   const [resetOtp, setResetOtp] = useState("");
   const [newPassword, setNewPassword] = useState("");
 
-  if (user) {
-    navigate({ to: "/dashboard", replace: true });
+  // Signed-in users don't belong on /auth — but hold off while a reset flow is
+  // mid-flight: verifyOtp (recovery) establishes a session the moment the code
+  // is entered, and redirecting then would skip the new-password step.
+  if (user && resetStep === "hidden" && !pendingEmail) {
+    navigate({ to: "/", replace: true });
   }
 
   const signIn = async (e: React.FormEvent) => {
@@ -63,7 +66,7 @@ function AuthPage() {
       return;
     }
     toast.success(t("toast.welcomeBack"));
-    navigate({ to: "/dashboard" });
+    navigate({ to: "/" });
   };
 
   const signUp = async (e: React.FormEvent) => {
@@ -86,7 +89,7 @@ function AuthPage() {
       setPendingEmail(email);
       return;
     }
-    navigate({ to: "/dashboard" });
+    navigate({ to: "/" });
   };
 
   const verifyEmailOtp = async (e: React.FormEvent) => {
@@ -105,7 +108,7 @@ function AuthPage() {
     }
     if (data.session) {
       toast.success(t("auth.otpVerified"));
-      navigate({ to: "/dashboard" });
+      navigate({ to: "/" });
     }
   };
 
@@ -164,7 +167,7 @@ function AuthPage() {
       return;
     }
     toast.success(t("auth.resetDone"));
-    navigate({ to: "/dashboard" });
+    navigate({ to: "/" });
   };
 
   const resendReset = async () => {
@@ -191,7 +194,7 @@ function AuthPage() {
     }
     // The browser redirects to Google; the session is picked up on return via
     // the server-side auth middleware (cookie-based).
-    navigate({ to: "/dashboard" });
+    navigate({ to: "/" });
   };
 
   return (

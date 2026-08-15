@@ -4,6 +4,7 @@ import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { AuthProvider, useAuth } from "../lib/auth";
 import { LangProvider, useLang } from "../lib/lang";
+import { authFlow } from "../lib/authFlow";
 import { ToastProvider } from "../components/Toast";
 import { colors } from "../lib/theme";
 import {
@@ -33,7 +34,10 @@ function useProtectedRoute() {
     // There is deliberately no signed-out redirect here. One used to bounce
     // every guest to /auth, which made the whole catalogue unreachable and gave
     // first-time users nothing to look at before signing up.
-    if (user && onAuthScreen) {
+    // Hold off while the password-reset flow is mid-flight on /auth — entering
+    // the recovery code establishes a session, and kicking the user into the
+    // app then would skip the new-password step.
+    if (user && onAuthScreen && !authFlow.holdRedirect) {
       router.replace("/(tabs)");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
