@@ -34,11 +34,21 @@ export function ListingCard({ listing }: { listing: Listing }) {
           />
           <div className="absolute left-2 top-2 flex gap-1.5">
             {discount ? <Badge variant="destructive">-{discount}%</Badge> : null}
-            {listing.status !== "active" ? (
-              <Badge variant="secondary" className="capitalize">
-                {listing.status}
-              </Badge>
-            ) : null}
+            <Badge
+              className={
+                listing.status === "sold"
+                  ? "bg-muted text-muted-foreground"
+                  : listing.status === "reserved"
+                    ? "bg-amber-500/15 text-amber-700"
+                    : "bg-success/10 text-success"
+              }
+            >
+              {listing.status === "sold"
+                ? t("listing.statusSold")
+                : listing.status === "reserved"
+                  ? t("listing.statusReserved")
+                  : t("listing.statusAvailable")}
+            </Badge>
           </div>
           <button
             type="button"

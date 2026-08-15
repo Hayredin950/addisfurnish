@@ -125,6 +125,9 @@ const en = {
   "listing.deliveryFree": "Free delivery",
   "listing.pickupOnly": "Pickup — arrange directly with the seller",
   "listing.listedOn": "Listed {date}",
+  "listing.statusAvailable": "Available",
+  "listing.statusReserved": "Reserved",
+  "listing.statusSold": "Sold",
 
   // ── Shop ─────────────────────────────────────────────────────────
   "shop.notFound": "Shop not found",
@@ -678,6 +681,9 @@ const am: Record<keyof Dict, string> = {
   "listing.deliveryFree": "ነፃ መላኪያ",
   "listing.pickupOnly": "በአካል መሰብሰብ — ከሻጩ ጋር በቀጥታ ይዘጋጁ",
   "listing.listedOn": "የተለጠፈ {date}",
+  "listing.statusAvailable": "ይገኛል",
+  "listing.statusReserved": "ተይዟል",
+  "listing.statusSold": "ተሽጧል",
 
   "shop.notFound": "ሱቅ አልተገኘም",
   "shop.reviews": "ግምገማዎች",

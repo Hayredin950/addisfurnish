@@ -128,7 +128,10 @@ export async function fetchShop(slug: string): Promise<Profile | null> {
 export async function fetchReviews(sellerId: string) {
   const { data, error } = await supabase
     .from("reviews")
-    .select("id,rating,comment,created_at,author_id,profiles(full_name)")
+    // `reviews` has two FKs to `profiles` (author_id and seller_id), so the
+    // embed must name the constraint or PostgREST rejects it as ambiguous
+    // (same fix as the web's reviewsQuery).
+    .select("id,rating,comment,created_at,author_id,profiles!reviews_author_id_fkey(full_name)")
     .eq("seller_id", sellerId)
     .order("created_at", { ascending: false });
   if (error) throw error;

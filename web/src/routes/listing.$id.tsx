@@ -374,6 +374,21 @@ function ListingDetail() {
                   <Badge variant="secondary">-{drop}%</Badge>
                 </>
               ) : null}
+              <Badge
+                className={
+                  listing.status === "sold"
+                    ? "bg-muted text-muted-foreground"
+                    : listing.status === "reserved"
+                      ? "bg-amber-500/15 text-amber-700"
+                      : "bg-success/10 text-success"
+                }
+              >
+                {listing.status === "sold"
+                  ? t("listing.statusSold")
+                  : listing.status === "reserved"
+                    ? t("listing.statusReserved")
+                    : t("listing.statusAvailable")}
+              </Badge>
             </div>
             {listing.negotiable ? (
               <p className="mt-1 text-xs text-muted-foreground">{t("listing.negotiable")}</p>

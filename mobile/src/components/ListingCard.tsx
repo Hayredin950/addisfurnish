@@ -38,21 +38,26 @@ export function ListingCard({
             <Text style={styles.placeholderText}>🛋️</Text>
           </View>
         )}
-        {off > 0 && !sold && (
-          <View style={styles.badge}>
-            <Text style={styles.badgeText}>-{off}%</Text>
-          </View>
-        )}
-        {sold && (
-          <View style={[styles.badge, styles.soldBadge]}>
-            <Text style={styles.badgeText}>{t("soldOut")}</Text>
-          </View>
-        )}
-        {reserved && (
-          <View style={[styles.badge, styles.reservedBadge]}>
-            <Text style={styles.badgeText}>{t("reserved")}</Text>
-          </View>
-        )}
+        <View style={styles.badgeRow}>
+          {off > 0 && !sold && (
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>-{off}%</Text>
+            </View>
+          )}
+          {sold ? (
+            <View style={[styles.badge, styles.soldBadge]}>
+              <Text style={styles.badgeText}>{t("soldOut")}</Text>
+            </View>
+          ) : reserved ? (
+            <View style={[styles.badge, styles.reservedBadge]}>
+              <Text style={styles.badgeText}>{t("reserved")}</Text>
+            </View>
+          ) : (
+            <View style={[styles.badge, styles.availableBadge]}>
+              <Text style={styles.badgeText}>{t("available")}</Text>
+            </View>
+          )}
+        </View>
       </View>
       <View style={styles.body}>
         <Text numberOfLines={1} style={styles.title}>
@@ -111,10 +116,14 @@ const styles = StyleSheet.create({
   placeholderText: {
     fontSize: 40,
   },
-  badge: {
+  badgeRow: {
     position: "absolute",
     top: 8,
     left: 8,
+    flexDirection: "row",
+    gap: 6,
+  },
+  badge: {
     backgroundColor: colors.danger,
     paddingHorizontal: 8,
     paddingVertical: 3,
@@ -125,6 +134,9 @@ const styles = StyleSheet.create({
   },
   reservedBadge: {
     backgroundColor: colors.warning,
+  },
+  availableBadge: {
+    backgroundColor: colors.success,
   },
   badgeText: {
     color: "#fff",
