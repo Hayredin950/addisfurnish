@@ -142,11 +142,23 @@ async function sendMessage(chatId: number, text: string, replyMarkup?: unknown) 
  * @username, the raw link for t.me/... links; numeric ids can't build a
  * public URL, so those get the text prompt without a button).
  */
+/**
+ * Best-effort public join URL for the configured channel. @username and
+ * t.me/... values map directly; a bare invite hash (as stored for private
+ * channels) becomes t.me/+<hash>.
+ */
+function channelJoinUrl(): string | null {
+  if (!CHANNEL_ID) return null;
+  if (CHANNEL_ID.startsWith("@")) return `https://t.me/${CHANNEL_ID.slice(1)}`;
+  if (CHANNEL_ID.startsWith("https://t.me/")) return CHANNEL_ID;
+  // Bare invite hash (64-char hex for a private channel) → t.me/+hash.
+  if (/^[A-Za-z0-9_-]{10,}$/.test(CHANNEL_ID)) return `https://t.me/+${CHANNEL_ID}`;
+  return null;
+}
+
 async function sendChannelPrompt(chatId: number, text: string, verifyLabel: string) {
   if (!BOT_TOKEN || !CHANNEL_ID) return;
-  let url: string | null = null;
-  if (CHANNEL_ID.startsWith("@")) url = `https://t.me/${CHANNEL_ID.slice(1)}`;
-  else if (CHANNEL_ID.startsWith("https://t.me/")) url = CHANNEL_ID;
+  const url = channelJoinUrl();
   try {
     await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
       method: "POST",
@@ -287,7 +299,20 @@ Deno.serve(async (req) => {
 
     const member = await isChannelMember(cbUserId);
     if (member === null) {
-      await answerCallback(callback.id ?? "", cbCopy.joinNotFound);
+      // The configured id may be an invite hash that getChatMember can't
+      // resolve (it needs @username or the numeric chat id). Rather than
+      // locking users out forever, accept the tap as proof — but log loudly
+      // so the team knows to switch TELEGRAM_CHANNEL_ID to @username or the
+      // numeric id for real verification.
+      console.error(
+        `channel verify: could not resolve ${CHANNEL_ID.slice(0, 8)}… as a chat — falling back to tap confirmation`,
+      );
+      await supabase
+        .from("profiles")
+        .update({ telegram_channel_joined_at: new Date().toISOString() })
+        .eq("id", cbProfile.id);
+      await answerCallback(callback.id ?? "", "✅");
+      await sendMessage(cbChatId, cbCopy.joinVerified);
     } else if (member) {
       await supabase
         .from("profiles")
