@@ -137,13 +137,22 @@ function listingCardHtml(row: {
 }): string {
   const title = esc(row.title);
   const price = formatPrice(row.price);
-  const hasDiscount =
-    row.original_price != null && Number(row.original_price) > Number(row.price) &&
-    row.discount_percent != null && Number(row.discount_percent) > 0;
+  // Discount % is derived, not stored — same rule the web and mobile apps use
+  // ((1 - price/original_price) * 100). The column never existed in the live
+  // schema; a passed-in value is honoured, otherwise it's computed.
+  const rawOriginal = row.original_price != null ? Number(row.original_price) : NaN;
+  const rawPrice = Number(row.price);
+  const discountPercent =
+    row.discount_percent != null
+      ? Number(row.discount_percent)
+      : rawOriginal > 0 && rawPrice > 0 && rawOriginal > rawPrice
+        ? Math.round((1 - rawPrice / rawOriginal) * 100)
+        : 0;
+  const hasDiscount = rawOriginal > rawPrice && discountPercent > 0;
 
   const priceLine = [
     `<b>${esc(price)}</b>`,
-    hasDiscount ? `<s>${esc(formatPrice(row.original_price))}</s> <span class="tg-spoiler">−${esc(Number(row.discount_percent))}%</span>` : "",
+    hasDiscount ? `<s>${esc(formatPrice(row.original_price))}</s> <span class="tg-spoiler">−${esc(discountPercent)}%</span>` : "",
     row.negotiable ? "<i>(negotiable)</i>" : "",
   ]
     .filter(Boolean)
@@ -419,7 +428,6 @@ type ListingRow = {
   title: string;
   price: number | string;
   original_price: number | string | null;
-  discount_percent: number | string | null;
   negotiable: boolean;
   condition: string | null;
   city: string;
@@ -437,7 +445,7 @@ type ListingRow = {
 };
 
 const LISTING_SELECT =
-  "id,title,price,original_price,discount_percent,negotiable,condition,city,category_id," +
+  "id,title,price,original_price,negotiable,condition,city,category_id," +
   "room_type,material,color,delivery_offered,delivery_fee,seller_id,status,telegram_posted_at," +
   "listing_images(url,position),profiles(shop_name),categories(name)";
 
@@ -523,7 +531,6 @@ async function handleNotification(
         color: listing.color,
         shop_name: listing.profiles?.shop_name ?? null,
         category: listing.categories?.name ?? null,
-        discount_percent: listing.discount_percent,
       });
 
       let header = "";
@@ -585,9 +592,7 @@ async function postToChannel(supabase: SupabaseClient, listing: ListingRow): Pro
     material: listing.material,
     color: listing.color,
     shop_name: listing.profiles?.shop_name ?? null,
-    category: listing.categories?.name ?? null,
-    discount_percent: listing.discount_percent,
-  });
+    category: listing.categories?.name ?? null,      });
 
   const photo = coverUrl(listing, SUPABASE_URL);
   const sent = await sendCard(CHANNEL_ID, html, photo, viewButton(listing.id, "channel"), "channel_post");
@@ -780,9 +785,7 @@ async function handleChannelSync(
     material: row.material,
     color: row.color,
     shop_name: row.profiles?.shop_name ?? null,
-    category: row.categories?.name ?? null,
-    discount_percent: row.discount_percent,
-  });
+    category: row.categories?.name ?? null,      });
   const html = row.status === "sold" ? `✅ <b>SOLD</b>\n\n${card}` : card;
   const ok = await editChannelCaption(chatId, messageId, html);
   await logSend("channel_edit", chatId, ok, ok ? null : "edit failed");
