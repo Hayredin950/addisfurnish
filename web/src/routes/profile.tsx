@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { BadgeCheck, ChevronDown, ImagePlus, Send, ShieldCheck } from "lucide-react";
+import { BadgeCheck, ChevronDown, Heart, LayoutDashboard, Send, ShieldCheck } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { useLang } from "@/lib/i18n";
@@ -112,16 +112,35 @@ function ProfilePage() {
     }
   }, [profile]);
 
-  const save = async (e: React.FormEvent<HTMLFormElement>) => {
+  /** Saves just the account fields — one save per section, like the app. */
+  const saveAccount = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     const form = new FormData(e.currentTarget);
-    const shopName = (form.get("shop_name") as string) || null;
     const { error } = await supabase
       .from("profiles")
       .update({
         full_name: String(form.get("full_name")),
         phone: (form.get("phone") as string) || null,
         city: (form.get("city") as string) || null,
+      })
+      .eq("id", user!.id);
+    if (error) {
+      // Show the real reason instead of a generic failure.
+      toast.error(error.message);
+      return;
+    }
+    toast.success(t("toast.profileUpdated"));
+    queryClient.invalidateQueries({ queryKey: ["profile"] });
+  };
+
+  /** Saves the shop fields; filling a shop name also makes you a seller. */
+  const saveShop = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const form = new FormData(e.currentTarget);
+    const shopName = (form.get("shop_name") as string) || null;
+    const { error } = await supabase
+      .from("profiles")
+      .update({
         shop_name: shopName,
         shop_slug: shopName
           ? shopName
@@ -254,151 +273,222 @@ function ProfilePage() {
     return () => clearTimeout(scroll);
   }, [connect]);
 
+  const latestDoc =
+    verificationDocs?.find((d) => d.status === "pending") ?? verificationDocs?.[0] ?? null;
+  const docStatus = latestDoc?.status ?? null;
+  const docSummary = docStatus
+    ? t(DOC_STATUS_KEY[docStatus] ?? "verif.statuspending")
+    : t("profile.sectionNone");
+  const prefsSummary = `${prefCategoryIds.length} ${t("profile.prefCategories")} · ${
+    profile?.telegram_chat_id ? t("profile.telegramConnected") : t("profile.sectionNone")
+  }`;
+
   return (
     <div className="mx-auto max-w-xl px-4 py-12">
-      <h1 className="font-display text-3xl font-semibold">{t("nav.profile")}</h1>
-      <form className="mt-8 space-y-5" onSubmit={save}>
-        {/* The email is the login identity and can't be edited here — show it
-            read-only so the account is identifiable. */}
-        {user?.email ? (
-          <div className="space-y-2">
-            <Label htmlFor="email">{t("auth.email")}</Label>
-            <Input id="email" value={user.email} readOnly disabled className="bg-muted" />
-            <p className="text-xs text-muted-foreground">{t("profile.emailHint")}</p>
-          </div>
-        ) : null}
-        <div className="space-y-2">
-          <Label htmlFor="full_name">{t("auth.fullName")}</Label>
-          <Input id="full_name" name="full_name" defaultValue={profile?.full_name ?? ""} required />
+      {/* Header — avatar, name, email and seller status, like the app. */}
+      <div className="flex items-center gap-4">
+        <div className="grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-full border bg-secondary text-lg font-bold text-muted-foreground">
+          {logoUrl.data ? (
+            <img src={logoUrl.data} alt="Shop logo" className="h-full w-full object-cover" />
+          ) : (
+            (profile?.full_name ?? "A").charAt(0).toUpperCase()
+          )}
         </div>
-        <div className="space-y-2">
-          <Label htmlFor="phone">{t("profile.phone")}</Label>
-          <Input id="phone" name="phone" defaultValue={profile?.phone ?? ""} />
+        <div className="min-w-0">
+          <h1 className="truncate font-display text-2xl font-semibold">
+            {profile?.shop_name ?? profile?.full_name ?? t("nav.profile")}
+          </h1>
+          {user?.email ? (
+            <p className="truncate text-sm text-muted-foreground">{user.email}</p>
+          ) : null}
+          {profile?.is_seller ? (
+            <p className="mt-0.5 inline-flex items-center gap-1.5 rounded-full bg-success/10 px-2.5 py-0.5 text-xs font-medium text-success">
+              <BadgeCheck className="h-3.5 w-3.5" />
+              {profile.verified ? t("shop.verified") : t("verif.becomeSeller")}
+            </p>
+          ) : null}
         </div>
-        <div className="space-y-2">
-          <Label htmlFor="city">{t("browse.city")}</Label>
-          <select
-            id="city"
-            name="city"
-            defaultValue={profile?.city ?? ""}
-            className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
-          >
-            <option value="">{t("sell.select")}</option>
-            {CITIES.map((c) => (
-              <option key={c} value={c}>
-                {c}
-              </option>
-            ))}
-          </select>
-        </div>
+      </div>
 
-        {/* Shop details — collapsed unless you're a seller; open it to become
-            one. Kept inside the same form so one save still persists all. */}
-        <details className="group rounded-lg border bg-card p-4" open={!!profile?.is_seller}>
-          <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-sm font-semibold">
-            <span>{t("profile.shopSection")}</span>
-            <span className="flex items-center gap-1 text-xs font-normal text-muted-foreground">
-              {profile?.shop_name || t("profile.shopNotSet")}
-              <ChevronDown className="h-3.5 w-3.5 transition-transform group-open:rotate-180" />
-            </span>
-          </summary>
-          <div className="mt-4 space-y-5">
-            <div className="space-y-2">
-              <Label htmlFor="shop_name">{t("profile.shopName")}</Label>
-              <Input id="shop_name" name="shop_name" defaultValue={profile?.shop_name ?? ""} />
-            </div>
-            <div className="flex items-end gap-4">
-              <div className="h-16 w-16 shrink-0 overflow-hidden rounded-lg border bg-secondary">
-                {logoUrl.data ? (
-                  <img src={logoUrl.data} alt="Shop logo" className="h-full w-full object-cover" />
-                ) : (
-                  <div className="grid h-full w-full place-items-center text-xs text-muted-foreground">
-                    Logo
-                  </div>
-                )}
-              </div>
-              <div className="flex-1 space-y-2">
-                <Label htmlFor="logo">{t("profile.logo")}</Label>
-                <Input
-                  id="logo"
-                  type="file"
-                  accept="image/*"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
-                    if (file) void uploadLogo(file);
-                  }}
-                />
-                <p className="text-xs text-muted-foreground">{t("profile.logoHint")}</p>
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="shop_description">{t("profile.shopDescription")}</Label>
-              <Textarea
-                id="shop_description"
-                name="shop_description"
-                rows={4}
-                defaultValue={profile?.shop_description ?? ""}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="shop_address">{t("profile.shopAddress")}</Label>
-              <Input
-                id="shop_address"
-                name="shop_address"
-                defaultValue={profile?.shop_address ?? ""}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label>{t("loc.pin")}</Label>
-              <LocationPicker value={shopCoords} onChange={setShopCoords} />
-            </div>
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="whatsapp">{t("profile.whatsapp")}</Label>
-                <Input
-                  id="whatsapp"
-                  name="whatsapp"
-                  defaultValue={profile?.whatsapp ?? ""}
-                  placeholder="+2519…"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="telegram">{t("profile.telegram")}</Label>
-                <Input
-                  id="telegram"
-                  name="telegram"
-                  defaultValue={profile?.telegram ?? ""}
-                  placeholder="@yourname"
-                />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="registration_number">{t("profile.registrationNumber")}</Label>
-              <Input
-                id="registration_number"
-                name="registration_number"
-                defaultValue={profile?.registration_number ?? ""}
-                placeholder="e.g. 2310/2024"
-              />
-              <p className="text-xs text-muted-foreground">{t("profile.registrationHint")}</p>
-            </div>
-          </div>
-        </details>
-
-        {!profile?.is_seller ? (
-          <div className="rounded-lg border border-primary/30 bg-primary/5 p-4">
-            <p className="text-sm font-semibold text-primary">{t("verif.becomeSeller")}</p>
-            <p className="mt-1 text-xs text-muted-foreground">{t("verif.becomeSellerHint")}</p>
-          </div>
-        ) : null}
-
+      {/* Quick actions — the app's profile shortcuts, one tap each. */}
+      <div className="mt-6 flex gap-2">
         {profile?.is_seller ? (
-          <div className="rounded-lg border bg-card p-4">
-            <p className="text-sm font-medium">{t("verif.title")}</p>
-            <p className="mt-1 text-xs text-muted-foreground">{t("verif.hint")}</p>
+          <QuickAction
+            icon={<LayoutDashboard className="h-5 w-5" />}
+            label={t("nav.myShop")}
+            to="/dashboard"
+          />
+        ) : null}
+        <QuickAction
+          icon={<ShieldCheck className="h-5 w-5" />}
+          label={t("nav.safety")}
+          to="/safety"
+        />
+        <QuickAction
+          icon={<Heart className="h-5 w-5" />}
+          label={t("nav.savedItems")}
+          to="/favorites"
+        />
+      </div>
 
-            <div className="mt-3 space-y-2">
+      {/* Account — always expanded. */}
+      <ProfileSection
+        title={t("profile.account")}
+        defaultOpen
+        summary={
+          [profile?.full_name, profile?.city].filter(Boolean).join(" · ") ||
+          t("profile.sectionNone")
+        }
+      >
+        <form className="mt-4 space-y-4" onSubmit={saveAccount}>
+          {/* The email is the login identity and can't be edited here — show it
+              read-only so the account is identifiable. */}
+          {user?.email ? (
+            <div className="space-y-2">
+              <Label htmlFor="email">{t("auth.email")}</Label>
+              <Input id="email" value={user.email} readOnly disabled className="bg-muted" />
+              <p className="text-xs text-muted-foreground">{t("profile.emailHint")}</p>
+            </div>
+          ) : null}
+          <div className="space-y-2">
+            <Label htmlFor="full_name">{t("auth.fullName")}</Label>
+            <Input
+              id="full_name"
+              name="full_name"
+              defaultValue={profile?.full_name ?? ""}
+              required
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="phone">{t("profile.phone")}</Label>
+            <Input id="phone" name="phone" defaultValue={profile?.phone ?? ""} />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="city">{t("browse.city")}</Label>
+            <select
+              id="city"
+              name="city"
+              defaultValue={profile?.city ?? ""}
+              className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+            >
+              <option value="">{t("sell.select")}</option>
+              {CITIES.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+            </select>
+          </div>
+          <Button type="submit">{t("profile.save")}</Button>
+        </form>
+      </ProfileSection>
+
+      {/* Become a seller — a nudge, not a wall of empty shop fields. */}
+      {!profile?.is_seller ? (
+        <div className="mt-4 rounded-lg border border-primary/30 bg-primary/5 p-4">
+          <p className="text-sm font-semibold text-primary">{t("verif.becomeSeller")}</p>
+          <p className="mt-1 text-xs text-muted-foreground">{t("verif.becomeSellerHint")}</p>
+          <p className="mt-2 text-xs font-medium text-primary">{t("profile.shopNotSet")}</p>
+        </div>
+      ) : null}
+
+      {/* Seller & shop — collapsed unless a seller; open it to become one. */}
+      <ProfileSection
+        title={t("profile.sellerShop")}
+        defaultOpen={!!profile?.is_seller}
+        summary={profile?.shop_name || t("profile.shopNotSet")}
+      >
+        <form className="mt-4 space-y-5" onSubmit={saveShop}>
+          <div className="space-y-2">
+            <Label htmlFor="shop_name">{t("profile.shopName")}</Label>
+            <Input id="shop_name" name="shop_name" defaultValue={profile?.shop_name ?? ""} />
+          </div>
+          <div className="flex items-end gap-4">
+            <div className="h-16 w-16 shrink-0 overflow-hidden rounded-lg border bg-secondary">
+              {logoUrl.data ? (
+                <img src={logoUrl.data} alt="Shop logo" className="h-full w-full object-cover" />
+              ) : (
+                <div className="grid h-full w-full place-items-center text-xs text-muted-foreground">
+                  Logo
+                </div>
+              )}
+            </div>
+            <div className="flex-1 space-y-2">
+              <Label htmlFor="logo">{t("profile.logo")}</Label>
+              <Input
+                id="logo"
+                type="file"
+                accept="image/*"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) void uploadLogo(file);
+                }}
+              />
+              <p className="text-xs text-muted-foreground">{t("profile.logoHint")}</p>
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="shop_description">{t("profile.shopDescription")}</Label>
+            <Textarea
+              id="shop_description"
+              name="shop_description"
+              rows={4}
+              defaultValue={profile?.shop_description ?? ""}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="shop_address">{t("profile.shopAddress")}</Label>
+            <Input
+              id="shop_address"
+              name="shop_address"
+              defaultValue={profile?.shop_address ?? ""}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <Label>{t("loc.pin")}</Label>
+            <LocationPicker value={shopCoords} onChange={setShopCoords} />
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="whatsapp">{t("profile.whatsapp")}</Label>
+              <Input
+                id="whatsapp"
+                name="whatsapp"
+                defaultValue={profile?.whatsapp ?? ""}
+                placeholder="+2519…"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="telegram">{t("profile.telegram")}</Label>
+              <Input
+                id="telegram"
+                name="telegram"
+                defaultValue={profile?.telegram ?? ""}
+                placeholder="@yourname"
+              />
+            </div>
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="registration_number">{t("profile.registrationNumber")}</Label>
+            <Input
+              id="registration_number"
+              name="registration_number"
+              defaultValue={profile?.registration_number ?? ""}
+              placeholder="e.g. 2310/2024"
+            />
+            <p className="text-xs text-muted-foreground">{t("profile.registrationHint")}</p>
+          </div>
+          <Button type="submit">{t("profile.save")}</Button>
+        </form>
+      </ProfileSection>
+
+      {/* Verification — sellers only, with an inline status summary. */}
+      {profile?.is_seller ? (
+        <ProfileSection title={t("verif.title")} summary={docSummary}>
+          <div className="mt-4 space-y-3">
+            <p className="text-xs text-muted-foreground">{t("verif.hint")}</p>
+            <div className="space-y-2">
               {(verificationDocs ?? []).map((d) => (
                 <div
                   key={d.id}
@@ -425,7 +515,7 @@ function ProfilePage() {
               ) : null}
             </div>
 
-            <div className="mt-3 flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-2">
               <select
                 value={docType}
                 onChange={(e) => setDocType(e.target.value)}
@@ -447,63 +537,21 @@ function ProfilePage() {
               />
             </div>
           </div>
-        ) : null}
+        </ProfileSection>
+      ) : null}
 
-        {telegramConfigured() ? (
-          <div
-            ref={telegramRef}
-            className={`rounded-lg border border-dashed bg-secondary/40 p-4 transition-shadow ${
-              flashTelegram ? "ring-2 ring-primary" : ""
-            }`}
-          >
-            <p className="text-sm font-medium">{t("profile.telegramConnect")}</p>
-            {profile?.telegram_chat_id ? (
-              <>
-                <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-success/10 px-3 py-1 text-xs font-medium text-success">
-                  <BadgeCheck className="h-3.5 w-3.5" /> {t("profile.telegramConnected")}
-                </p>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="mt-3 block"
-                  disabled={telegramBusy}
-                  onClick={unlinkTelegram}
-                >
-                  {t("profile.telegramDisconnect")}
-                </Button>
-              </>
-            ) : (
-              <>
-                <p className="mt-1 text-xs text-muted-foreground">
-                  {t("profile.telegramConnectHint")}
-                </p>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="mt-3"
-                  disabled={telegramBusy}
-                  onClick={linkTelegram}
-                >
-                  <Send className="mr-1.5 h-4 w-4" />
-                  {t("profile.telegramConnect")}
-                </Button>
-              </>
-            )}
-          </div>
-        ) : null}
-
-        <div className="rounded-lg border bg-card p-4">
-          <p className="flex items-center gap-2 text-sm font-medium">
-            <ShieldCheck className="h-4 w-4 text-primary" /> {t("otp.title")}
-          </p>
+      {/* Phone verification. */}
+      <ProfileSection
+        title={t("otp.title")}
+        summary={profile?.phone_verified_at ? t("otp.verified") : t("profile.sectionNone")}
+      >
+        <div className="mt-4 space-y-3">
           {profile?.phone_verified_at ? (
-            <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-success/10 px-3 py-1 text-xs font-medium text-success">
+            <p className="inline-flex items-center gap-1.5 rounded-full bg-success/10 px-3 py-1 text-xs font-medium text-success">
               <BadgeCheck className="h-3.5 w-3.5" /> {t("otp.verified")}
             </p>
           ) : (
-            <div className="mt-3 space-y-3">
+            <>
               <p className="text-xs text-muted-foreground">{t("otp.telegramHint")}</p>
               <div className="flex gap-2">
                 <Input
@@ -586,18 +634,63 @@ function ProfilePage() {
                   </div>
                 </div>
               ) : null}
-            </div>
+            </>
           )}
         </div>
+      </ProfileSection>
 
-        <Button type="submit">{t("profile.save")}</Button>
-      </form>
+      {/* Notifications & alerts — Telegram link lives here, like the app. */}
+      <ProfileSection
+        title={t("profile.alertPrefs")}
+        summary={prefsSummary}
+        defaultOpen={connect === "telegram"}
+      >
+        <div ref={telegramRef} className="mt-4 space-y-4">
+          {telegramConfigured() ? (
+            <div
+              className={`rounded-lg border border-dashed bg-secondary/40 p-4 transition-shadow ${
+                flashTelegram ? "ring-2 ring-primary" : ""
+              }`}
+            >
+              <p className="text-sm font-medium">{t("profile.telegramConnect")}</p>
+              {profile?.telegram_chat_id ? (
+                <>
+                  <p className="mt-2 inline-flex items-center gap-1.5 rounded-full bg-success/10 px-3 py-1 text-xs font-medium text-success">
+                    <BadgeCheck className="h-3.5 w-3.5" /> {t("profile.telegramConnected")}
+                  </p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="mt-3 block"
+                    disabled={telegramBusy}
+                    onClick={unlinkTelegram}
+                  >
+                    {t("profile.telegramDisconnect")}
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {t("profile.telegramConnectHint")}
+                  </p>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="mt-3"
+                    disabled={telegramBusy}
+                    onClick={linkTelegram}
+                  >
+                    <Send className="mr-1.5 h-4 w-4" />
+                    {t("profile.telegramConnect")}
+                  </Button>
+                </>
+              )}
+            </div>
+          ) : null}
 
-      <div className="mt-10 rounded-lg border bg-card p-5">
-        <p className="font-display text-lg font-semibold">{t("profile.preferences")}</p>
-        <p className="mt-1 text-xs text-muted-foreground">{t("profile.prefNote")}</p>
-
-        <div className="mt-4 space-y-4">
+          <p className="text-xs text-muted-foreground">{t("profile.prefNote")}</p>
           <div className="space-y-2">
             <Label>{t("profile.prefCategories")}</Label>
             <div className="flex flex-wrap gap-2">
@@ -670,7 +763,60 @@ function ProfilePage() {
             {t("profile.savePrefs")}
           </Button>
         </div>
-      </div>
+      </ProfileSection>
     </div>
+  );
+}
+
+/** One tap on a profile shortcut — mirrors the app's QuickAction row. */
+function QuickAction({
+  icon,
+  label,
+  to,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  to: "/dashboard" | "/safety" | "/favorites";
+}) {
+  return (
+    <Link
+      to={to}
+      className="flex flex-1 flex-col items-center gap-2 rounded-lg border bg-card px-2 py-3.5 text-center transition-colors hover:bg-accent"
+    >
+      <span className="grid h-10 w-10 place-items-center rounded-full bg-primary/10 text-primary">
+        {icon}
+      </span>
+      <span className="text-[11.5px] font-semibold leading-tight text-foreground">{label}</span>
+    </Link>
+  );
+}
+
+/**
+ * One collapsible card on the profile page, mirroring the mobile app's
+ * sections. Each carries a one-line status summary so its state is visible
+ * without opening it.
+ */
+function ProfileSection({
+  title,
+  summary,
+  defaultOpen = false,
+  children,
+}: {
+  title: string;
+  summary: string;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <details className="group mt-4 rounded-lg border bg-card p-4" open={defaultOpen}>
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-sm font-semibold">
+        <span>{title}</span>
+        <span className="flex min-w-0 items-center gap-1 text-xs font-normal text-muted-foreground">
+          <span className="truncate">{summary}</span>
+          <ChevronDown className="h-3.5 w-3.5 shrink-0 transition-transform group-open:rotate-180" />
+        </span>
+      </summary>
+      {children}
+    </details>
   );
 }

@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import {
+  Bell,
   Heart,
   LayoutDashboard,
   LogOut,
@@ -314,6 +315,36 @@ export function SiteHeader() {
                 <Link to="/sell" className="rounded-md px-3 py-2 text-sm">
                   {t("nav.postItem")}
                 </Link>
+                {/* Account shortcuts — the app's profile quick actions,
+                    so notifications and saved items stay one tap away on
+                    phones even though the bottom bar holds only five tabs. */}
+                {user ? (
+                  <>
+                    <div className="mt-4 border-t pt-3">
+                      <p className="px-3 pb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                        {t("nav.accountMenu")}
+                      </p>
+                      <Link
+                        to="/notifications"
+                        className="flex items-center gap-2 rounded-md px-3 py-2 text-sm"
+                      >
+                        <Bell className="h-4 w-4" /> {t("nav.notifications")}
+                      </Link>
+                      <Link
+                        to="/favorites"
+                        className="flex items-center gap-2 rounded-md px-3 py-2 text-sm"
+                      >
+                        <Heart className="h-4 w-4" /> {t("nav.savedItems")}
+                      </Link>
+                      <Link
+                        to="/dashboard"
+                        className="flex items-center gap-2 rounded-md px-3 py-2 text-sm"
+                      >
+                        <LayoutDashboard className="h-4 w-4" /> {t("nav.myShop")}
+                      </Link>
+                    </div>
+                  </>
+                ) : null}
                 <div className="mt-4 px-3">
                   <LanguageToggle />
                 </div>

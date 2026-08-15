@@ -144,6 +144,7 @@ const en = {
 
   // ── Shop ─────────────────────────────────────────────────────────
   "shop.notFound": "Shop not found",
+  "shop.verified": "Verified",
   "shop.reviews": "Reviews",
   "shop.noReviews": "No reviews yet. Be the first to leave one.",
   "shop.writeReview": "Write a review",
@@ -234,6 +235,11 @@ const en = {
   "sell.colour": "Colour",
   "sell.brand": "Brand",
   "sell.photos": "Photos",
+  "sell.whatIsIt": "What is it?",
+  "sell.categoryCondition": "Category & condition",
+  "sell.priceDelivery": "Price & delivery",
+  "sell.location": "Location",
+  "sell.attributes": "Details",
   "sell.photosSelected": "{count} selected",
   "sell.publish": "Publish listing",
   "video.label": "Showcase video (optional)",
@@ -294,6 +300,10 @@ const en = {
   "fav.findSomething": "Find something",
 
   // ── Profile ──────────────────────────────────────────────────────
+  "profile.account": "Account",
+  "profile.sellerShop": "Seller & shop",
+  "profile.alertPrefs": "Notifications & alerts",
+  "profile.sectionNone": "Not set yet",
   "profile.phone": "Phone",
   "profile.shopSection": "Shop details (optional)",
   "profile.shopNotSet": "Not set up yet — expand to become a seller",
@@ -733,6 +743,7 @@ const am: Record<keyof Dict, string> = {
   "listing.statusSold": "ተሽጧል",
 
   "shop.notFound": "ሱቅ አልተገኘም",
+  "shop.verified": "የተረጋገጠ",
   "shop.reviews": "ግምገማዎች",
   "shop.noReviews": "እስካሁን ግምገማ የለም። የመጀመሪያውን ይተው።",
   "shop.writeReview": "ግምገማ ይጻፉ",
@@ -812,6 +823,11 @@ const am: Record<keyof Dict, string> = {
   "sell.colour": "ቀለም",
   "sell.brand": "ብራንድ",
   "sell.photos": "ፎቶዎች",
+  "sell.whatIsIt": "ምንድን ነው?",
+  "sell.categoryCondition": "ምድብ እና ሁኔታ",
+  "sell.priceDelivery": "ዋጋ እና መላኪያ",
+  "sell.location": "አካባቢ",
+  "sell.attributes": "ዝርዝሮች",
   "sell.photosSelected": "{count} ተመርጠዋል",
   "sell.publish": "ማስታወቂያ ያትሙ",
   "video.label": "የማሳያ ቪዲዮ (አማራጭ)",
@@ -868,6 +884,10 @@ const am: Record<keyof Dict, string> = {
   "fav.emptyTitle": "እስካሁን ምንም አልተቀመጠም",
   "fav.findSomething": "የሆነ ነገር ይፈልጉ",
 
+  "profile.account": "መለያ",
+  "profile.sellerShop": "ሻጭ እና ሱቅ",
+  "profile.alertPrefs": "ማሳወቂያ እና ማንቂያዎች",
+  "profile.sectionNone": "እስካሁን አልተዘጋጀም",
   "profile.phone": "ስልክ",
   "profile.shopSection": "የሱቅ ዝርዝሮች (አማራጭ)",
   "profile.shopNotSet": "እስካሁን አልተዘጋጀም — ሻጭ ለመሆን ይዘርጉ",

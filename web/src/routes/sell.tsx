@@ -12,7 +12,7 @@ import { deleteCloudinaryAssets, uploadListingImage, uploadListingVideo } from "
 import { categoriesQuery } from "@/lib/marketplace";
 import { CITIES, CONDITIONS, MATERIALS, ROOM_TYPES, SUB_CITY_COORDS } from "@/lib/format";
 import { announceListing, syncListingChannel } from "@/lib/telegram";
-import { Video } from "lucide-react";
+import { ChevronDown, Video } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -281,181 +281,210 @@ function Sell() {
       </h1>
       <p className="mt-1 text-sm text-muted-foreground">{t("sell.subtitle")}</p>
 
-      <form className="mt-8 space-y-5" onSubmit={onSubmit}>
-        <Field
-          label={t("sell.titleLabel")}
-          name="title"
-          required
-          placeholder="3-seat leather sofa"
-          defaultValue={editing?.title ?? ""}
-        />
-        <div className="space-y-2">
-          <Label htmlFor="description">{t("sell.description")}</Label>
-          <Textarea
-            id="description"
-            name="description"
-            rows={5}
-            required
-            defaultValue={editing?.description ?? ""}
+      <form className="mt-8 space-y-4" onSubmit={onSubmit} onInvalid={openInvalidSection}>
+        {/* Photos & showcase video — first, like the mobile app. */}
+        <SectionCard title={t("sell.photos")}>
+          <PhotoPicker
+            files={files}
+            onFilesChange={setFiles}
+            existing={existingPhotos}
+            onRemoveExisting={(id) => setRemovedPhotoIds((prev) => [...prev, id])}
+            onReorderExisting={setCoverPhotoId}
           />
-        </div>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field
-            label={t("sell.price")}
-            name="price"
-            type="number"
-            required
-            defaultValue={editing?.price != null ? String(editing.price) : ""}
-          />
-          <Field
-            label={t("sell.originalPrice")}
-            name="original_price"
-            type="number"
-            defaultValue={editing?.original_price != null ? String(editing.original_price) : ""}
-          />
-        </div>
-        <div className="flex items-center gap-3">
-          <Switch id="negotiable" name="negotiable" defaultChecked={editing?.negotiable ?? false} />
-          <Label htmlFor="negotiable">{t("sell.negotiable")}</Label>
-        </div>
-        <div className="grid gap-4 sm:grid-cols-2">
+
           <div className="space-y-2">
-            <Label htmlFor="discount_expires_at">{t("sell.discountExpiry")}</Label>
-            <Input
-              id="discount_expires_at"
-              name="discount_expires_at"
-              type="date"
-              defaultValue={editing?.discount_expires_at?.slice(0, 10) ?? ""}
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="delivery_fee">{t("sell.deliveryFee")}</Label>
-            <Input
-              id="delivery_fee"
-              name="delivery_fee"
-              type="number"
-              min={0}
-              defaultValue={editing?.delivery_fee != null ? String(editing.delivery_fee) : ""}
-            />
-          </div>
-        </div>
-        <div className="flex items-center gap-3">
-          <Switch
-            id="delivery_offered"
-            name="delivery_offered"
-            defaultChecked={editing?.delivery_offered ?? false}
-          />
-          <Label htmlFor="delivery_offered">{t("sell.delivery")}</Label>
-        </div>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <SelectField
-            label={t("sell.category")}
-            name="category_id"
-            defaultValue={editing?.category_id ?? ""}
-            options={(categories ?? []).map((c) => ({ value: c.id, label: c.name }))}
-          />
-          <SelectField
-            label={t("sell.condition")}
-            name="condition"
-            required
-            defaultValue={editing?.condition ?? ""}
-            options={CONDITIONS.map((c) => ({ value: c, label: c }))}
-          />
-          <SelectField
-            label={t("sell.material")}
-            name="material"
-            defaultValue={editing?.material ?? ""}
-            options={MATERIALS.map((c) => ({ value: c, label: c }))}
-          />
-          <SelectField
-            label={t("sell.room")}
-            name="room_type"
-            defaultValue={editing?.room_type ?? ""}
-            options={ROOM_TYPES.map((c) => ({ value: c, label: c }))}
-          />
-          {/* Falls back to the seller's profile city so it isn't retyped. */}
-          <SelectField
-            label={t("sell.city")}
-            name="city"
-            required
-            defaultValue={editing?.city ?? profile?.city ?? ""}
-            options={CITIES.map((c) => ({ value: c, label: c }))}
-          />
-          <Field
-            label={t("sell.subCity")}
-            name="sub_city"
-            defaultValue={editing?.sub_city ?? profile?.shop_address ?? ""}
-          />
-          <Field label={t("sell.colour")} name="color" defaultValue={editing?.color ?? ""} />
-          <Field label={t("sell.brand")} name="brand" defaultValue={editing?.brand ?? ""} />
-        </div>
-
-        <div className="space-y-2">
-          <Label>{t("loc.pin")}</Label>
-          <LocationPicker value={coords} onChange={setCoords} shopLocation={shopLocation} />
-        </div>
-
-        <PhotoPicker
-          files={files}
-          onFilesChange={setFiles}
-          existing={existingPhotos}
-          onRemoveExisting={(id) => setRemovedPhotoIds((prev) => [...prev, id])}
-          onReorderExisting={setCoverPhotoId}
-        />
-
-        <div className="space-y-2">
-          <Label>{t("video.label")}</Label>
-          <div className="flex flex-wrap items-center gap-3">
-            <Input
-              id="video"
-              type="file"
-              accept="video/*"
-              onChange={async (e) => {
-                const file = e.target.files?.[0] ?? null;
-                setVideoFile(null);
-                if (!file) return;
-                // Reject anything longer than 60s before it gets uploaded.
-                const ok = await videoWithinLimit(file);
-                if (!ok) {
-                  toast.error(t("video.tooLong"));
-                  e.target.value = "";
-                  return;
-                }
-                setVideoFile(file);
-              }}
-            />
-            {videoFile ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => {
+            <Label>{t("video.label")}</Label>
+            <div className="flex flex-wrap items-center gap-3">
+              <Input
+                id="video"
+                type="file"
+                accept="video/*"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0] ?? null;
                   setVideoFile(null);
-                  const el = document.getElementById("video") as HTMLInputElement | null;
-                  if (el) el.value = "";
+                  if (!file) return;
+                  // Reject anything longer than 60s before it gets uploaded.
+                  const ok = await videoWithinLimit(file);
+                  if (!ok) {
+                    toast.error(t("video.tooLong"));
+                    e.target.value = "";
+                    return;
+                  }
+                  setVideoFile(file);
                 }}
-              >
-                {t("video.remove")}
-              </Button>
-            ) : null}
-            {editId && editing?.video_url && !videoRemove && !videoFile ? (
-              <span className="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
-                <Video className="h-3.5 w-3.5 text-primary" /> {t("video.attached")}
-                <button
+              />
+              {videoFile ? (
+                <Button
                   type="button"
-                  className="ml-1 text-xs font-medium text-destructive underline"
-                  onClick={() => setVideoRemove(true)}
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setVideoFile(null);
+                    const el = document.getElementById("video") as HTMLInputElement | null;
+                    if (el) el.value = "";
+                  }}
                 >
                   {t("video.remove")}
-                </button>
-              </span>
-            ) : null}
-            {videoRemove ? (
-              <span className="text-sm text-destructive">{t("video.willRemove")}</span>
-            ) : null}
+                </Button>
+              ) : null}
+              {editId && editing?.video_url && !videoRemove && !videoFile ? (
+                <span className="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
+                  <Video className="h-3.5 w-3.5 text-primary" /> {t("video.attached")}
+                  <button
+                    type="button"
+                    className="ml-1 text-xs font-medium text-destructive underline"
+                    onClick={() => setVideoRemove(true)}
+                  >
+                    {t("video.remove")}
+                  </button>
+                </span>
+              ) : null}
+              {videoRemove ? (
+                <span className="text-sm text-destructive">{t("video.willRemove")}</span>
+              ) : null}
+            </div>
+            <p className="text-xs text-muted-foreground">{t("video.hint")}</p>
           </div>
-          <p className="text-xs text-muted-foreground">{t("video.hint")}</p>
-        </div>
+        </SectionCard>
+
+        {/* What is it — title + description. */}
+        <SectionCard title={t("sell.whatIsIt")}>
+          <Field
+            label={t("sell.titleLabel")}
+            name="title"
+            required
+            placeholder="3-seat leather sofa"
+            defaultValue={editing?.title ?? ""}
+          />
+          <div className="space-y-2">
+            <Label htmlFor="description">{t("sell.description")}</Label>
+            <Textarea
+              id="description"
+              name="description"
+              rows={5}
+              required
+              defaultValue={editing?.description ?? ""}
+            />
+          </div>
+        </SectionCard>
+
+        {/* Category & condition. */}
+        <SectionCard title={t("sell.categoryCondition")}>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <SelectField
+              label={t("sell.category")}
+              name="category_id"
+              defaultValue={editing?.category_id ?? ""}
+              options={(categories ?? []).map((c) => ({ value: c.id, label: c.name }))}
+            />
+            <SelectField
+              label={t("sell.condition")}
+              name="condition"
+              required
+              defaultValue={editing?.condition ?? ""}
+              options={CONDITIONS.map((c) => ({ value: c, label: c }))}
+            />
+          </div>
+        </SectionCard>
+
+        {/* Price & delivery. */}
+        <SectionCard title={t("sell.priceDelivery")}>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field
+              label={t("sell.price")}
+              name="price"
+              type="number"
+              required
+              defaultValue={editing?.price != null ? String(editing.price) : ""}
+            />
+            <Field
+              label={t("sell.originalPrice")}
+              name="original_price"
+              type="number"
+              defaultValue={editing?.original_price != null ? String(editing.original_price) : ""}
+            />
+          </div>
+          <div className="flex items-center gap-3">
+            <Switch
+              id="negotiable"
+              name="negotiable"
+              defaultChecked={editing?.negotiable ?? false}
+            />
+            <Label htmlFor="negotiable">{t("sell.negotiable")}</Label>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-2">
+              <Label htmlFor="discount_expires_at">{t("sell.discountExpiry")}</Label>
+              <Input
+                id="discount_expires_at"
+                name="discount_expires_at"
+                type="date"
+                defaultValue={editing?.discount_expires_at?.slice(0, 10) ?? ""}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="delivery_fee">{t("sell.deliveryFee")}</Label>
+              <Input
+                id="delivery_fee"
+                name="delivery_fee"
+                type="number"
+                min={0}
+                defaultValue={editing?.delivery_fee != null ? String(editing.delivery_fee) : ""}
+              />
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <Switch
+              id="delivery_offered"
+              name="delivery_offered"
+              defaultChecked={editing?.delivery_offered ?? false}
+            />
+            <Label htmlFor="delivery_offered">{t("sell.delivery")}</Label>
+          </div>
+        </SectionCard>
+
+        {/* Location — city, area and the map pin. */}
+        <SectionCard title={t("sell.location")}>
+          <div className="grid gap-4 sm:grid-cols-2">
+            {/* Falls back to the seller's profile city so it isn't retyped. */}
+            <SelectField
+              label={t("sell.city")}
+              name="city"
+              required
+              defaultValue={editing?.city ?? profile?.city ?? ""}
+              options={CITIES.map((c) => ({ value: c, label: c }))}
+            />
+            <Field
+              label={t("sell.subCity")}
+              name="sub_city"
+              defaultValue={editing?.sub_city ?? profile?.shop_address ?? ""}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>{t("loc.pin")}</Label>
+            <LocationPicker value={coords} onChange={setCoords} shopLocation={shopLocation} />
+          </div>
+        </SectionCard>
+
+        {/* Attributes — material, room, colour, brand. */}
+        <SectionCard title={t("sell.attributes")}>
+          <div className="grid gap-4 sm:grid-cols-2">
+            <SelectField
+              label={t("sell.material")}
+              name="material"
+              defaultValue={editing?.material ?? ""}
+              options={MATERIALS.map((c) => ({ value: c, label: c }))}
+            />
+            <SelectField
+              label={t("sell.room")}
+              name="room_type"
+              defaultValue={editing?.room_type ?? ""}
+              options={ROOM_TYPES.map((c) => ({ value: c, label: c }))}
+            />
+            <Field label={t("sell.colour")} name="color" defaultValue={editing?.color ?? ""} />
+            <Field label={t("sell.brand")} name="brand" defaultValue={editing?.brand ?? ""} />
+          </div>
+        </SectionCard>
 
         <div className="flex gap-2">
           <Button type="submit" size="lg" disabled={busy}>
@@ -470,6 +499,34 @@ function Sell() {
       </form>
     </div>
   );
+}
+
+/**
+ * One collapsible card in the sell form — mirrors the mobile app's card
+ * grouping (photos → details → category → price → location → attributes) so
+ * the web form reads the same on both breakpoints.
+ */
+function SectionCard({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <details className="group rounded-lg border bg-card p-4">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-sm font-semibold">
+        <span>{title}</span>
+        <ChevronDown className="h-4 w-4 text-muted-foreground transition-transform group-open:rotate-180" />
+      </summary>
+      <div className="mt-4 space-y-5">{children}</div>
+    </details>
+  );
+}
+
+/**
+ * Native validation only fires on the first invalid control; if that control
+ * sits inside a collapsed <details> section the browser can't focus it. Open
+ * the section that contains the invalid field so the error is actually seen.
+ */
+function openInvalidSection(e: React.FormEvent<HTMLFormElement>) {
+  const target = e.target as HTMLElement;
+  const details = target.closest("details");
+  if (details) details.open = true;
 }
 
 /** Loads a video's metadata and resolves true when it's ≤ 60 seconds. */
