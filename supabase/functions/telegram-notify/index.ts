@@ -764,7 +764,26 @@ async function handleChannelSync(
     .select("chat_id,message_id")
     .eq("listing_id", listingId)
     .maybeSingle();
-  if (!post) return new Response("not posted", { status: 200 });
+  if (!post) {
+    // Never announced. This is the normal path for a bot-created draft that
+    // gets finished in the marketplace editor: editing always syncs instead
+    // of announcing, so a listing that started as a draft would otherwise
+    // never reach the channel. Publish it now. postToChannel dedupes on
+    // telegram_posted_at, so even if the app also announced it, only one
+    // post ever goes out.
+    if (action === "delete") return new Response("not posted", { status: 200 });
+    const { data: listing } = await supabase
+      .from("listings")
+      .select(LISTING_SELECT)
+      .eq("id", listingId)
+      .maybeSingle();
+    if (!listing) return new Response("not found", { status: 200 });
+    const row = listing as unknown as ListingRow;
+    // Drafts are private — only publish to the channel once it's live.
+    if (row.status !== "active") return new Response("not published", { status: 200 });
+    const created = await postToChannel(supabase, row);
+    return Response.json({ ok: created, action: created ? "created" : "already posted" });
+  }
 
   const chatId = post.chat_id as string;
   const messageId = Number(post.message_id);
