@@ -96,11 +96,13 @@ function usePushNotifications() {
  * Auto-update: EAS OTA updates apply themselves instead of waiting for the
  * next cold start.
  *
- * expo-updates checks on launch and — with `checkAutomatically: ALWAYS` in
- * app.json — every time the app returns to the foreground. `useUpdates`
- * reports the result: when the automatic check finds a new bundle we start
- * the download, and the moment it's staged (`isUpdatePending`) we reload so
- * the new version is live immediately. No user action needed; the app simply
+ * expo-updates already checks automatically — `checkAutomatically: ON_LOAD`
+ * in app.json maps to the native ALWAYS setting, so it checks on launch and
+ * every time the app returns to the foreground — but a found update was only
+ * downloaded and applied on the NEXT cold start. `useUpdates` reports the
+ * result of that automatic check: when a new bundle is flagged we start the
+ * download, and the moment it's staged (`isUpdatePending`) we reload so the
+ * new version is live immediately. No user action needed; the app simply
  * restarts on the new code. The 30-minute cooldown guards against reload
  * loops, and dev builds never auto-reload.
  */

@@ -343,10 +343,9 @@ export default function ProfileScreen() {
   };
 
   /**
-   * Manual update check. The app also auto-checks and auto-applies on launch
-   * and every foreground return (app.json → checkAutomatically = ALWAYS plus
-   * the useAutoUpdate hook in the root layout), so this is just an explicit
-   * "check now" for the profile footer.
+   * Manual update check. The app also auto-checks (on launch + foreground,
+   * native ALWAYS) and auto-applies via the useAutoUpdate hook in the root
+   * layout, so this is just an explicit "check now" for the profile footer.
    */
   const checkForUpdates = async () => {
     if (!Updates.isEnabled) {
