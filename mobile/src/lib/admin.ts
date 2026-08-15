@@ -1,5 +1,5 @@
 import { supabase } from "./supabase";
-import { fetchTrendingSearches, syncListingChannel } from "./api";
+import { deleteCloudinaryAssets, fetchTrendingSearches, syncListingChannel } from "./api";
 
 /**
  * Admin-only moderation actions for the mobile app.
@@ -373,14 +373,15 @@ export async function deleteListingAdmin(id: string) {
     .select("listing_images(url)")
     .eq("id", id)
     .maybeSingle();
-  const paths = ((listing?.listing_images ?? []) as { url: string }[])
-    .map((img) => img.url)
-    .filter((url) => !!url && !url.startsWith("http"));
+  const allUrls = ((listing?.listing_images ?? []) as { url: string }[]).map((img) => img.url);
+  const paths = allUrls.filter((url) => !!url && !url.startsWith("http"));
   const { error } = await supabase.from("listings").delete().eq("id", id);
   if (error) throw error;
   if (paths.length) {
     await supabase.storage.from("listing-images").remove(paths).catch(() => {});
   }
+  // Cloudinary assets (photos + showcase videos) follow the listing.
+  await deleteCloudinaryAssets(allUrls);
 }
 
 export type AdminStats = {

@@ -8,7 +8,7 @@ import { useLang } from "@/lib/i18n";
 import { RequireAuth } from "@/components/RequireAuth";
 import { LocationPicker, type Coords } from "@/components/LocationPicker";
 import { PhotoPicker, type ExistingPhoto } from "@/components/PhotoPicker";
-import { uploadListingImage, uploadListingVideo } from "@/lib/storage";
+import { deleteCloudinaryAssets, uploadListingImage, uploadListingVideo } from "@/lib/storage";
 import { categoriesQuery } from "@/lib/marketplace";
 import { CITIES, CONDITIONS, MATERIALS, ROOM_TYPES, SUB_CITY_COORDS } from "@/lib/format";
 import { announceListing, syncListingChannel } from "@/lib/telegram";
@@ -187,6 +187,8 @@ function Sell() {
           const paths = doomed.map((p) => p.url).filter((u) => !u.startsWith("http"));
           // Best-effort: an orphaned file is harmless, a failed delete is not.
           if (paths.length) await supabase.storage.from("listing-images").remove(paths);
+          // Cloudinary photos leave with the DB rows.
+          void deleteCloudinaryAssets(doomed.map((p) => p.url));
         }
         // Re-number the survivors so the chosen cover really is position 0.
         for (let i = 0; i < existingPhotos.length; i++) {

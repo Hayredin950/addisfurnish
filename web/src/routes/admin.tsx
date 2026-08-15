@@ -56,7 +56,7 @@ import { UserAvatar } from "@/components/UserAvatar";
 import { ListingImage } from "@/components/ListingImage";
 import { BanDialog } from "@/components/admin/BanDialog";
 import { DocumentViewer } from "@/components/admin/DocumentViewer";
-import { useImageUrl } from "@/lib/storage";
+import { deleteCloudinaryAssets, useImageUrl } from "@/lib/storage";
 import { timeAgo, formatBirr } from "@/lib/format";
 import { syncListingChannel } from "@/lib/telegram";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -990,6 +990,9 @@ function ListingsTab() {
     // Retract the channel post BEFORE the row is deleted — the channel-post
     // record cascades off the listing, so afterwards there's no way to find it.
     syncListingChannel(id, "delete");
+    const target = (listings ?? []).find((l) => l.id === id) as
+      { listing_images?: { url: string }[] } | undefined;
+    const urls = (target?.listing_images ?? []).map((img) => img.url);
     const { error } = await supabase.from("listings").delete().eq("id", id);
     setDeleting(false);
     if (error) {
@@ -998,6 +1001,8 @@ function ListingsTab() {
     }
     toast.success(t("toast.listingUpdated"));
     queryClient.invalidateQueries({ queryKey: ["admin-listings"] });
+    // Cloudinary photos + showcase videos leave with the listing.
+    void deleteCloudinaryAssets(urls);
   };
 
   return (

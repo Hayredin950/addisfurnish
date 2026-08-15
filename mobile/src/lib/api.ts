@@ -655,14 +655,15 @@ export async function deleteListing(id: string): Promise<void> {
     .select("listing_images(url)")
     .eq("id", id)
     .maybeSingle();
-  const paths = ((listing?.listing_images ?? []) as { url: string }[])
-    .map((img) => img.url)
-    .filter((url) => !!url && !url.startsWith("http"));
+  const allUrls = ((listing?.listing_images ?? []) as { url: string }[]).map((img) => img.url);
+  const paths = allUrls.filter((url) => !!url && !url.startsWith("http"));
   const { error } = await supabase.from("listings").delete().eq("id", id);
   if (error) throw error;
   if (paths.length) {
     await supabase.storage.from("listing-images").remove(paths).catch(() => {});
   }
+  // Cloudinary assets (listing photos, showcase videos) are deleted too.
+  await deleteCloudinaryAssets(allUrls);
 }
 
 /**
@@ -788,78 +789,111 @@ export async function submitReport(input: {
 // ── Sell ─────────────────────────────────────────────────────────────────
 
 /**
- * Uploads a local file (camera roll / camera / document picker) to a storage
- * bucket and returns the stored path.
+ * Reads a local file's bytes with expo-file-system and returns a Blob.
  *
- * Reads the bytes with expo-file-system rather than building a FormData. The
- * old React Native pattern — appending a `{ uri, name, type }` descriptor —
- * stopped working in Expo SDK 54: Expo replaces the global `fetch` with its own
- * WinterCG implementation, whose FormData encoder accepts only a string, a real
- * Blob, or an object exposing `.bytes()`, and throws "Unsupported FormDataPart
- * implementation" on anything else. Passing `fetch(uri)` through instead is no
- * better — that same replacement does not resolve `file://` URIs.
- *
- * contentType is not optional: on the raw-body path storage-js falls back to
- * `text/plain;charset=UTF-8`, which would store every photo as text and serve
- * it back unusable.
+ * Cloudinary uploads need multipart FormData. React Native's FormData accepts
+ * a Blob, but the old `{ uri, name, type }` descriptor stopped working in
+ * Expo SDK 54 (the WinterCG fetch's encoder throws "Unsupported FormDataPart
+ * implementation"). Building the Blob from the file's bytes sidesteps that.
  */
-async function uploadToBucket(
-  bucket: string,
-  userId: string,
-  file: { uri: string; name?: string; mimeType?: string },
-  folder?: string,
-): Promise<string> {
-  const ext = (file.name ?? "photo.jpg").split(".").pop()?.toLowerCase() ?? "jpg";
-  const prefix = folder ? `${userId}/${folder}` : userId;
-  const path = `${prefix}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
-
+async function fileToBlob(file: { uri: string; mimeType?: string }): Promise<Blob> {
   const bytes = await new File(file.uri).bytes();
-  const { error } = await supabase.storage.from(bucket).upload(path, bytes, {
-    cacheControl: "3600",
-    upsert: false,
-    contentType: file.mimeType ?? `image/${ext === "jpg" ? "jpeg" : ext}`,
+  return new Blob([bytes], { type: file.mimeType ?? "application/octet-stream" });
+}
+
+/**
+ * Asks cloudinary-sign for signed upload params (folder pinned to the current
+ * user) and POSTs the file to Cloudinary. Returns the stored secure_url. The
+ * API secret never leaves the server.
+ */
+async function uploadViaCloudinary(
+  file: { uri: string; name?: string; mimeType?: string },
+  scope: "listing" | "video" | "logo",
+): Promise<string> {
+  const { data, error } = await supabase.functions.invoke("cloudinary-sign", {
+    body: { scope },
   });
-  if (error) throw error;
-  return path;
+  if (error || !data?.signature) {
+    throw error ?? new Error("cloudinary sign failed");
+  }
+
+  const form = new FormData();
+  form.append("file", await fileToBlob(file));
+  form.append("api_key", data.api_key);
+  form.append("timestamp", data.timestamp);
+  form.append("signature", data.signature);
+  form.append("folder", data.folder);
+
+  const res = await fetch(data.upload_url, { method: "POST", body: form });
+  const json = await res.json().catch(() => null);
+  if (!res.ok || !json?.secure_url) {
+    throw new Error(json?.error?.message ?? "cloudinary upload failed");
+  }
+  return json.secure_url as string;
 }
 
 export function uploadListingImage(
   userId: string,
   file: { uri: string; name?: string; mimeType?: string },
 ): Promise<string> {
-  return uploadToBucket("listing-images", userId, file);
+  return uploadViaCloudinary(file, "listing");
 }
 
 /**
- * Short showcase video (≤ ~60s) for a listing. Stored under the seller's
- * folder in the same public bucket, so the first path segment stays the
- * uploader's id (the bucket's INSERT policy checks exactly that).
+ * Short showcase video (≤ ~60s) for a listing. Same signed Cloudinary flow as
+ * photos; the seller's userId is kept for call-site symmetry.
  */
 export function uploadListingVideo(
   userId: string,
   file: { uri: string; name?: string; mimeType?: string },
 ): Promise<string> {
-  return uploadToBucket("listing-images", userId, file, "videos");
+  return uploadViaCloudinary(file, "video");
 }
 
 /**
- * Shop logos live in the same public bucket but under a `logos/` folder — the
- * bucket's INSERT policy checks that the first path segment is the uploader's
- * id, so the user id has to stay first.
+ * Shop logos go to Cloudinary too — same signed flow, logo folder. The userId
+ * parameter is kept for call-site symmetry with the old storage paths.
  */
 export function uploadShopLogo(
   userId: string,
   file: { uri: string; name?: string; mimeType?: string },
 ): Promise<string> {
-  return uploadToBucket("listing-images", userId, file, "logos");
+  return uploadViaCloudinary(file, "logo");
 }
 
-/** Verification documents go to the private (owner + admin only) bucket. */
+/**
+ * Best-effort delete of Cloudinary assets (listing images, videos, logos).
+ * Supabase storage paths are untouched — callers handle those separately.
+ * Never throws: a failed media delete must not fail the surrounding delete.
+ */
+export async function deleteCloudinaryAssets(urls: string[]) {
+  const cloudUrls = (urls ?? []).filter((u) => u?.startsWith("https://res.cloudinary.com/"));
+  if (cloudUrls.length === 0) return;
+  try {
+    await supabase.functions.invoke("cloudinary-delete", { body: { urls: cloudUrls } });
+  } catch {
+    // best-effort
+  }
+}
+
+/** Verification documents stay in the private (owner + admin only) bucket. */
 export function uploadVerificationDocument(
   userId: string,
   file: { uri: string; name?: string; mimeType?: string },
 ): Promise<string> {
-  return uploadToBucket("verification-docs", userId, file);
+  const ext = (file.name ?? "doc.jpg").split(".").pop()?.toLowerCase() ?? "jpg";
+  const path = `${userId}/${Date.now()}-${Math.random().toString(36).slice(2)}.${ext}`;
+
+  return (async () => {
+    const bytes = await new File(file.uri).bytes();
+    const { error } = await supabase.storage.from("verification-docs").upload(path, bytes, {
+      cacheControl: "3600",
+      upsert: false,
+      contentType: file.mimeType ?? `image/${ext === "jpg" ? "jpeg" : ext}`,
+    });
+    if (error) throw error;
+    return path;
+  })();
 }
 
 export async function createListing(input: {
