@@ -1,18 +1,23 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  Activity,
   BadgeCheck,
   Ban,
+  BarChart3,
   ChevronDown,
   ChevronUp,
   ClipboardCheck,
+  Eye,
   FileCheck2,
   FileText,
   Flag,
   FolderTree,
   LayoutList,
   LogOut,
+  Mail,
+  MessageSquare,
   Pencil,
   ShieldCheck,
   Star,
@@ -27,6 +32,7 @@ import {
   adminReportsQuery,
   adminStatsQuery,
   adminTopCategoriesQuery,
+  adminTrendQuery,
   adminVerificationDecisionsQuery,
   adminVerificationQueueQuery,
   categoriesQuery,
@@ -76,6 +82,8 @@ function AdminPage() {
   const { user } = useAuth();
   const { t } = useLang();
   const { data: isAdmin, isLoading: checking } = useQuery(isAdminQuery(user?.id));
+  const [tab, setTab] = useState("reports");
+  const [drill, setDrill] = useState<"all" | "sellers" | null>(null);
 
   if (checking) {
     return (
@@ -99,7 +107,7 @@ function AdminPage() {
     <div className="mx-auto max-w-4xl px-4 py-12">
       <h1 className="font-display text-3xl font-semibold">{t("admin.title")}</h1>
 
-      <Tabs defaultValue="reports" className="mt-8">
+      <Tabs value={tab} onValueChange={setTab} className="mt-8">
         <TabsList className="flex-wrap">
           <TabsTrigger value="reports">{t("admin.reports")}</TabsTrigger>
           <TabsTrigger value="users">{t("admin.users")}</TabsTrigger>
@@ -119,7 +127,7 @@ function AdminPage() {
           <ReportsTab />
         </TabsContent>
         <TabsContent value="users" className="mt-6">
-          <UsersTab />
+          <UsersTab drillFilter={drill} />
         </TabsContent>
         <TabsContent value="verification" className="mt-6">
           <VerificationTab />
@@ -131,7 +139,13 @@ function AdminPage() {
           <ListingsTab />
         </TabsContent>
         <TabsContent value="stats" className="mt-6">
-          <StatsTab />
+          <StatsTab
+            onOpenUsers={(f) => {
+              setDrill(f);
+              setTab("users");
+            }}
+            onOpenListings={() => setTab("listings")}
+          />
         </TabsContent>
       </Tabs>
     </div>
@@ -209,11 +223,15 @@ function ReportsTab() {
 }
 
 /** Every account, with suspension controls. */
-function UsersTab() {
+function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
   const { t } = useLang();
   const queryClient = useQueryClient();
   const { user } = useAuth();
   const [filter, setFilter] = useState<"all" | "sellers" | "buyers">("all");
+  // Stats-tab drill-down: "Verified sellers" opens this tab pre-filtered.
+  useEffect(() => {
+    if (drillFilter) setFilter(drillFilter);
+  }, [drillFilter]);
   const [search, setSearch] = useState("");
   const { data: users } = useQuery(adminAllUsersQuery(filter));
   const [banTarget, setBanTarget] = useState<{ id: string; name: string } | null>(null);
@@ -1066,43 +1084,228 @@ function ListingThumb({ images }: { images: { url: string; position: number }[] 
   );
 }
 
-function StatCard({ label, value }: { label: string; value: number }) {
+type TrendKey = "listings" | "users" | "messages" | "views";
+
+const TREND_KEYS: TrendKey[] = ["listings", "users", "messages", "views"];
+const TREND_COLORS: Record<TrendKey, string> = {
+  listings: "#AC451B",
+  users: "#10b981",
+  messages: "#3b82f6",
+  views: "#8b5cf6",
+};
+
+/** Small up/down/flat change pill for hero cards. */
+function DeltaPill({ d }: { d: number }) {
+  if (d > 0) {
+    return (
+      <span className="inline-flex items-center gap-0.5 rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs font-semibold text-emerald-600">
+        <TrendingUp className="h-3 w-3" /> +{d}
+      </span>
+    );
+  }
+  if (d < 0) {
+    return (
+      <span className="inline-flex items-center gap-0.5 rounded-full bg-red-500/10 px-2 py-0.5 text-xs font-semibold text-red-600">
+        <TrendingUp className="h-3 w-3 rotate-180" /> {d}
+      </span>
+    );
+  }
   return (
-    <div className="rounded-lg border bg-card p-5 shadow-soft">
-      <p className="font-display text-3xl font-semibold text-primary">
-        {new Intl.NumberFormat().format(value)}
-      </p>
-      <p className="mt-1 text-xs uppercase tracking-wide text-muted-foreground">{label}</p>
-    </div>
+    <span className="inline-flex items-center rounded-full bg-secondary px-2 py-0.5 text-xs font-semibold text-muted-foreground">
+      0
+    </span>
   );
 }
 
-function StatsTab() {
+/** Hero metric card — clickable for drill-down, with accent dot + delta. */
+function HeroCard({
+  label,
+  value,
+  sub,
+  delta,
+  onClick,
+  accent,
+}: {
+  label: string;
+  value: React.ReactNode;
+  sub?: React.ReactNode;
+  delta?: React.ReactNode;
+  onClick?: () => void;
+  accent?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="rounded-xl border bg-card p-4 text-left transition hover:border-primary/40 hover:shadow-sm"
+    >
+      <div className="flex items-center justify-between gap-2">
+        <p className="truncate text-xs font-medium uppercase tracking-wide text-muted-foreground">
+          {label}
+        </p>
+        {accent ? <span className={`h-2 w-2 shrink-0 rounded-full ${accent}`} /> : null}
+      </div>
+      <p className="mt-2 font-display text-3xl font-semibold">{value}</p>
+      {delta ? <div className="mt-2">{delta}</div> : null}
+      {sub}
+    </button>
+  );
+}
+
+/** Compact inline stat for the engagement strip (views/messages/…). */
+function EngStat({ icon, label, value }: { icon: React.ReactNode; label: string; value: number }) {
+  return (
+    <span className="flex items-center gap-2 text-sm text-muted-foreground">
+      <span className="flex h-7 w-7 items-center justify-center rounded-md bg-secondary text-icon-default">
+        {icon}
+      </span>
+      <b className="font-semibold text-foreground">{new Intl.NumberFormat().format(value)}</b>
+      {label}
+    </span>
+  );
+}
+
+/** Dashboard panel header: accent bar + icon + title. */
+function PanelTitle({
+  icon,
+  title,
+  accent = "bg-primary",
+}: {
+  icon: React.ReactNode;
+  title: string;
+  accent?: string;
+}) {
+  return (
+    <p className="flex items-center gap-2.5 font-display text-lg font-semibold">
+      <span className={`h-5 w-1 rounded-full ${accent}`} />
+      <span className="flex items-center gap-2">{icon}</span>
+      {title}
+    </p>
+  );
+}
+
+/**
+ * 14-day activity area chart (SVG). One line per visible metric, native
+ * tooltip per day, zero-filled so quiet days keep the line continuous.
+ */
+function TrendChart({
+  data,
+  visible,
+}: {
+  data: {
+    date: string;
+    label: string;
+    listings: number;
+    users: number;
+    messages: number;
+    views: number;
+  }[];
+  visible: Record<TrendKey, boolean>;
+}) {
+  const W = 640;
+  const H = 190;
+  const PAD = 22;
+  const active = TREND_KEYS.filter((k) => visible[k]);
+  const max = Math.max(1, ...data.map((d) => active.reduce((s, k) => s + d[k], 0)));
+  const x = (i: number) => PAD + (data.length <= 1 ? 0 : (i / (data.length - 1)) * (W - PAD * 2));
+  const y = (v: number) => H - PAD - (v / max) * (H - PAD * 2);
+  const line = (k: TrendKey) =>
+    data.map((d, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${y(d[k]).toFixed(1)}`).join(" ");
+  const area = (k: TrendKey) =>
+    `${line(k)} L${x(data.length - 1).toFixed(1)},${H - PAD} L${x(0).toFixed(1)},${H - PAD} Z`;
+  const gridTicks = [0, 0.25, 0.5, 0.75, 1].map((f) => Math.round(max * f));
+  const labelEvery = Math.max(1, Math.ceil(data.length / 6));
+
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full" role="img" aria-label="Activity trend">
+      {gridTicks.map((tv, i) => (
+        <g key={i}>
+          <line
+            x1={PAD}
+            x2={W - PAD}
+            y1={y(tv)}
+            y2={y(tv)}
+            stroke="currentColor"
+            className="text-border"
+            strokeDasharray="3 3"
+          />
+          <text
+            x={PAD - 6}
+            y={y(tv) + 3}
+            textAnchor="end"
+            fontSize="9"
+            className="fill-muted-foreground"
+          >
+            {tv}
+          </text>
+        </g>
+      ))}
+      {active.map((k) => (
+        <g key={k}>
+          <path d={area(k)} fill={TREND_COLORS[k]} opacity="0.12" />
+          <path
+            d={line(k)}
+            fill="none"
+            stroke={TREND_COLORS[k]}
+            strokeWidth="2"
+            strokeLinejoin="round"
+          />
+        </g>
+      ))}
+      {data.map((d, i) => (
+        <g key={d.date}>
+          <rect x={x(i) - 6} y={PAD} width={12} height={H - PAD * 2} fill="transparent">
+            <title>{`${d.label}: ${active.map((k) => `${k} ${d[k]}`).join(", ")}`}</title>
+          </rect>
+          {i % labelEvery === 0 ? (
+            <text
+              x={x(i)}
+              y={H - 5}
+              textAnchor="middle"
+              fontSize="9"
+              className="fill-muted-foreground"
+            >
+              {d.label}
+            </text>
+          ) : null}
+        </g>
+      ))}
+    </svg>
+  );
+}
+
+function StatsTab({
+  onOpenUsers,
+  onOpenListings,
+}: {
+  onOpenUsers: (f: "all" | "sellers") => void;
+  onOpenListings: () => void;
+}) {
   const { t } = useLang();
+  const [range, setRange] = useState<7 | 14 | 30>(14);
+  const [visible, setVisible] = useState<Record<TrendKey, boolean>>({
+    listings: true,
+    users: true,
+    messages: false,
+    views: true,
+  });
   const { data: stats } = useQuery(adminStatsQuery());
   const { data: topCategories } = useQuery(adminTopCategoriesQuery());
+  const { data: trend } = useQuery(adminTrendQuery(Math.max(range, 14)));
 
   if (!stats) {
     return <p className="text-sm text-muted-foreground">{t("browse.loading")}</p>;
   }
 
-  const primary = [
-    { label: t("admin.totalListings"), value: stats.listings },
-    { label: t("admin.totalUsers"), value: stats.users },
-    { label: t("admin.totalSellers"), value: stats.sellers },
-    { label: t("admin.totalViews"), value: stats.totalViews },
-  ];
-  const engagement = [
-    { label: t("admin.verifiedSellers"), value: stats.verifiedSellers },
-    { label: t("admin.conversations"), value: stats.conversations },
-    { label: t("admin.messages"), value: stats.messages },
-    { label: t("admin.reviews"), value: stats.reviews },
-  ];
-  const growth = [
-    { label: t("admin.newListingsWeek"), value: stats.newListings7d },
-    { label: t("admin.newUsersWeek"), value: stats.newUsers7d },
-    { label: t("admin.featuredListings"), value: stats.featuredListings },
-  ];
+  // This-week vs prior-week deltas, from the (at least) 14-day series.
+  const series = trend ?? [];
+  const half = Math.max(1, Math.floor(series.length / 2));
+  const sumOf = (k: TrendKey, arr: typeof series) => arr.reduce((s, d) => s + d[k], 0);
+  const deltaOf = (k: TrendKey) => sumOf(k, series.slice(half)) - sumOf(k, series.slice(0, half));
+  const chartData = series.slice(-range);
+
+  const verifiedPct =
+    stats.sellers > 0 ? Math.round((stats.verifiedSellers / stats.sellers) * 100) : 0;
 
   const total = stats.listings || 1;
   const segments = [
@@ -1112,23 +1315,140 @@ function StatsTab() {
   ].filter((s) => s.value > 0);
 
   return (
-    <div>
+    <div className="space-y-8">
+      {/* Hero row — clickable cards with this-week deltas. */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        {primary.map((c) => (
-          <StatCard key={c.label} label={c.label} value={c.value} />
-        ))}
+        <HeroCard
+          label={t("admin.totalListings")}
+          value={stats.listings}
+          accent="bg-primary"
+          onClick={onOpenListings}
+          delta={<DeltaPill d={deltaOf("listings")} />}
+        />
+        <HeroCard
+          label={t("admin.totalUsers")}
+          value={stats.users}
+          accent="bg-emerald-500"
+          onClick={() => onOpenUsers("all")}
+          delta={<DeltaPill d={deltaOf("users")} />}
+        />
+        <HeroCard
+          label={t("admin.verifiedSellers")}
+          value={`${stats.verifiedSellers}/${stats.sellers}`}
+          accent="bg-sky-500"
+          onClick={() => onOpenUsers("sellers")}
+          sub={
+            <div className="mt-2">
+              <div className="h-1.5 overflow-hidden rounded-full bg-secondary">
+                <div
+                  className="h-full rounded-full bg-sky-500"
+                  style={{ width: `${Math.max(verifiedPct, 2)}%` }}
+                />
+              </div>
+              <p className="mt-1 text-xs text-muted-foreground">
+                {verifiedPct}% {t("admin.verifiedRate")}
+              </p>
+            </div>
+          }
+        />
+        <HeroCard
+          label={t("admin.thisWeek")}
+          value={`+${stats.newListings7d}`}
+          accent="bg-violet-500"
+          sub={
+            <p className="mt-2 text-xs text-muted-foreground">
+              +{stats.newUsers7d} {t("admin.usersLabel")}
+            </p>
+          }
+        />
       </div>
 
-      <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
-        {engagement.map((c) => (
-          <StatCard key={c.label} label={c.label} value={c.value} />
-        ))}
+      {/* Engagement strip — minor totals, compact. */}
+      <div className="flex flex-wrap items-center gap-x-8 gap-y-2 rounded-xl border bg-card px-5 py-4">
+        <EngStat
+          icon={<Eye className="h-4 w-4" />}
+          label={t("admin.totalViews")}
+          value={stats.totalViews}
+        />
+        <EngStat
+          icon={<MessageSquare className="h-4 w-4" />}
+          label={t("admin.conversations")}
+          value={stats.conversations}
+        />
+        <EngStat
+          icon={<Mail className="h-4 w-4" />}
+          label={t("admin.messages")}
+          value={stats.messages}
+        />
+        <EngStat
+          icon={<Star className="h-4 w-4" />}
+          label={t("admin.reviews")}
+          value={stats.reviews}
+        />
+      </div>
+
+      {/* 14-day activity trend. */}
+      <div className="rounded-xl border bg-card p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <PanelTitle
+            icon={<Activity className="h-5 w-5 text-primary" />}
+            title={t("admin.trendTitle")}
+            accent="bg-orange-500"
+          />
+          <div className="flex items-center gap-0.5 rounded-lg bg-secondary p-0.5 text-xs">
+            {([7, 14, 30] as const).map((r) => (
+              <button
+                key={r}
+                type="button"
+                onClick={() => setRange(r)}
+                className={`rounded-md px-2.5 py-1 font-medium transition ${
+                  range === r
+                    ? "bg-card text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                {r}d
+              </button>
+            ))}
+          </div>
+        </div>
+        <div className="mt-4 flex flex-wrap gap-2">
+          {TREND_KEYS.map((k) => (
+            <button
+              key={k}
+              type="button"
+              onClick={() => setVisible((v) => ({ ...v, [k]: !v[k] }))}
+              className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium transition ${
+                visible[k] ? "border-transparent" : "border-secondary text-muted-foreground"
+              }`}
+              style={
+                visible[k]
+                  ? { backgroundColor: `${TREND_COLORS[k]}1a`, color: TREND_COLORS[k] }
+                  : undefined
+              }
+            >
+              <span className="h-2 w-2 rounded-full" style={{ backgroundColor: TREND_COLORS[k] }} />
+              {t(`admin.trend.${k}`)}
+            </button>
+          ))}
+        </div>
+        <div className="mt-4">
+          {chartData.length > 0 ? (
+            <TrendChart data={chartData} visible={visible} />
+          ) : (
+            <p className="text-sm text-muted-foreground">{t("browse.loading")}</p>
+          )}
+        </div>
       </div>
 
       {/* Listing status split, drawn as one bar. */}
-      <div className="mt-8 rounded-lg border bg-card p-5">
-        <p className="font-display text-lg font-semibold">{t("admin.statusBreakdown")}</p>
-        <div className="mt-3 flex h-3 overflow-hidden rounded-full bg-secondary">
+      <div className="rounded-xl border bg-card p-5">
+        <PanelTitle
+          icon={<BarChart3 className="h-5 w-5 text-primary" />}
+          title={t("admin.statusBreakdown")}
+          accent="bg-primary"
+        />
+        <div className="mt-4 flex h-3 overflow-hidden rounded-full bg-secondary">
           {segments.map((s) => (
             <div
               key={s.label}
@@ -1141,45 +1461,53 @@ function StatsTab() {
           {segments.map((s) => (
             <li key={s.label} className="flex items-center gap-1.5">
               <span className={`h-2 w-2 rounded-full ${s.color}`} />
-              {s.label}: <b className="font-semibold text-foreground">{s.value}</b>(
+              {s.label}: <b className="font-semibold text-foreground">{s.value}</b> (
               {Math.round((s.value / total) * 100)}%)
             </li>
           ))}
         </ul>
       </div>
 
-      <div className="mt-8">
-        <p className="mb-3 font-display text-lg font-semibold">{t("admin.thisWeek")}</p>
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
-          {growth.map((c) => (
-            <StatCard key={c.label} label={c.label} value={c.value} />
-          ))}
-        </div>
-      </div>
-
+      {/* Search trends — horizontal bars, matching the category panel. */}
       {stats.topSearches.length > 0 ? (
-        <div className="mt-8 rounded-lg border bg-card p-5">
-          <p className="flex items-center gap-2 font-display text-lg font-semibold">
-            <TrendingUp className="h-5 w-5 text-primary" /> {t("admin.topSearches")}
-          </p>
-          <ol className="mt-3 space-y-1.5 text-sm text-muted-foreground">
-            {stats.topSearches.map((q, i) => (
-              <li key={q}>
-                <span className="mr-2 inline-block w-5 text-right font-semibold text-primary">
-                  {i + 1}
-                </span>
-                {q}
-              </li>
-            ))}
-          </ol>
+        <div className="rounded-xl border bg-card p-5">
+          <PanelTitle
+            icon={<TrendingUp className="h-5 w-5 text-primary" />}
+            title={t("admin.topSearches")}
+            accent="bg-orange-500"
+          />
+          <ul className="mt-4 space-y-2.5">
+            {stats.topSearches.map((s) => {
+              const maxCount = Math.max(1, ...stats.topSearches.map((x) => x.count));
+              const pct = Math.round((s.count / maxCount) * 100);
+              return (
+                <li key={s.name}>
+                  <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <span className="font-medium text-foreground">{s.name}</span>
+                    <span>{s.count}</span>
+                  </div>
+                  <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-secondary">
+                    <div
+                      className="h-full rounded-full bg-orange-500"
+                      style={{ width: `${Math.max(4, pct)}%` }}
+                    />
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
         </div>
       ) : null}
+
+      {/* Category breakdown. */}
       {(topCategories ?? []).length > 0 ? (
-        <div className="mt-8 rounded-lg border bg-card p-5">
-          <p className="flex items-center gap-2 font-display text-lg font-semibold">
-            <FolderTree className="h-5 w-5 text-primary" /> {t("admin.topCategories")}
-          </p>
-          <ul className="mt-3 space-y-2 text-sm">
+        <div className="rounded-xl border bg-card p-5">
+          <PanelTitle
+            icon={<FolderTree className="h-5 w-5 text-primary" />}
+            title={t("admin.topCategories")}
+            accent="bg-blue-500"
+          />
+          <ul className="mt-4 space-y-2 text-sm">
             {topCategories!.map((c) => {
               const pct = Math.round((c.count / (stats.listings || 1)) * 100);
               return (

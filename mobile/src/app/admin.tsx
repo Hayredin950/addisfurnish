@@ -29,6 +29,8 @@ import {
   fetchAdminReports,
   fetchAdminStats,
   fetchAdminTopCategories,
+  fetchAdminTopSearches,
+  fetchAdminTrend,
   fetchAdminUsers,
   fetchVerificationDecisions,
   fetchVerificationQueue,
@@ -963,6 +965,10 @@ function StatsTab() {
   const { t } = useLang();
   const stats = useAsync(fetchAdminStats, []);
   const topCats = useAsync(fetchAdminTopCategories, []);
+  const topSearches = useAsync(fetchAdminTopSearches, []);
+  const [range, setRange] = useState(14);
+  const [metric, setMetric] = useState<"views" | "listings" | "users" | "messages">("views");
+  const trend = useAsync(() => fetchAdminTrend(range), [range]);
 
   if (stats.loading && !stats.data) {
     return (
@@ -974,24 +980,113 @@ function StatsTab() {
 
   const s = stats.data;
   const maxCat = Math.max(1, ...(topCats.data ?? []).map((c) => c.count));
+  const maxSearch = Math.max(1, ...(topSearches.data ?? []).map((x) => x.count));
   const total = s?.listings || 1;
+  const verifiedPct =
+    s && s.sellers > 0 ? Math.round((s.verifiedSellers / s.sellers) * 100) : 0;
   const segments = [
     { label: t("adminStatusActive"), value: s?.activeListings ?? 0, color: colors.primary },
     { label: t("adminStatusSold"), value: s?.soldListings ?? 0, color: colors.success },
     { label: t("adminStatusOther"), value: s?.otherListings ?? 0, color: colors.textSoft },
   ].filter((x) => x.value > 0);
+  const trendMax = Math.max(1, ...(trend.data ?? []).map((d) => d[metric]));
 
   return (
     <ScrollView contentContainerStyle={{ padding: spacing.lg, gap: 12 }}>
+      {/* Hero row — big numbers + verified ratio. */}
       <View style={styles.statGrid}>
         <StatBox label={t("adminStatListings")} value={s?.listings ?? 0} icon="pricetags" />
         <StatBox label={t("adminStatUsers")} value={s?.users ?? 0} icon="people" />
-        <StatBox label={t("adminStatSellers")} value={s?.sellers ?? 0} icon="storefront" />
-        <StatBox label={t("adminStatViews")} value={s?.totalViews ?? 0} icon="eye" />
-        <StatBox label={t("adminStatVerifiedSellers")} value={s?.verifiedSellers ?? 0} icon="shield-checkmark" />
-        <StatBox label={t("adminStatConversations")} value={s?.conversations ?? 0} icon="chatbubbles" />
-        <StatBox label={t("adminStatMessages")} value={s?.messages ?? 0} icon="chatbox" />
-        <StatBox label={t("adminStatReviews")} value={s?.reviews ?? 0} icon="star" />
+        <View style={styles.statBox}>
+          <Ionicons name="shield-checkmark" size={18} color={colors.primary} />
+          <Text style={styles.statValue}>
+            {s?.verifiedSellers ?? 0}/{s?.sellers ?? 0}
+          </Text>
+          <Text style={styles.statLabel}>{t("adminStatVerifiedSellers")}</Text>
+          <View style={[styles.barTrack, { width: "100%", marginTop: 6 }]}>
+            <View
+              style={[styles.barFill, { width: `${Math.max(verifiedPct, 2)}%`, backgroundColor: colors.success }]}
+            />
+          </View>
+          <Text style={{ fontSize: 10, color: colors.textMuted }}>
+            {verifiedPct}% {t("adminVerifiedRate")}
+          </Text>
+        </View>
+        <StatBox
+          label={t("adminThisWeek")}
+          value={`+${s?.newListings7d ?? 0}`}
+          icon="trending-up"
+        />
+      </View>
+
+      {/* Engagement strip — minor totals, compact. */}
+      <View style={[styles.card, { flexDirection: "row", flexWrap: "wrap", gap: 10 }]}>
+        <EngItem icon="eye" label={t("adminStatViews")} value={s?.totalViews ?? 0} />
+        <EngItem icon="chatbubbles" label={t("adminStatConversations")} value={s?.conversations ?? 0} />
+        <EngItem icon="chatbox" label={t("adminStatMessages")} value={s?.messages ?? 0} />
+        <EngItem icon="star" label={t("adminStatReviews")} value={s?.reviews ?? 0} />
+      </View>
+
+      {/* Activity trend — daily bars for one metric, 7/14/30d. */}
+      <View style={styles.card}>
+        <View
+          style={{
+            flexDirection: "row",
+            justifyContent: "space-between",
+            alignItems: "center",
+            marginBottom: 10,
+          }}
+        >
+          <Text style={styles.cardTitle}>{t("adminTrendTitle")}</Text>
+          <View style={{ flexDirection: "row", gap: 6 }}>
+            {[7, 14, 30].map((r) => (
+              <Pressable
+                key={r}
+                onPress={() => setRange(r)}
+                style={[styles.chip, range === r && styles.chipActive]}
+              >
+                <Text style={[styles.chipText, range === r && styles.chipTextActive]}>{r}d</Text>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 14 }}>
+          {(["views", "listings", "users", "messages"] as const).map((m) => (
+            <Pressable
+              key={m}
+              onPress={() => setMetric(m)}
+              style={[styles.chip, metric === m && styles.chipActive]}
+            >
+              <Text style={[styles.chipText, metric === m && styles.chipTextActive]}>
+                {t(`adminTrend.${m}`)}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+        {(trend.data ?? []).length === 0 ? (
+          <Text style={styles.muted}>{t("adminNoListings")}</Text>
+        ) : (
+          <View style={{ flexDirection: "row", alignItems: "flex-end", gap: 3, height: 118 }}>
+            {(trend.data ?? []).map((d) => (
+              <View key={d.date} style={{ flex: 1, alignItems: "center", gap: 4 }}>
+                <View style={{ width: "100%", height: 96, justifyContent: "flex-end", alignItems: "center" }}>
+                  <View
+                    style={{
+                      width: "70%",
+                      minHeight: 2,
+                      borderRadius: 3,
+                      backgroundColor: colors.primary,
+                      height: Math.max((d[metric] / trendMax) * 96, 2),
+                    }}
+                  />
+                </View>
+                <Text style={{ fontSize: 8, color: colors.textSoft }} numberOfLines={1}>
+                  {d.label}
+                </Text>
+              </View>
+            ))}
+          </View>
+        )}
       </View>
 
       <View style={styles.card}>
@@ -1024,15 +1119,6 @@ function StatsTab() {
       </View>
 
       <View style={styles.card}>
-        <Text style={styles.cardTitle}>{t("adminThisWeek")}</Text>
-        <View style={styles.statGrid}>
-          <StatBox label={t("adminNewListingsWeek")} value={s?.newListings7d ?? 0} icon="add-circle" />
-          <StatBox label={t("adminNewUsersWeek")} value={s?.newUsers7d ?? 0} icon="person-add" />
-          <StatBox label={t("adminFeaturedListings")} value={s?.featuredListings ?? 0} icon="star" />
-        </View>
-      </View>
-
-      <View style={styles.card}>
         <Text style={styles.cardTitle}>{t("adminTopCategories")}</Text>
         {(topCats.data ?? []).length === 0 ? (
           <Text style={styles.muted}>{t("adminNoListings")}</Text>
@@ -1053,16 +1139,20 @@ function StatsTab() {
 
       <View style={styles.card}>
         <Text style={styles.cardTitle}>{t("adminTopSearches")}</Text>
-        {(s?.topSearches ?? []).length === 0 ? (
+        {(topSearches.data ?? []).length === 0 ? (
           <Text style={styles.muted}>{t("adminNoListings")}</Text>
         ) : (
-          <View style={styles.chipWrap}>
-            {(s?.topSearches ?? []).map((q) => (
-              <View key={q} style={styles.chip}>
-                <Text style={styles.chipText}>{q}</Text>
+          (topSearches.data ?? []).map((x) => (
+            <View key={x.name} style={{ marginBottom: 8 }}>
+              <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                <Text style={styles.catName}>{x.name}</Text>
+                <Text style={styles.catSlug}>{x.count}</Text>
               </View>
-            ))}
-          </View>
+              <View style={styles.barTrack}>
+                <View style={[styles.barFill, { width: `${(x.count / maxSearch) * 100}%` }]} />
+              </View>
+            </View>
+          ))
         )}
       </View>
     </ScrollView>
@@ -1075,7 +1165,7 @@ function StatBox({
   icon,
 }: {
   label: string;
-  value: number;
+  value: number | string;
   icon: keyof typeof Ionicons.glyphMap;
 }) {
   return (
@@ -1083,6 +1173,38 @@ function StatBox({
       <Ionicons name={icon} size={18} color={colors.primary} />
       <Text style={styles.statValue}>{value}</Text>
       <Text style={styles.statLabel}>{label}</Text>
+    </View>
+  );
+}
+
+/** Compact inline stat for the engagement strip. */
+function EngItem({
+  icon,
+  label,
+  value,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  value: number;
+}) {
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center", gap: 6, minWidth: "46%", flex: 1 }}>
+      <View
+        style={{
+          width: 28,
+          height: 28,
+          borderRadius: 7,
+          backgroundColor: colors.secondary,
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <Ionicons name={icon} size={14} color={colors.primary} />
+      </View>
+      <View>
+        <Text style={{ fontSize: 13, fontWeight: "700", color: colors.text }}>{value}</Text>
+        <Text style={{ fontSize: 10, color: colors.textMuted }}>{label}</Text>
+      </View>
     </View>
   );
 }

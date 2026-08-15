@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { BadgeCheck, ImagePlus, Send, ShieldCheck } from "lucide-react";
+import { BadgeCheck, ChevronDown, ImagePlus, Send, ShieldCheck } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { useLang } from "@/lib/i18n";
@@ -263,83 +263,99 @@ function ProfilePage() {
           </select>
         </div>
 
-        <h2 className="pt-4 font-display text-xl font-semibold">{t("profile.shopSection")}</h2>
-        <div className="space-y-2">
-          <Label htmlFor="shop_name">{t("profile.shopName")}</Label>
-          <Input id="shop_name" name="shop_name" defaultValue={profile?.shop_name ?? ""} />
-        </div>
-        <div className="flex items-end gap-4">
-          <div className="h-16 w-16 shrink-0 overflow-hidden rounded-lg border bg-secondary">
-            {logoUrl.data ? (
-              <img src={logoUrl.data} alt="Shop logo" className="h-full w-full object-cover" />
-            ) : (
-              <div className="grid h-full w-full place-items-center text-xs text-muted-foreground">
-                Logo
+        {/* Shop details — collapsed unless you're a seller; open it to become
+            one. Kept inside the same form so one save still persists all. */}
+        <details className="group rounded-lg border bg-card p-4" open={!!profile?.is_seller}>
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-sm font-semibold">
+            <span>{t("profile.shopSection")}</span>
+            <span className="flex items-center gap-1 text-xs font-normal text-muted-foreground">
+              {profile?.shop_name || t("profile.shopNotSet")}
+              <ChevronDown className="h-3.5 w-3.5 transition-transform group-open:rotate-180" />
+            </span>
+          </summary>
+          <div className="mt-4 space-y-5">
+            <div className="space-y-2">
+              <Label htmlFor="shop_name">{t("profile.shopName")}</Label>
+              <Input id="shop_name" name="shop_name" defaultValue={profile?.shop_name ?? ""} />
+            </div>
+            <div className="flex items-end gap-4">
+              <div className="h-16 w-16 shrink-0 overflow-hidden rounded-lg border bg-secondary">
+                {logoUrl.data ? (
+                  <img src={logoUrl.data} alt="Shop logo" className="h-full w-full object-cover" />
+                ) : (
+                  <div className="grid h-full w-full place-items-center text-xs text-muted-foreground">
+                    Logo
+                  </div>
+                )}
               </div>
-            )}
-          </div>
-          <div className="flex-1 space-y-2">
-            <Label htmlFor="logo">{t("profile.logo")}</Label>
-            <Input
-              id="logo"
-              type="file"
-              accept="image/*"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) void uploadLogo(file);
-              }}
-            />
-            <p className="text-xs text-muted-foreground">{t("profile.logoHint")}</p>
-          </div>
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="shop_description">{t("profile.shopDescription")}</Label>
-          <Textarea
-            id="shop_description"
-            name="shop_description"
-            rows={4}
-            defaultValue={profile?.shop_description ?? ""}
-          />
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="shop_address">{t("profile.shopAddress")}</Label>
-          <Input id="shop_address" name="shop_address" defaultValue={profile?.shop_address ?? ""} />
-        </div>
+              <div className="flex-1 space-y-2">
+                <Label htmlFor="logo">{t("profile.logo")}</Label>
+                <Input
+                  id="logo"
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) void uploadLogo(file);
+                  }}
+                />
+                <p className="text-xs text-muted-foreground">{t("profile.logoHint")}</p>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="shop_description">{t("profile.shopDescription")}</Label>
+              <Textarea
+                id="shop_description"
+                name="shop_description"
+                rows={4}
+                defaultValue={profile?.shop_description ?? ""}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="shop_address">{t("profile.shopAddress")}</Label>
+              <Input
+                id="shop_address"
+                name="shop_address"
+                defaultValue={profile?.shop_address ?? ""}
+              />
+            </div>
 
-        <div className="space-y-2">
-          <Label>{t("loc.pin")}</Label>
-          <LocationPicker value={shopCoords} onChange={setShopCoords} />
-        </div>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-2">
-            <Label htmlFor="whatsapp">{t("profile.whatsapp")}</Label>
-            <Input
-              id="whatsapp"
-              name="whatsapp"
-              defaultValue={profile?.whatsapp ?? ""}
-              placeholder="+2519…"
-            />
+            <div className="space-y-2">
+              <Label>{t("loc.pin")}</Label>
+              <LocationPicker value={shopCoords} onChange={setShopCoords} />
+            </div>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <Label htmlFor="whatsapp">{t("profile.whatsapp")}</Label>
+                <Input
+                  id="whatsapp"
+                  name="whatsapp"
+                  defaultValue={profile?.whatsapp ?? ""}
+                  placeholder="+2519…"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="telegram">{t("profile.telegram")}</Label>
+                <Input
+                  id="telegram"
+                  name="telegram"
+                  defaultValue={profile?.telegram ?? ""}
+                  placeholder="@yourname"
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="registration_number">{t("profile.registrationNumber")}</Label>
+              <Input
+                id="registration_number"
+                name="registration_number"
+                defaultValue={profile?.registration_number ?? ""}
+                placeholder="e.g. 2310/2024"
+              />
+              <p className="text-xs text-muted-foreground">{t("profile.registrationHint")}</p>
+            </div>
           </div>
-          <div className="space-y-2">
-            <Label htmlFor="telegram">{t("profile.telegram")}</Label>
-            <Input
-              id="telegram"
-              name="telegram"
-              defaultValue={profile?.telegram ?? ""}
-              placeholder="@yourname"
-            />
-          </div>
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="registration_number">{t("profile.registrationNumber")}</Label>
-          <Input
-            id="registration_number"
-            name="registration_number"
-            defaultValue={profile?.registration_number ?? ""}
-            placeholder="e.g. 2310/2024"
-          />
-          <p className="text-xs text-muted-foreground">{t("profile.registrationHint")}</p>
-        </div>
+        </details>
 
         {!profile?.is_seller ? (
           <div className="rounded-lg border border-primary/30 bg-primary/5 p-4">

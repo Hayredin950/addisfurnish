@@ -806,7 +806,22 @@ export function adminStatsQuery() {
           .eq("is_seller", true)
           .eq("verified", true),
         supabase.from("listings").select("view_count").neq("status", "draft"),
-        fetchTrendingSearches(6),
+        (async () => {
+          const { data } = await supabase
+            .from("search_log")
+            .select("query")
+            .gte("created_at", weekAgo);
+          const counts = new Map<string, number>();
+          for (const row of data ?? []) {
+            const q = (row.query ?? "").trim().toLowerCase();
+            if (!q) continue;
+            counts.set(q, (counts.get(q) ?? 0) + 1);
+          }
+          return [...counts.entries()]
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 6)
+            .map(([name, count]) => ({ name, count }));
+        })(),
         supabase.from("listings").select("status"),
         supabase.from("listings").select("id", { count: "exact", head: true }).eq("featured", true),
         supabase.from("conversations").select("id", { count: "exact", head: true }),
@@ -848,6 +863,66 @@ export function adminStatsQuery() {
         newListings7d: newListings.count ?? 0,
         newUsers7d: newUsers.count ?? 0,
       };
+    },
+  });
+}
+
+export type TrendDay = {
+  date: string; // YYYY-MM-DD
+  label: string; // e.g. "Aug 2"
+  listings: number;
+  users: number;
+  messages: number;
+  views: number;
+};
+
+/**
+ * Daily activity series for the admin trend chart. Fetches created_at rows
+ * for listings / profiles / messages / views over the last `days` and buckets
+ * them by calendar day (zero-filled so the trend line stays continuous).
+ */
+export function adminTrendQuery(days: number) {
+  return queryOptions({
+    queryKey: ["admin-trend", days],
+    staleTime: 1000 * 60 * 5,
+    queryFn: async (): Promise<TrendDay[]> => {
+      const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+      const [listings, users, messages, views] = await Promise.all([
+        supabase.from("listings").select("created_at").gte("created_at", since),
+        supabase.from("profiles").select("created_at").gte("created_at", since),
+        supabase.from("messages").select("created_at").gte("created_at", since),
+        supabase.from("listing_views").select("created_at").gte("created_at", since),
+      ]);
+      if (listings.error) throw listings.error;
+      if (users.error) throw users.error;
+      if (messages.error) throw messages.error;
+      if (views.error) throw views.error;
+
+      const buckets = new Map<string, TrendDay>();
+      const key = (iso: string) => iso.slice(0, 10);
+      const label = (d: Date) => d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+      for (let i = days - 1; i >= 0; i--) {
+        const d = new Date(Date.now() - i * 24 * 60 * 60 * 1000);
+        const k = key(d.toISOString());
+        buckets.set(k, { date: k, label: label(d), listings: 0, users: 0, messages: 0, views: 0 });
+      }
+      for (const row of listings.data ?? []) {
+        const b = buckets.get(key(row.created_at));
+        if (b) b.listings += 1;
+      }
+      for (const row of users.data ?? []) {
+        const b = buckets.get(key(row.created_at));
+        if (b) b.users += 1;
+      }
+      for (const row of messages.data ?? []) {
+        const b = buckets.get(key(row.created_at));
+        if (b) b.messages += 1;
+      }
+      for (const row of views.data ?? []) {
+        const b = buckets.get(key(row.created_at));
+        if (b) b.views += 1;
+      }
+      return [...buckets.values()];
     },
   });
 }

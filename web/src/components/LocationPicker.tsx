@@ -57,6 +57,7 @@ export function LocationPicker({
   const { t } = useLang();
   const [query, setQuery] = useState("");
   const [searching, setSearching] = useState(false);
+  const [locating, setLocating] = useState(false);
   const [noResults, setNoResults] = useState(false);
   const [recentre, setRecentre] = useState<[number, number] | null>(null);
   // react-leaflet's MapContainer is not SSR-safe; only mount it in the browser.
@@ -71,6 +72,31 @@ export function LocationPicker({
   );
 
   /** Nominatim geocoding — free, but requires a descriptive UA and 1 req/sec. */
+  /** Browser geolocation — mirrors the mobile app's GPS button. */
+  const useMyLocation = () => {
+    if (!("geolocation" in navigator)) {
+      setNoResults(true);
+      return;
+    }
+    setLocating(true);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const picked = {
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+        };
+        onChange(picked);
+        setRecentre([picked.latitude, picked.longitude]);
+        setLocating(false);
+      },
+      () => {
+        setNoResults(true);
+        setLocating(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000 },
+    );
+  };
+
   const search = async () => {
     if (!query.trim()) return;
     setSearching(true);
@@ -113,6 +139,9 @@ export function LocationPicker({
         />
         <Button type="button" variant="outline" size="sm" onClick={() => void search()}>
           {searching ? t("loc.searching") : t("nav.browse")}
+        </Button>
+        <Button type="button" variant="outline" size="sm" onClick={useMyLocation}>
+          {locating ? t("loc.searching") : `📍 ${t("loc.useMyLocation")}`}
         </Button>
         {shopLocation ? (
           <Button

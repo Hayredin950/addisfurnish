@@ -513,8 +513,12 @@ export default function ProfileScreen() {
         ) : null}
 
         {/* Account */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>{t("account")}</Text>
+        <CollapsibleSection
+          icon="person-outline"
+          title={t("account")}
+          summary={[fullName, city].filter(Boolean).join(" · ") || t("sectionSummaryNone")}
+          defaultOpen
+        >
           {user.email ? (
             <Field label={t("email")} value={user.email ?? ""} editable={false} />
           ) : null}
@@ -544,11 +548,15 @@ export default function ProfileScreen() {
             loading={savingAccount}
             disabled={savingAccount}
           />
-        </View>
+        </CollapsibleSection>
 
         {/* Shop setup */}
         {profile?.is_seller ? (
-          <View style={styles.card}>
+          <CollapsibleSection
+            icon="storefront-outline"
+            title={t("sellerShop")}
+            summary={shopName || t("noShopYet")}
+          >
             <View style={styles.cardHeader}>
               <Text style={styles.cardTitle}>{t("shopName")}</Text>
               <Pressable onPress={pickLogo}>
@@ -592,12 +600,15 @@ export default function ProfileScreen() {
               disabled={saving}
               style={{ marginTop: 12 }}
             />
-          </View>
+          </CollapsibleSection>
         ) : null}
 
         {/* Phone verification */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>{t("verifyPhone")}</Text>
+        <CollapsibleSection
+          icon="call-outline"
+          title={t("verifyPhone")}
+          summary={phoneVerified ? t("otpVerified") : t("notVerified")}
+        >
           {phoneVerified ? (
             <View style={styles.prefRow}>
               <Text style={styles.prefLabel}>{t("otpVerified")}</Text>
@@ -640,12 +651,23 @@ export default function ProfileScreen() {
               )}
             </>
           )}
-        </View>
+        </CollapsibleSection>
 
         {/* Verification */}
         {profile?.is_seller ? (
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>{t("verifyBadge")}</Text>
+          <CollapsibleSection
+            icon="shield-checkmark-outline"
+            title={t("verifyBadge")}
+            summary={
+              docStatus === "approved"
+                ? t("docStatusApproved")
+                : docStatus === "pending"
+                  ? t("docStatusPending")
+                  : docStatus === "rejected"
+                    ? t("docStatusRejected")
+                    : t("sectionSummaryNone")
+            }
+          >
             <View style={styles.docStatusRow}>
               <Text style={styles.cardHint}>
                 {docStatus === "pending"
@@ -693,12 +715,17 @@ export default function ProfileScreen() {
                 />
               </>
             ) : null}
-          </View>
+          </CollapsibleSection>
         ) : null}
 
         {/* Preferences */}
-        <View style={styles.card}>
-          <Text style={styles.cardTitle}>{t("alertPrefs")}</Text>
+        <CollapsibleSection
+          icon="notifications-outline"
+          title={t("alertPrefs")}
+          summary={`${prefs.category_ids.length} ${t("categories")} · ${
+            profile?.telegram_chat_id ? t("telegramConnected") : t("alertsOff")
+          }`}
+        >
           {telegramConfigured() ? (
             <View style={styles.telegramBlock}>
               {profile?.telegram_chat_id ? (
@@ -821,7 +848,7 @@ export default function ProfileScreen() {
             onPress={savePrefs}
             style={{ marginTop: 12 }}
           />
-        </View>
+        </CollapsibleSection>
 
         {/* Admin console */}
         {admin ? (
@@ -906,6 +933,39 @@ function QuickAction({
         {label}
       </Text>
     </Pressable>
+  );
+}
+
+function CollapsibleSection({
+  icon,
+  title,
+  summary,
+  defaultOpen = false,
+  children,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  title: string;
+  summary: string;
+  defaultOpen?: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <View style={styles.card}>
+      <Pressable style={styles.collapseHeader} onPress={() => setOpen((o) => !o)}>
+        <Ionicons name={icon} size={18} color={colors.primary} />
+        <View style={{ flex: 1 }}>
+          <Text style={styles.cardTitle}>{title}</Text>
+          {summary ? (
+            <Text style={styles.cardHint} numberOfLines={1}>
+              {summary}
+            </Text>
+          ) : null}
+        </View>
+        <Ionicons name={open ? "chevron-up" : "chevron-down"} size={16} color={colors.textSoft} />
+      </Pressable>
+      {open ? <View style={styles.collapseBody}>{children}</View> : null}
+    </View>
   );
 }
 
@@ -1112,4 +1172,6 @@ const styles = StyleSheet.create({
   footer: { alignItems: "center", gap: 8, paddingTop: spacing.xl },
   signOut: { fontSize: 15, color: colors.danger, fontWeight: "700" },
   about: { fontSize: 12, color: colors.textSoft, textAlign: "center" },
+  collapseHeader: { flexDirection: "row", alignItems: "center", gap: 10 },
+  collapseBody: { marginTop: 14 },
 });

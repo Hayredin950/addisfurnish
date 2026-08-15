@@ -464,6 +464,76 @@ export async function fetchAdminStats(): Promise<AdminStats> {
   };
 }
 
+export type TrendDay = {
+  date: string;
+  label: string;
+  listings: number;
+  users: number;
+  messages: number;
+  views: number;
+};
+
+/** Daily activity series for the admin trend chart (zero-filled, like web). */
+export async function fetchAdminTrend(days: number): Promise<TrendDay[]> {
+  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+  const [listings, users, messages, views] = await Promise.all([
+    supabase.from("listings").select("created_at").gte("created_at", since),
+    supabase.from("profiles").select("created_at").gte("created_at", since),
+    supabase.from("messages").select("created_at").gte("created_at", since),
+    supabase.from("listing_views").select("created_at").gte("created_at", since),
+  ]);
+  if (listings.error) throw listings.error;
+  if (users.error) throw users.error;
+  if (messages.error) throw messages.error;
+  if (views.error) throw views.error;
+
+  const buckets = new Map<string, TrendDay>();
+  const key = (iso: string) => iso.slice(0, 10);
+  const label = (d: Date) => `${d.getMonth() + 1}/${d.getDate()}`;
+  for (let i = days - 1; i >= 0; i--) {
+    const d = new Date(Date.now() - i * 24 * 60 * 60 * 1000);
+    const k = key(d.toISOString());
+    buckets.set(k, { date: k, label: label(d), listings: 0, users: 0, messages: 0, views: 0 });
+  }
+  for (const row of listings.data ?? []) {
+    const b = buckets.get(key(row.created_at));
+    if (b) b.listings += 1;
+  }
+  for (const row of users.data ?? []) {
+    const b = buckets.get(key(row.created_at));
+    if (b) b.users += 1;
+  }
+  for (const row of messages.data ?? []) {
+    const b = buckets.get(key(row.created_at));
+    if (b) b.messages += 1;
+  }
+  for (const row of views.data ?? []) {
+    const b = buckets.get(key(row.created_at));
+    if (b) b.views += 1;
+  }
+  return [...buckets.values()];
+}
+
+/** Top search terms with counts, this week (bars, web parity). */
+export async function fetchAdminTopSearches(): Promise<{ name: string; count: number }[]> {
+  const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const { data, error } = await supabase
+    .from("search_log")
+    .select("query")
+    .gte("created_at", weekAgo);
+  if (error) throw error;
+  const counts = new Map<string, number>();
+  for (const row of data ?? []) {
+    const q = (row.query ?? "").trim().toLowerCase();
+    if (!q) continue;
+    counts.set(q, (counts.get(q) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 6)
+    .map(([name, count]) => ({ name, count }));
+}
+
 export async function fetchAdminTopCategories(): Promise<{ name: string; count: number }[]> {
   const { data, error } = await supabase
     .from("listings")
