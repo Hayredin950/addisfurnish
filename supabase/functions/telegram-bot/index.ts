@@ -55,7 +55,7 @@ const COPY = {
     expired:
       "This link has expired — they're valid for 15 minutes. Open your AddisFurnish profile and tap “Connect Telegram” for a new one.",
     noToken:
-      `Hello! 👋 I send AddisFurnish alerts.\n\nTo connect, open your profile on the website — <a href="${SITE_URL}">addisfurnish.vercel.app</a> — and tap “Connect Telegram”.`,
+      `Hello! 👋 I send AddisFurnish alerts.\n\nTo connect, open <a href="${SITE_URL}/profile?connect=telegram">your profile on addisfurnish.vercel.app</a> and tap “Connect Telegram”.`,
     joinAsk:
       "Almost done! 🎉\n\nTo start receiving alerts, please join our channel and tap the button below.",
     joinButton: "✅ I've joined — verify",
@@ -70,7 +70,7 @@ const COPY = {
     stopped:
       "🔕 Disconnected. You won't get any more alerts here.\n\nReconnect any time from your AddisFurnish profile.",
     notLinked:
-      `This chat isn't connected to an AddisFurnish account.\n\nOpen <a href="${SITE_URL}">addisfurnish.vercel.app</a>, sign in, and tap “Connect Telegram” in your profile.`,
+      `This chat isn't connected to an AddisFurnish account.\n\nOpen <a href="${SITE_URL}/profile?connect=telegram">your AddisFurnish profile</a>, sign in, and tap “Connect Telegram”.`,
     help: (site: string) =>
       `I deliver AddisFurnish alerts — new messages, callback requests, and listings matching your saved preferences.\n\n/start — connect your account\n/join — join our channel (required before alerts start)\n/find — browse the marketplace\n/saved — your saved items\n/mylistings — your active listings\n/inquiries — your messages\n/alerts — manage saved-search alerts\n/account — account summary\n/sell — create a draft listing from here\n/lang — switch language (English / አማርኛ)\n/stop — stop alerts\n/help — this message${
         site ? `\n\n${site}` : ""
@@ -138,7 +138,7 @@ const COPY = {
     expired:
       "የዚህ ሊንክ ጊዜ አልፎበታል — ለ15 ደቂቃ ብቻ ይሰራል። የAddisFurnish መገለጫዎን ከፍተው አዲስ ያግኙ።",
     noToken:
-      `ሰላም! 👋 የAddisFurnish ማሳወቂያዎችን እልካለሁ።\n\nለማገናኘት በድረ-ገጹ ላይ <a href="${SITE_URL}">addisfurnish.vercel.app</a> የAddisFurnish መገለጫዎን ከፍተው “ቴሌግራም አገናኝ” ይጫኑ።`,
+      `ሰላም! 👋 የAddisFurnish ማሳወቂያዎችን እልካለሁ።\n\nለማገናኘት <a href="${SITE_URL}/profile?connect=telegram">በaddisfurnish.vercel.app ላይ መገለጫዎን</a> ከፍተው “ቴሌግራም አገናኝ” ይጫኑ።`,
     joinAsk:
       "ተይቶ ተጠናቋል! 🎉\n\nማሳወቂያ መቀበል ለመጀመር እባክዎ ቻናላችንን ይቀላቀሉ እና ከታች ያለውን ቁልፍ ይጫኑ።",
     joinButton: "✅ ተቀላቅያለሁ — አረጋግጥ",
@@ -152,7 +152,7 @@ const COPY = {
     alreadyVerified: "✅ አስቀድመው ተረጋግጠዋል — ማሳወቂያዎች ንቁ ናቸው። ምንም አይጠበቅም!",
     stopped: "🔕 ተቋርጧል። ከዚህ በኋላ ማሳወቂያ አይደርስዎትም።\n\nበማንኛውም ጊዜ ከመገለጫዎ እንደገና ማገናኘት ይችላሉ።",
     notLinked:
-      `ይህ ውይይት ከAddisFurnish መለያ ጋር አልተገናኘም።\n\nበድረ-ገጹ ላይ <a href="${SITE_URL}">addisfurnish.vercel.app</a> ይክፈቱ፣ ይግቡ እና በመገለጫዎ ውስጥ “ቴሌግራም አገናኝ” ይጫኑ።`,
+      `ይህ ውይይት ከAddisFurnish መለያ ጋር አልተገናኘም።\n\n<a href="${SITE_URL}/profile?connect=telegram">የAddisFurnish መገለጫዎን</a> ይክፈቱ፣ ይግቡ እና “ቴሌግራም አገናኝ” ይጫኑ።`,
     help: (site: string) =>
       `የAddisFurnish ማሳወቂያዎችን አደርሳለሁ — አዲስ መልእክቶች፣ የጥሪ ጥያቄዎች እና ከምርጫዎ ጋር የሚስማሙ ዕቃዎች።\n\n/start — መለያዎን ያገናኙ\n/join — ቻናላችንን ይቀላቀሉ (ማሳወቂያ ከመጀመሩ በፊት ያስፈልጋል)\n/find — ገበያውን ያስሱ\n/saved — የተቀመጡ እቃዎችዎ\n/mylistings — ንቁ ማስታወቂያዎችዎ\n/inquiries — መልእክቶችዎ\n/alerts — የተቀመጡ ፍለጋዎችን ያስተዳድሩ\n/account — የመለያ ማጠቃለያ\n/sell — ከዚህ የረቂቅ ማስታወቂያ ይፍጠሩ\n/lang — ቋንቋ ይቀይሩ (English / አማርኛ)\n/stop — ማሳወቂያ ያቁሙ\n/help — ይህ መልእክት${
         site ? `\n\n${site}` : ""
@@ -676,38 +676,51 @@ Deno.serve(async (req) => {
 
   // ── Callback query: "✅ I've joined — verify" ─────────────────────────
   if (callback?.data === "verify_channel_join") {
-    const cbChatId = (callback.message?.chat?.id ?? callback.from?.id) as number | undefined;
-    const cbUserId = (callback.from?.id ?? cbChatId) as number | undefined;
-    if (!cbChatId || !cbUserId) {
-      await answerCallback(callback.id ?? "", "Something went wrong — try again.");
+    // Everything below must end in the button being answered and the user
+    // seeing SOME message — a silent dead end (spinner, then nothing) is the
+    // failure the last round of fixes was for. The inner helpers already
+    // swallow their own errors, but any unexpected throw must still ack the
+    // callback and say what happened instead of returning a bare 500.
+    try {
+      const cbChatId = (callback.message?.chat?.id ?? callback.from?.id) as number | undefined;
+      const cbUserId = (callback.from?.id ?? cbChatId) as number | undefined;
+      if (!cbChatId || !cbUserId) {
+        await answerCallback(callback.id ?? "", "Something went wrong — try again.");
+        return new Response("ok", { status: 200 });
+      }
+
+      const { data: cbProfile } = await supabase
+        .from("profiles")
+        .select("id, preferred_language, telegram_chat_id, telegram_channel_joined_at")
+        .eq("telegram_chat_id", String(cbChatId))
+        .maybeSingle();
+      const cbCopy = COPY[cbProfile?.preferred_language === "am" ? "am" : "en"];
+
+      if (!cbProfile) {
+        await answerCallback(callback.id ?? "", cbCopy.notLinked);
+        return new Response("ok", { status: 200 });
+      }
+      if (cbProfile.telegram_channel_joined_at) {
+        // Toast + a persistent chat message — a transient toast alone reads as
+        // "nothing happened" when the button spinner clears.
+        await answerCallback(callback.id ?? "", cbCopy.alreadyVerified);
+        await sendMessage(cbChatId, cbCopy.alreadyVerified);
+        return new Response("ok", { status: 200 });
+      }
+
+      // Ack the tap FIRST so the button never spins while the membership
+      // check runs — the result arrives as a normal message right after.
+      await answerCallback(callback.id ?? "", "");
+      const outcome = await verifyAndMark(supabase, cbProfile.id, cbUserId);
+      await sendMessage(cbChatId, outcome === "verified" ? cbCopy.joinVerified : cbCopy.joinNotYet);
+      return new Response("ok", { status: 200 });
+    } catch (err) {
+      console.error("verify_channel_join failed:", err);
+      const errChat = (callback.message?.chat?.id ?? callback.from?.id) as number | undefined;
+      await answerCallback(callback.id ?? "", "Something went wrong — try again in a moment.");
+      if (errChat) await sendMessage(errChat, COPY.en.joinFailed);
       return new Response("ok", { status: 200 });
     }
-
-    const { data: cbProfile } = await supabase
-      .from("profiles")
-      .select("id, preferred_language, telegram_chat_id, telegram_channel_joined_at")
-      .eq("telegram_chat_id", String(cbChatId))
-      .maybeSingle();
-    const cbCopy = COPY[cbProfile?.preferred_language === "am" ? "am" : "en"];
-
-    if (!cbProfile) {
-      await answerCallback(callback.id ?? "", cbCopy.notLinked);
-      return new Response("ok", { status: 200 });
-    }
-    if (cbProfile.telegram_channel_joined_at) {
-      // Toast + a persistent chat message — a transient toast alone reads as
-      // "nothing happened" when the button spinner clears.
-      await answerCallback(callback.id ?? "", cbCopy.alreadyVerified);
-      await sendMessage(cbChatId, cbCopy.alreadyVerified);
-      return new Response("ok", { status: 200 });
-    }
-
-    // Ack the tap FIRST so the button never spins while the membership
-    // check runs — the result arrives as a normal message right after.
-    await answerCallback(callback.id ?? "", "");
-    const outcome = await verifyAndMark(supabase, cbProfile.id, cbUserId);
-    await sendMessage(cbChatId, outcome === "verified" ? cbCopy.joinVerified : cbCopy.joinNotYet);
-    return new Response("ok", { status: 200 });
   }
 
   const message = body.message;

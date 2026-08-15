@@ -32,6 +32,13 @@ import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 
 export const Route = createFileRoute("/profile")({
+  // Deep link from the Telegram bot: /profile?connect=telegram scrolls to and
+  // highlights the Connect Telegram section so the user finds it instantly.
+  validateSearch: (search: Record<string, unknown>): { connect?: string } => {
+    const connect = typeof search["connect"] === "string" ? search["connect"] : undefined;
+    // exactOptionalPropertyTypes: omit the key entirely when absent.
+    return connect ? { connect } : {};
+  },
   head: () => ({
     meta: [
       { title: "Your Profile & Shop — AddisFurnish" },
@@ -233,6 +240,20 @@ function ProfilePage() {
     toast.success(t("profile.telegramDisconnected"));
   };
 
+  const { connect } = Route.useSearch();
+  const telegramRef = useRef<HTMLDivElement>(null);
+  const [flashTelegram, setFlashTelegram] = useState(false);
+  useEffect(() => {
+    if (connect !== "telegram") return;
+    // Let the section mount (and the profile finish loading) before scrolling.
+    const scroll = setTimeout(() => {
+      telegramRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      setFlashTelegram(true);
+      setTimeout(() => setFlashTelegram(false), 2600);
+    }, 350);
+    return () => clearTimeout(scroll);
+  }, [connect]);
+
   return (
     <div className="mx-auto max-w-xl px-4 py-12">
       <h1 className="font-display text-3xl font-semibold">{t("nav.profile")}</h1>
@@ -429,7 +450,12 @@ function ProfilePage() {
         ) : null}
 
         {telegramConfigured() ? (
-          <div className="rounded-lg border border-dashed bg-secondary/40 p-4">
+          <div
+            ref={telegramRef}
+            className={`rounded-lg border border-dashed bg-secondary/40 p-4 transition-shadow ${
+              flashTelegram ? "ring-2 ring-primary" : ""
+            }`}
+          >
             <p className="text-sm font-medium">{t("profile.telegramConnect")}</p>
             {profile?.telegram_chat_id ? (
               <>

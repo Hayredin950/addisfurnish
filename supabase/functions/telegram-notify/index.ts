@@ -113,7 +113,7 @@ function viewButton(
 function replyButton(conversationId?: string): Record<string, unknown>[] | undefined {
   if (!SITE_URL) return undefined;
   return [{
-    text: "Reply now",
+    text: "💬 Reply now",
     url: conversationId
       ? `${SITE_URL}/messages?conv=${encodeURIComponent(conversationId)}`
       : `${SITE_URL}/messages`,
@@ -566,7 +566,9 @@ async function handleNotification(
         type === "new_message" && payload.conversationId
           ? (() => {
               const url = `${SITE_URL}/messages?conv=${encodeURIComponent(payload.conversationId)}`;
-              return SITE_URL ? [{ text: "Open conversation", url }] : undefined;
+              // Same label as the no-listing new-message card — one voice
+              // across every message notification.
+              return SITE_URL ? [{ text: "💬 Reply now", url }] : undefined;
             })()
           : viewButton(listing.id);
       const photo = coverUrl(listing, SUPABASE_URL);
