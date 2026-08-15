@@ -568,6 +568,12 @@ Deno.serve(async (req) => {
       .from("telegram_processed_updates")
       .insert({ update_id: updateId });
     if (dupErr) {
+      // A retried update is normally a no-op — but a retried CALLBACK must
+      // still clear the button spinner. The first attempt may have died
+      // mid-request (slow cold start), so Telegram redelivered the same
+      // update and the user is staring at a spinning button.
+      const retryCb = body.callback_query as { id?: string } | undefined;
+      if (retryCb?.id) await answerCallback(retryCb.id, "");
       return new Response("ok", { status: 200 }); // already processed
     }
   }
@@ -691,13 +697,11 @@ Deno.serve(async (req) => {
       return new Response("ok", { status: 200 });
     }
 
+    // Ack the tap FIRST so the button never spins while the membership
+    // check runs — the result arrives as a normal message right after.
+    await answerCallback(callback.id ?? "", "");
     const outcome = await verifyAndMark(supabase, cbProfile.id, cbUserId);
-    if (outcome === "verified") {
-      await answerCallback(callback.id ?? "", "✅");
-      await sendMessage(cbChatId, cbCopy.joinVerified);
-    } else {
-      await answerCallback(callback.id ?? "", cbCopy.joinNotYet);
-    }
+    await sendMessage(cbChatId, outcome === "verified" ? cbCopy.joinVerified : cbCopy.joinNotYet);
     return new Response("ok", { status: 200 });
   }
 
