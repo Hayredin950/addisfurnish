@@ -9,7 +9,13 @@
 //   supabase functions deploy telegram-bot
 //   curl -X POST "https://api.telegram.org/bot<TOKEN>/setWebhook" \
 //     -d "url=https://<project>.supabase.co/functions/v1/telegram-bot" \
-//     -d "secret_token=<TELEGRAM_WEBHOOK_SECRET>"
+//     -d "secret_token=<TELEGRAM_WEBHOOK_SECRET>" \
+//     --data-urlencode 'allowed_updates=["message","callback_query"]'
+//
+// ⚠️ allowed_updates MUST include callback_query, or inline-button taps (the
+// "✅ I've joined — verify" button, category pickers in /sell) are silently
+// dropped and the button spins forever. Omitting the flag made the verify
+// button dead in production once.
 //
 // This function runs with verify_jwt = false (see supabase/config.toml) —
 // Telegram's webhook POST carries no Authorization header, so Supabase must
@@ -268,7 +274,11 @@ async function downloadTelegramFile(fileId: string): Promise<Uint8Array | null> 
   }
 }
 
-// replyMarkup carries the request_contact keyboard during phone verification,
+// The single acceptable fallback image — used only when no shop logo, listing
+// photo or avatar exists for the message being sent.
+const ADDISFURNISH_LOGO_URL = `${SITE_URL}/logo-mark.png`;
+
+// ReplyMarkup carries the request_contact keyboard during phone verification,
 // and { remove_keyboard: true } to clear it again afterwards.
 async function sendMessage(chatId: number, text: string, replyMarkup?: unknown): Promise<boolean> {
   if (!BOT_TOKEN) return false;
@@ -301,6 +311,65 @@ async function sendMessage(chatId: number, text: string, replyMarkup?: unknown):
 }
 
 /**
+ * Send a photo message (the bot's signature card) with an optional inline
+ * keyboard. Falls back to the AddisFurnish logo when no real photo exists,
+ * and to a plain message when the photo fails to send (a dead photo URL must
+ * never make a user lose the text). Returns the message_id when sent, so
+ * callers can edit/delete the card later.
+ */
+async function sendPhoto(
+  chatId: number,
+  photoUrl: string | null,
+  caption: string,
+  replyMarkup?: unknown,
+): Promise<number | null> {
+  if (!BOT_TOKEN) return null;
+  const photo = photoUrl || ADDISFURNISH_LOGO_URL;
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        photo,
+        caption: caption.slice(0, 1024), // 1024 is Telegram's photo-caption cap.
+        parse_mode: "HTML",
+        ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
+      }),
+    });
+    const body = (await res.json().catch(() => null)) as {
+      ok?: boolean;
+      result?: { message_id?: number };
+      description?: string;
+      error_code?: number;
+    } | null;
+    if (!res.ok || !body?.ok) {
+      await logSend("webhook", String(chatId), false, body?.description ?? `HTTP ${res.status}`);
+      if (body?.error_code === 403) await markBlocked(String(chatId));
+      return null;
+    }
+    await logSend("webhook", String(chatId), true, null);
+    return body.result?.message_id ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Delete a bot message (used to clear the onboarding card after verify). */
+async function deleteMessage(chatId: number, messageId: number | null | undefined) {
+  if (!BOT_TOKEN || !messageId) return;
+  try {
+    await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/deleteMessage`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ chat_id: chatId, message_id: messageId }),
+    });
+  } catch {
+    // Best-effort — an undelatable message must not block anything.
+  }
+}
+
+/**
  * Inline "join the channel" prompt with a Join button and a verify button.
  * The Join URL is derived from TELEGRAM_CHANNEL_ID (t.me/<username> for
  * @username, the raw link for t.me/... links; numeric ids can't build a
@@ -320,28 +389,20 @@ function channelJoinUrl(): string | null {
   return null;
 }
 
-async function sendChannelPrompt(chatId: number, text: string, verifyLabel: string) {
-  if (!BOT_TOKEN || !CHANNEL_ID) return;
+async function sendChannelPrompt(
+  chatId: number,
+  text: string,
+  verifyLabel: string,
+  logoUrl?: string | null,
+): Promise<number | null> {
+  if (!BOT_TOKEN || !CHANNEL_ID) return null;
   const url = channelJoinUrl();
-  try {
-    await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text: text.slice(0, 4096),
-        parse_mode: "HTML",
-        reply_markup: {
-          inline_keyboard: [
-            ...(url ? [[{ text: "📢 Join channel", url }]] : []),
-            [{ text: verifyLabel, callback_data: "verify_channel_join" }],
-          ],
-        },
-      }),
-    });
-  } catch {
-    // Telegram unreachable — nothing useful to do inside a webhook.
-  }
+  return sendPhoto(chatId, logoUrl ?? null, text, {
+    inline_keyboard: [
+      ...(url ? [[{ text: "📢 Join channel", url }]] : []),
+      [{ text: verifyLabel, callback_data: "verify_channel_join" }],
+    ],
+  });
 }
 
 async function answerCallback(callbackQueryId: string, text?: string) {
@@ -442,13 +503,13 @@ async function sendCategoryPicker(supabase: ReturnType<typeof createClient>, cha
     );
   }
   kb.push([{ text: copy.sellCancel, callback_data: "sell_cancel" }]);
-  await sendMessage(chatId, copy.sellCategory, { inline_keyboard: kb });
+  await sendPhoto(chatId, null, copy.sellCategory, { inline_keyboard: kb });
 }
 
 async function sendConditionPicker(chatId: number, copy: (typeof COPY)[Lang]) {
   const kb = CONDITIONS.map((o) => [{ text: o, callback_data: `sell_cond:${o}` }]);
   kb.push([{ text: copy.sellCancel, callback_data: "sell_cancel" }]);
-  await sendMessage(chatId, copy.sellCondition, { inline_keyboard: kb });
+  await sendPhoto(chatId, null, copy.sellCondition, { inline_keyboard: kb });
 }
 
 /**
@@ -468,7 +529,7 @@ async function finalizeSellDraft(
     .eq("id", session.category_id ?? "")
     .maybeSingle();
   const price = Number(session.price);
-  await sendMessage(chatId, copy.sellCreating);
+  await sendPhoto(chatId, null, copy.sellCreating);
 
   // Telegram photo → storage.
   const paths: string[] = [];
@@ -500,7 +561,7 @@ async function finalizeSellDraft(
     .single();
   if (error || !draft) {
     console.error("sell draft create failed", error);
-    await sendMessage(chatId, copy.invalid);
+    await sendPhoto(chatId, null, copy.invalid);
     return;
   }
   if (paths.length > 0) {
@@ -510,10 +571,18 @@ async function finalizeSellDraft(
   }
   await supabase.from("telegram_sell_sessions").delete().eq("id", session.id);
 
+  // The draft card uses the seller's own first photo, never the logo.
+  const coverPath = paths[0];
+  const draftPhoto = coverPath
+    ? `${SUPABASE_URL}/storage/v1/object/public/listing-images/${coverPath}`
+    : null;
   const finishUrl = `${SITE_URL}/sell?edit=${draft.id}`;
-  await sendMessage(chatId, copy.sellDone(`🏷️ ${cat?.name ?? ""} · 💰 ${price.toLocaleString()} ETB · 📍 ${session.city ?? "—"}`), {
-    inline_keyboard: [[{ text: copy.sellFinishButton, url: finishUrl }]],
-  });
+  await sendPhoto(
+    chatId,
+    draftPhoto,
+    copy.sellDone(`🏷️ ${cat?.name ?? ""} · 💰 ${price.toLocaleString()} ETB · 📍 ${session.city ?? "—"}`),
+    { inline_keyboard: [[{ text: copy.sellFinishButton, url: finishUrl }]] },
+  );
 }
 
 // Mirror of normalizePhone in web/src/lib/otp.ts. Duplicated rather than
@@ -691,20 +760,32 @@ Deno.serve(async (req) => {
 
       const { data: cbProfile } = await supabase
         .from("profiles")
-        .select("id, preferred_language, telegram_chat_id, telegram_channel_joined_at")
+        .select(
+          "id, preferred_language, telegram_chat_id, telegram_channel_joined_at, telegram_pending_message_id, shop_logo_url",
+        )
         .eq("telegram_chat_id", String(cbChatId))
         .maybeSingle();
       const cbCopy = COPY[cbProfile?.preferred_language === "am" ? "am" : "en"];
+      const cbLogo =
+        (cbProfile?.shop_logo_url as string | null | undefined) ?? null;
 
       if (!cbProfile) {
         await answerCallback(callback.id ?? "", cbCopy.notLinked);
         return new Response("ok", { status: 200 });
       }
       if (cbProfile.telegram_channel_joined_at) {
-        // Toast + a persistent chat message — a transient toast alone reads as
-        // "nothing happened" when the button spinner clears.
+        // Already verified: clear any stale onboarding card and reply with a
+        // photo card instead of plain text.
+        await deleteMessage(
+          cbChatId,
+          cbProfile.telegram_pending_message_id as number | null | undefined,
+        );
+        await supabase
+          .from("profiles")
+          .update({ telegram_pending_message_id: null })
+          .eq("id", cbProfile.id);
         await answerCallback(callback.id ?? "", cbCopy.alreadyVerified);
-        await sendMessage(cbChatId, cbCopy.alreadyVerified);
+        await sendPhoto(cbChatId, cbLogo, cbCopy.alreadyVerified);
         return new Response("ok", { status: 200 });
       }
 
@@ -712,7 +793,32 @@ Deno.serve(async (req) => {
       // check runs — the result arrives as a normal message right after.
       await answerCallback(callback.id ?? "", "");
       const outcome = await verifyAndMark(supabase, cbProfile.id, cbUserId);
-      await sendMessage(cbChatId, outcome === "verified" ? cbCopy.joinVerified : cbCopy.joinNotYet);
+      if (outcome === "verified") {
+        // Cleanup: the onboarding card is dead UI now — delete it and replace
+        // with a single celebration card.
+        await deleteMessage(
+          cbChatId,
+          cbProfile.telegram_pending_message_id as number | null | undefined,
+        );
+        await supabase
+          .from("profiles")
+          .update({ telegram_pending_message_id: null })
+          .eq("id", cbProfile.id);
+      }
+      if (outcome === "verified") {
+        await sendPhoto(cbChatId, cbLogo, cbCopy.joinVerified);
+      } else {
+        // Not a member yet: resend the prompt card with the Join + Verify
+        // buttons attached, so the user can retry in one tap instead of
+        // being left at a dead-end message.
+        const retryId = await sendChannelPrompt(cbChatId, cbCopy.joinNotYet, cbCopy.joinButton, cbLogo);
+        if (retryId) {
+          await supabase
+            .from("profiles")
+            .update({ telegram_pending_message_id: retryId })
+            .eq("id", cbProfile.id);
+        }
+      }
       return new Response("ok", { status: 200 });
     } catch (err) {
       console.error("verify_channel_join failed:", err);
@@ -736,7 +842,9 @@ Deno.serve(async (req) => {
   // Language follows the account when this chat is already linked.
   const { data: current } = await supabase
     .from("profiles")
-    .select("id, preferred_language, telegram_channel_joined_at, telegram_blocked")
+    .select(
+      "id, preferred_language, telegram_channel_joined_at, telegram_blocked, telegram_pending_message_id, shop_logo_url, full_name, shop_name",
+    )
     .eq("telegram_chat_id", String(chatId))
     .maybeSingle();
   // If the bot can receive a message from this chat, the user isn't blocking
@@ -749,7 +857,9 @@ Deno.serve(async (req) => {
 
   // /help works for linked and unlinked chats alike.
   if (text === "/help") {
-    await sendMessage(chatId, copy.help(SITE_URL));
+    await sendPhoto(chatId, null, copy.help(SITE_URL), {
+      inline_keyboard: [[{ text: "🌐 Open AddisFurnish", url: SITE_URL }]],
+    });
     return new Response("ok", { status: 200 });
   }
 
@@ -849,7 +959,29 @@ Deno.serve(async (req) => {
   if (text.startsWith("/start")) {
     const token = text.slice("/start".length).trim();
     if (!token) {
-      await sendMessage(chatId, copy.noToken);
+      // Linked chat: a menu of the marketplace shortcuts. Unlinked: the
+      // welcome card with a connect button — both photo cards.
+      if (current) {
+        const logo = (current.shop_logo_url as string | null) ?? null;
+        const name = (current.full_name as string | null) ?? (current.shop_name as string | null) ?? "";
+        await sendPhoto(
+          chatId,
+          logo,
+          `👋 <b>Welcome back, ${name || "friend"}!</b>\n\nWhat would you like to do?`,
+          {
+            inline_keyboard: [
+              [{ text: "🔎 Find an item", url: `${SITE_URL}/browse` }, { text: "➕ Sell an item", url: `${SITE_URL}/sell` }],
+              [{ text: "❤️ Saved items", url: `${SITE_URL}/favorites` }, { text: "📦 My listings", url: `${SITE_URL}/dashboard` }],
+              [{ text: "💬 My inquiries", url: `${SITE_URL}/messages` }, { text: "🔔 My alerts", url: `${SITE_URL}/profile` }],
+              [{ text: "👤 My account", url: `${SITE_URL}/profile` }],
+            ],
+          },
+        );
+      } else {
+        await sendPhoto(chatId, null, copy.noToken, {
+          inline_keyboard: [[{ text: "🌐 Open AddisFurnish", url: `${SITE_URL}/profile?connect=telegram` }]],
+        });
+      }
       return new Response("ok", { status: 200 });
     }
 
@@ -889,7 +1021,9 @@ Deno.serve(async (req) => {
 
     const { data: profile } = await supabase
       .from("profiles")
-      .select("id, shop_name, full_name, preferred_language, telegram_link_token_expires_at")
+      .select(
+        "id, shop_name, full_name, shop_logo_url, preferred_language, telegram_link_token_expires_at",
+      )
       .eq("telegram_link_token", token)
       .maybeSingle();
 
@@ -935,30 +1069,53 @@ Deno.serve(async (req) => {
       (profile.shop_name as string | null) ??
       (profile.full_name as string | null) ??
       "AddisFurnish";
-    await sendMessage(chatId, linkedCopy.linked(name));
+    const logo = (profile.shop_logo_url as string | null | undefined) ?? null;
 
-    // Channel gate: if a channel is configured, new links must join and verify
-    // before alerts flow (telegram-notify skips chats without the flag).
+    // Channel gate: new links must join and verify before alerts flow
+    // (telegram-notify skips chats without the flag). The "Connected" text
+    // and the join prompt ship as ONE photo card with both actions attached
+    // — no two-step plain-text clutter. Its message_id is remembered so the
+    // card can be deleted once the user verifies.
     if (CHANNEL_ID) {
-      await sendChannelPrompt(chatId, linkedCopy.joinAsk, linkedCopy.joinButton);
+      const combined = `${linkedCopy.linked(name)}\n\n${linkedCopy.joinAsk}`;
+      const messageId = await sendChannelPrompt(chatId, combined, linkedCopy.joinButton, logo);
+      if (messageId) {
+        await supabase
+          .from("profiles")
+          .update({ telegram_pending_message_id: messageId })
+          .eq("id", profile.id);
+      }
+    } else {
+      await sendPhoto(chatId, logo, linkedCopy.linked(name));
     }
     return new Response("ok", { status: 200 });
   }
 
   if (text.startsWith("/join")) {
     if (!current) {
-      await sendMessage(chatId, copy.notLinked);
+      await sendPhoto(chatId, null, copy.notLinked);
       return new Response("ok", { status: 200 });
     }
     if (current.telegram_channel_joined_at) {
-      await sendMessage(chatId, copy.alreadyVerified);
+      await sendPhoto(chatId, (current.shop_logo_url as string | null) ?? null, copy.alreadyVerified);
       return new Response("ok", { status: 200 });
     }
     if (!CHANNEL_ID) {
       await sendMessage(chatId, copy.joinNotFound);
       return new Response("ok", { status: 200 });
     }
-    await sendChannelPrompt(chatId, copy.joinAsk, copy.joinButton);
+    const messageId = await sendChannelPrompt(
+      chatId,
+      copy.joinAsk,
+      copy.joinButton,
+      (current.shop_logo_url as string | null) ?? null,
+    );
+    if (messageId) {
+      await supabase
+        .from("profiles")
+        .update({ telegram_pending_message_id: messageId })
+        .eq("id", current.id);
+    }
     return new Response("ok", { status: 200 });
   }
 
@@ -966,11 +1123,11 @@ Deno.serve(async (req) => {
   // triggered by typing instead of a tap.
   if (text.startsWith("/verifyjoin")) {
     if (!current) {
-      await sendMessage(chatId, copy.notLinked);
+      await sendPhoto(chatId, null, copy.notLinked);
       return new Response("ok", { status: 200 });
     }
     if (current.telegram_channel_joined_at) {
-      await sendMessage(chatId, copy.alreadyVerified);
+      await sendPhoto(chatId, (current.shop_logo_url as string | null) ?? null, copy.alreadyVerified);
       return new Response("ok", { status: 200 });
     }
     if (!CHANNEL_ID) {
@@ -978,13 +1135,30 @@ Deno.serve(async (req) => {
       return new Response("ok", { status: 200 });
     }
     const outcome = await verifyAndMark(supabase, current.id, message.from?.id ?? chatId);
-    await sendMessage(chatId, outcome === "verified" ? copy.joinVerified : copy.joinNotYet);
+    if (outcome === "verified") {
+      // Same cleanup as the button path: drop the onboarding card.
+      await deleteMessage(chatId, current.telegram_pending_message_id as number | null | undefined);
+      await supabase.from("profiles").update({ telegram_pending_message_id: null }).eq("id", current.id);
+      await sendPhoto(chatId, (current.shop_logo_url as string | null) ?? null, copy.joinVerified);
+    } else {
+      // Not a member yet: hand back the Join + Verify buttons for one-tap
+      // retry rather than a dead-end message.
+      const retryId = await sendChannelPrompt(
+        chatId,
+        copy.joinNotYet,
+        copy.joinButton,
+        (current.shop_logo_url as string | null) ?? null,
+      );
+      if (retryId) {
+        await supabase.from("profiles").update({ telegram_pending_message_id: retryId }).eq("id", current.id);
+      }
+    }
     return new Response("ok", { status: 200 });
   }
 
   if (text.startsWith("/stop")) {
     if (!current) {
-      await sendMessage(chatId, copy.notLinked);
+      await sendPhoto(chatId, null, copy.notLinked);
       return new Response("ok", { status: 200 });
     }
     await supabase
@@ -994,19 +1168,20 @@ Deno.serve(async (req) => {
         telegram_linked_at: null,
         telegram_link_token: null,
         telegram_link_token_expires_at: null,
+        telegram_pending_message_id: null,
         ...PENDING_CLEARED,
       })
       .eq("id", current.id);
-    await sendMessage(chatId, copy.stopped, { remove_keyboard: true });
+    await sendPhoto(chatId, null, copy.stopped, { remove_keyboard: true });
     return new Response("ok", { status: 200 });
   }
 
   if (text.startsWith("/lang")) {
     if (!current) {
-      await sendMessage(chatId, copy.notLinked);
+      await sendPhoto(chatId, null, copy.notLinked);
       return new Response("ok", { status: 200 });
     }
-    await sendMessage(chatId, copy.langAsk, {
+    await sendPhoto(chatId, null, copy.langAsk, {
       inline_keyboard: [
         [
           { text: "English 🇬🇧", callback_data: "lang:en" },
@@ -1023,54 +1198,176 @@ Deno.serve(async (req) => {
   // the same "connect first" message instead of an error.
   if (text.startsWith("/find")) {
     if (!SITE_URL) {
-      await sendMessage(chatId, copy.invalid);
+      await sendPhoto(chatId, null, copy.invalid);
       return new Response("ok", { status: 200 });
     }
-    await sendMessage(chatId, copy.findIntro, {
-      inline_keyboard: [[{ text: copy.findButton, url: SITE_URL }]],
+    await sendPhoto(chatId, null, copy.findIntro, {
+      inline_keyboard: [[{ text: copy.findButton, url: `${SITE_URL}/browse` }]],
     });
     return new Response("ok", { status: 200 });
   }
 
   if (text.startsWith("/saved")) {
     if (!current) {
-      await sendMessage(chatId, copy.notLinked);
+      await sendPhoto(chatId, null, copy.notLinked);
       return new Response("ok", { status: 200 });
     }
-    await sendMessage(chatId, copy.savedIntro, {
-      inline_keyboard: [[{ text: copy.savedButton, url: `${SITE_URL}/favorites` }]],
-    });
+    const { data: saved } = await supabase
+      .from("favorites")
+      .select(
+        "listing_id, listings(id,title,price,negotiable,city,listing_images(url,position))",
+      )
+      .eq("user_id", current.id)
+      .order("created_at", { ascending: false })
+      .limit(6);
+    const savedRows = (saved ?? []) as {
+      listings: {
+        id: string;
+        title: string;
+        price: number;
+        negotiable: boolean;
+        city: string | null;
+        listing_images: { url: string; position: number }[] | null;
+      } | null;
+    }[];
+    const items = savedRows
+      .map((r) => r.listings)
+      .filter((l): l is NonNullable<typeof l> => !!l);
+    if (items.length === 0) {
+      await sendPhoto(chatId, null, copy.savedIntro, {
+        inline_keyboard: [[{ text: copy.savedButton, url: `${SITE_URL}/browse` }]],
+      });
+      return new Response("ok", { status: 200 });
+    }
+    // One card per saved item, real listing photo.
+    for (const item of items) {
+      const cover = [...(item.listing_images ?? [])].sort((a, b) => a.position - b.position)[0];
+      const photo = cover?.url?.startsWith("http")
+        ? cover.url
+        : cover?.url
+          ? `${SUPABASE_URL}/storage/v1/object/public/listing-images/${cover.url}`
+          : null;
+      const caption = `❤️ <b>${item.title}</b>\n\n💰 ${item.price.toLocaleString()} ETB${item.negotiable ? " <i>(negotiable)</i>" : ""}\n📍 ${item.city ?? "—"}`;
+      await sendPhoto(chatId, photo, caption, {
+        inline_keyboard: [[{ text: "🔗 View listing", url: `${SITE_URL}/listing/${item.id}` }]],
+      });
+    }
     return new Response("ok", { status: 200 });
   }
 
   if (text.startsWith("/mylistings")) {
     if (!current) {
-      await sendMessage(chatId, copy.notLinked);
+      await sendPhoto(chatId, null, copy.notLinked);
       return new Response("ok", { status: 200 });
     }
-    await sendMessage(chatId, copy.myListingsIntro, {
-      inline_keyboard: [[{ text: copy.myListingsButton, url: `${SITE_URL}/dashboard` }]],
-    });
+    const { data: mine } = await supabase
+      .from("listings")
+      .select("id,title,price,city,status,listing_images(url,position)")
+      .eq("seller_id", current.id)
+      .order("created_at", { ascending: false })
+      .limit(6);
+    const mineRows = (mine ?? []) as {
+      id: string;
+      title: string;
+      price: number;
+      city: string | null;
+      status: string;
+      listing_images: { url: string; position: number }[] | null;
+    }[];
+    if (mineRows.length === 0) {
+      await sendPhoto(chatId, null, copy.myListingsIntro, {
+        inline_keyboard: [[{ text: copy.myListingsButton, url: `${SITE_URL}/sell` }]],
+      });
+      return new Response("ok", { status: 200 });
+    }
+    for (const item of mineRows) {
+      const cover = [...(item.listing_images ?? [])].sort((a, b) => a.position - b.position)[0];
+      const photo = cover?.url?.startsWith("http")
+        ? cover.url
+        : cover?.url
+          ? `${SUPABASE_URL}/storage/v1/object/public/listing-images/${cover.url}`
+          : null;
+      const caption = `📦 <b>${item.title}</b>\n\n💰 ${item.price.toLocaleString()} ETB · 📍 ${item.city ?? "—"}\n🗂 ${item.status === "active" ? "Active" : item.status}`;
+      await sendPhoto(chatId, photo, caption, {
+        inline_keyboard: [
+          [
+            { text: "🔗 View", url: `${SITE_URL}/listing/${item.id}` },
+            { text: "✏️ Edit", url: `${SITE_URL}/sell?edit=${item.id}` },
+          ],
+        ],
+      });
+    }
     return new Response("ok", { status: 200 });
   }
 
   if (text.startsWith("/inquiries")) {
     if (!current) {
-      await sendMessage(chatId, copy.notLinked);
+      await sendPhoto(chatId, null, copy.notLinked);
       return new Response("ok", { status: 200 });
     }
-    await sendMessage(chatId, copy.inquiriesIntro, {
-      inline_keyboard: [[{ text: copy.inquiriesButton, url: `${SITE_URL}/messages` }]],
-    });
+    const { data: convos } = await supabase
+      .from("conversations")
+      .select(
+        "id, listing_id, buyer_id, seller_id, last_message_at, listings(id,title,listing_images(url,position))",
+      )
+      .or(`buyer_id.eq.${current.id},seller_id.eq.${current.id}`)
+      .order("last_message_at", { ascending: false })
+      .limit(5);
+    const convRows = (convos ?? []) as {
+      id: string;
+      buyer_id: string;
+      seller_id: string;
+      listings: {
+        id: string;
+        title: string;
+        listing_images: { url: string; position: number }[] | null;
+      } | null;
+    }[];
+    if (convRows.length === 0) {
+      await sendPhoto(chatId, null, copy.inquiriesIntro, {
+        inline_keyboard: [[{ text: copy.inquiriesButton, url: `${SITE_URL}/browse` }]],
+      });
+      return new Response("ok", { status: 200 });
+    }
+    for (const c of convRows) {
+      const cover = [...((c.listings?.listing_images ?? []) as { url: string; position: number }[])]
+        .sort((a, b) => a.position - b.position)[0];
+      const photo = cover?.url?.startsWith("http")
+        ? cover.url
+        : cover?.url
+          ? `${SUPABASE_URL}/storage/v1/object/public/listing-images/${cover.url}`
+          : null;
+      const caption = `💬 <b>${c.listings?.title ?? "Conversation"}</b>\n\nRe: ${c.listings?.title ?? "Listing"}\n<a href="${SITE_URL}/messages">Open in the marketplace</a>`;
+      await sendPhoto(chatId, photo, caption, {
+        inline_keyboard: [
+          [{ text: "💬 Open conversation", url: `${SITE_URL}/messages` }],
+        ],
+      });
+    }
     return new Response("ok", { status: 200 });
   }
 
   if (text.startsWith("/alerts")) {
     if (!current) {
-      await sendMessage(chatId, copy.notLinked);
+      await sendPhoto(chatId, null, copy.notLinked);
       return new Response("ok", { status: 200 });
     }
-    await sendMessage(chatId, copy.alertsIntro, {
+    const { data: prefs } = await supabase
+      .from("buyer_preferences")
+      .select("category_ids, price_min, price_max, preferred_cities")
+      .eq("user_id", current.id)
+      .maybeSingle();
+    const p = prefs as {
+      category_ids: string[] | null;
+      price_min: number | null;
+      price_max: number | null;
+      preferred_cities: string[] | null;
+    } | null;
+    const cats = p?.category_ids?.length ? `${p.category_ids.length} categories` : "None set";
+    const cities = p?.preferred_cities?.length ? p.preferred_cities.join(", ") : "None set";
+    const range = `${p?.price_min ?? "—"}–${p?.price_max ?? "—"} ETB`;
+    const caption = `🔔 <b>Your alert preferences</b>\n\nCategories: ${cats}\nCities: ${cities}\nPrice range: ${range}\n\nEdit them anytime from your profile.`;
+    await sendPhoto(chatId, null, caption, {
       inline_keyboard: [[{ text: copy.alertsButton, url: `${SITE_URL}/profile` }]],
     });
     return new Response("ok", { status: 200 });
@@ -1078,32 +1375,36 @@ Deno.serve(async (req) => {
 
   if (text.startsWith("/account")) {
     if (!current) {
-      await sendMessage(chatId, copy.notLinked);
+      await sendPhoto(chatId, null, copy.notLinked);
       return new Response("ok", { status: 200 });
     }
     const { data: acct } = await supabase
       .from("profiles")
-      .select("full_name, shop_name, city, is_seller, verified")
+      .select("full_name, shop_name, city, is_seller, verified, phone, shop_logo_url")
       .eq("id", current.id)
       .maybeSingle();
-    const name =
-      (acct?.shop_name as string | null) ?? (acct?.full_name as string | null) ?? "";
-    await sendMessage(
-      chatId,
-      copy.accountSummary(
-        name,
-        (acct?.city as string | null) ?? null,
-        !!acct?.is_seller,
-        !!acct?.verified,
-      ),
-      { inline_keyboard: [[{ text: copy.accountButton, url: `${SITE_URL}/profile` }]] },
-    );
+    const a = acct as {
+      full_name: string | null;
+      shop_name: string | null;
+      city: string | null;
+      is_seller: boolean;
+      verified: boolean;
+      phone: string | null;
+      shop_logo_url: string | null;
+    } | null;
+    const name = a?.shop_name ?? a?.full_name ?? "";
+    const phone = a?.phone ?? "—";
+    const status = a?.is_seller ? (a.verified ? "✅ Verified seller" : "⏳ Not yet verified") : "🛍️ Buyer";
+    const caption = `👤 <b>${name || "Your account"}</b>\n\n${status}\n📱 ${phone}${a?.city ? `\n📍 ${a.city}` : ""}\n\nOpen your profile to edit.`;
+    await sendPhoto(chatId, a?.shop_logo_url ?? null, caption, {
+      inline_keyboard: [[{ text: copy.accountButton, url: `${SITE_URL}/profile` }]],
+    });
     return new Response("ok", { status: 200 });
   }
 
   if (text.startsWith("/sell")) {
     if (!current) {
-      await sendMessage(chatId, copy.notLinked);
+      await sendPhoto(chatId, null, copy.notLinked);
       return new Response("ok", { status: 200 });
     }
     // Fresh start — drop any half-finished session for this chat.
@@ -1115,10 +1416,12 @@ Deno.serve(async (req) => {
     });
     if (sessErr) {
       console.error("sell session start failed", sessErr);
-      await sendMessage(chatId, copy.invalid);
+      await sendPhoto(chatId, null, copy.invalid);
       return new Response("ok", { status: 200 });
     }
-    await sendMessage(chatId, copy.sellIntro);
+    await sendPhoto(chatId, null, copy.sellIntro, {
+      inline_keyboard: [[{ text: copy.sellCancel, callback_data: "sell_cancel" }]],
+    });
     return new Response("ok", { status: 200 });
   }
 
@@ -1130,13 +1433,13 @@ Deno.serve(async (req) => {
     .maybeSingle();
   // /cancel with nothing in flight is a no-op, not an error.
   if (text === "/cancel" && !sellSession) {
-    await sendMessage(chatId, copy.sellCanceled);
+    await sendPhoto(chatId, null, copy.sellCanceled);
     return new Response("ok", { status: 200 });
   }
   if (sellSession) {
     if (text === "/cancel") {
       await supabase.from("telegram_sell_sessions").delete().eq("id", sellSession.id);
-      await sendMessage(chatId, copy.sellCanceled);
+      await sendPhoto(chatId, null, copy.sellCanceled);
       return new Response("ok", { status: 200 });
     }
     if (sellSession.step === "photos") {
@@ -1154,8 +1457,10 @@ Deno.serve(async (req) => {
         [{ text: copy.sellDonePhotos, callback_data: "sell_done_photos" }],
         [{ text: copy.sellCancel, callback_data: "sell_cancel" }],
       ];
-      await sendMessage(
+      // The prompt card shows the seller's own just-submitted photo.
+      await sendPhoto(
         chatId,
+        fids[0] ?? null,
         fids.length >= MAX_SELL_PHOTOS ? copy.sellPhotosFull : copy.sellPhotosGot(fids.length),
         { inline_keyboard: kb },
       );
@@ -1173,7 +1478,9 @@ Deno.serve(async (req) => {
         .eq("id", sellSession.id);
       const kb = CITIES.map((c) => [{ text: c, callback_data: `sell_city:${c}` }]);
       kb.push([{ text: copy.sellCancel, callback_data: "sell_cancel" }]);
-      await sendMessage(chatId, copy.sellCity, { inline_keyboard: kb });
+      // Keep the seller's own photo as the card for every step after upload.
+      const firstPhoto = (sellSession.photo_file_ids as string[] | null)?.[0] ?? null;
+      await sendPhoto(chatId, firstPhoto, copy.sellCity, { inline_keyboard: kb });
       return new Response("ok", { status: 200 });
     }
     // Any other step while a session is live: nudge toward the buttons.

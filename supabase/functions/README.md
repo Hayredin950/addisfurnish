@@ -98,7 +98,13 @@ supabase db push
 
 curl -X POST "https://api.telegram.org/bot<TOKEN>/setWebhook" \
   -d "url=https://ctgulhtaefzsdfemggty.supabase.co/functions/v1/telegram-bot" \
-  -d "secret_token=<TELEGRAM_WEBHOOK_SECRET>"
+  -d "secret_token=<TELEGRAM_WEBHOOK_SECRET>" \
+  --data-urlencode 'allowed_updates=["message","callback_query"]'
+
+> ⚠️ `allowed_updates` MUST include `callback_query` — otherwise inline-button
+> taps (the "✅ I've joined — verify" button, category pickers in `/sell`) are
+> silently dropped by Telegram and the buttons spin forever. This caused the
+> verify button to appear dead in production once; don't drop it on redeploys.
 ```
 
 ### 5. Point the apps at the bot
