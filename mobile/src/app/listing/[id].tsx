@@ -329,7 +329,12 @@ export default function ListingDetailScreen() {
                 : ` · ${t("deliveryFree")}`}
             </Text>
           </View>
-        ) : null}
+        ) : (
+          <View style={styles.deliveryRow}>
+            <Ionicons name="briefcase-outline" size={16} color={colors.textSoft} />
+            <Text style={styles.deliveryText}>{t("pickupOnly")}</Text>
+          </View>
+        )}
         <View style={styles.favRow}>
           <Pressable
             style={styles.favBtn}

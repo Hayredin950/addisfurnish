@@ -85,6 +85,7 @@ export default function AdminScreen() {
   const { user } = useAuth();
   const { t } = useLang();
   const [tab, setTab] = useState<Tab>("reports");
+  const [drill, setDrill] = useState<"all" | "sellers" | null>(null);
   const [admin, setAdmin] = useState<boolean | null>(null);
 
   useEffect(() => {
@@ -139,10 +140,17 @@ export default function AdminScreen() {
       </ScrollView>
       {tab === "reports" ? <ReportsTab /> : null}
       {tab === "verification" ? <VerificationTab /> : null}
-      {tab === "users" ? <UsersTab /> : null}
+      {tab === "users" ? <UsersTab drillFilter={drill} /> : null}
       {tab === "categories" ? <CategoriesTab /> : null}
       {tab === "listings" ? <ListingsTab /> : null}
-      {tab === "stats" ? <StatsTab /> : null}
+      {tab === "stats" ? (
+        <StatsTab
+          onOpenUsers={(f) => {
+            setDrill(f);
+            setTab("users");
+          }}
+        />
+      ) : null}
     </KeyboardAvoidingView>
   );
 }
@@ -380,12 +388,16 @@ const BAN_OPTIONS = [
   { key: "permanent", hours: 24 * 365 * 10, label: "permanent" },
 ];
 
-function UsersTab() {
+function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
   const { t } = useLang();
   const toast = useToast();
   const { user } = useAuth();
   const users = useAsync(fetchAdminUsers, []);
   const [filter, setFilter] = useState<"all" | "sellers" | "buyers">("all");
+  // Stats-tab drill-down: "Verified sellers" opens this tab pre-filtered.
+  useEffect(() => {
+    if (drillFilter) setFilter(drillFilter);
+  }, [drillFilter]);
   const [search, setSearch] = useState("");
   const [banTarget, setBanTarget] = useState<{ id: string; name: string } | null>(null);
   const [banDuration, setBanDuration] = useState(BAN_OPTIONS[0]!);
@@ -961,7 +973,7 @@ function ListingsTab() {
   );
 }
 
-function StatsTab() {
+function StatsTab({ onOpenUsers }: { onOpenUsers?: (f: "all" | "sellers") => void }) {
   const { t } = useLang();
   const stats = useAsync(fetchAdminStats, []);
   const topCats = useAsync(fetchAdminTopCategories, []);
@@ -993,11 +1005,14 @@ function StatsTab() {
 
   return (
     <ScrollView contentContainerStyle={{ padding: spacing.lg, gap: 12 }}>
-      {/* Hero row — big numbers + verified ratio. */}
+      {/* Hero row — big numbers + verified ratio; cards open the Users tab. */}
       <View style={styles.statGrid}>
         <StatBox label={t("adminStatListings")} value={s?.listings ?? 0} icon="pricetags" />
-        <StatBox label={t("adminStatUsers")} value={s?.users ?? 0} icon="people" />
-        <View style={styles.statBox}>
+        <Pressable onPress={() => onOpenUsers?.("all")} style={({ pressed }) => [pressed && { opacity: 0.8 }]}>
+          <StatBox label={t("adminStatUsers")} value={s?.users ?? 0} icon="people" />
+        </Pressable>
+        <Pressable onPress={() => onOpenUsers?.("sellers")} style={({ pressed }) => [pressed && { opacity: 0.8 }]}>
+          <View style={styles.statBox}>
           <Ionicons name="shield-checkmark" size={18} color={colors.primary} />
           <Text style={styles.statValue}>
             {s?.verifiedSellers ?? 0}/{s?.sellers ?? 0}
@@ -1011,7 +1026,8 @@ function StatsTab() {
           <Text style={{ fontSize: 10, color: colors.textMuted }}>
             {verifiedPct}% {t("adminVerifiedRate")}
           </Text>
-        </View>
+          </View>
+        </Pressable>
         <StatBox
           label={t("adminThisWeek")}
           value={`+${s?.newListings7d ?? 0}`}
