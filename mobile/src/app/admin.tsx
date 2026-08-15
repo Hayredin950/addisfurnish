@@ -24,6 +24,7 @@ import {
   deleteCategory,
   deleteListingAdmin,
   fetchAdminCategories,
+  fetchAdminCategoryCounts,
   fetchAdminListings,
   fetchAdminReports,
   fetchAdminStats,
@@ -32,6 +33,7 @@ import {
   fetchVerificationDecisions,
   fetchVerificationQueue,
   isAdmin,
+  moveCategory,
   renameCategory,
   resolveReport,
   revokeSessions,
@@ -40,6 +42,7 @@ import {
   type AdminReport,
   type AdminVerificationDoc,
 } from "../lib/admin";
+import { CATEGORY_ICON_KEYS, categoryIcon } from "../lib/category-icons";
 import { Button } from "../components/Button";
 import { ConfirmDialog } from "../components/ConfirmDialog";
 import { useToast } from "../components/Toast";
@@ -589,25 +592,38 @@ function CategoriesTab() {
   const { t } = useLang();
   const toast = useToast();
   const cats = useAsync(fetchAdminCategories, []);
+  const counts = useAsync(fetchAdminCategoryCounts, []);
   const [name, setName] = useState("");
   const [parentId, setParentId] = useState<string>("");
+  const [icon, setIcon] = useState<string>("");
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const [renameIcon, setRenameIcon] = useState<string>("");
   const [busy, setBusy] = useState(false);
-  const [pendingDelete, setPendingDelete] = useState<{ id: string } | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<{
+    id: string;
+    children: number;
+    listings: number;
+  } | null>(null);
   const [deleting, setDeleting] = useState(false);
 
   const roots = (cats.data ?? []).filter((c) => !c.parent_id);
   const children = (cats.data ?? []).filter((c) => c.parent_id);
 
+  const invalidate = () => {
+    cats.refetch();
+    counts.refetch();
+  };
+
   const add = async () => {
     if (!name.trim() || busy) return;
     setBusy(true);
     try {
-      await createCategory(name, parentId || null);
+      await createCategory(name, parentId || null, icon || undefined);
       setName("");
       setParentId("");
-      cats.refetch();
+      setIcon("");
+      invalidate();
     } catch (err) {
       toast.error(err, t("oops"));
     } finally {
@@ -618,9 +634,18 @@ function CategoriesTab() {
   const rename = async (id: string) => {
     if (!renameValue.trim()) return;
     try {
-      await renameCategory(id, renameValue);
+      await renameCategory(id, renameValue, renameIcon || undefined);
       setRenamingId(null);
-      cats.refetch();
+      invalidate();
+    } catch (err) {
+      toast.error(err, t("oops"));
+    }
+  };
+
+  const move = async (id: string, dir: "up" | "down") => {
+    try {
+      await moveCategory(id, dir);
+      invalidate();
     } catch (err) {
       toast.error(err, t("oops"));
     }
@@ -630,7 +655,7 @@ function CategoriesTab() {
     setDeleting(true);
     try {
       await deleteCategory(id);
-      cats.refetch();
+      invalidate();
     } catch (err) {
       toast.error(err, t("oops"));
     } finally {
@@ -638,48 +663,95 @@ function CategoriesTab() {
     }
   };
 
-  const Row = ({ cat, depth }: { cat: { id: string; name: string; slug: string }; depth: number }) => (
-    <View style={[styles.catRow, depth > 0 && { marginLeft: 18 }]}>
-      {renamingId === cat.id ? (
-        <>
-          <TextInput
-            value={renameValue}
-            onChangeText={setRenameValue}
-            style={[styles.input, { flex: 1, minHeight: 36 }]}
-          />
-          <Button title={t("save")} size="sm" onPress={() => rename(cat.id)} />
-        </>
-      ) : (
-        <>
-          <View style={{ flex: 1 }}>
-            <Text style={styles.catName}>{cat.name}</Text>
-            <Text style={styles.catSlug}>/{cat.slug}</Text>
-          </View>
-          <Pressable
-            style={styles.iconBtn}
-            hitSlop={6}
-            onPress={() => {
-              setRenamingId(cat.id);
-              setRenameValue(cat.name);
-            }}
-          >
-            <Ionicons name="pencil" size={15} color={colors.textMuted} />
-          </Pressable>
-          <Pressable
-            style={styles.iconBtn}
-            hitSlop={6}
-            onPress={() => {
-              const hasChildren = !!cats.data?.some((c) => c.parent_id === cat.id);
-              if (hasChildren) setPendingDelete({ id: cat.id });
-              else void remove(cat.id);
-            }}
-          >
-            <Ionicons name="trash-outline" size={15} color={colors.danger} />
-          </Pressable>
-        </>
-      )}
-    </View>
-  );
+  const Row = ({
+    cat,
+    depth,
+  }: {
+    cat: { id: string; name: string; slug: string; icon: string | null; parent_id: string | null };
+    depth: number;
+  }) => {
+    const n = counts.data?.[cat.id] ?? 0;
+    const siblings = (cats.data ?? []).filter((c) => c.parent_id === cat.parent_id);
+    const idx = siblings.findIndex((c) => c.id === cat.id);
+    return (
+      <View style={[styles.catRow, depth > 0 && { marginLeft: 18 }]}>
+        {renamingId === cat.id ? (
+          <>
+            <TextInput
+              value={renameValue}
+              onChangeText={setRenameValue}
+              style={[styles.input, { flex: 1, minHeight: 36 }]}
+            />
+            <Button title={t("save")} size="sm" onPress={() => rename(cat.id)} />
+          </>
+        ) : (
+          <>
+            <View style={styles.catIconWrap}>
+              <Ionicons name={categoryIcon(cat.icon)} size={15} color={colors.primary} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                <Text style={styles.catName}>{cat.name}</Text>
+                {n > 0 ? (
+                  <View style={styles.countBadge}>
+                    <Text style={styles.countBadgeText}>{n}</Text>
+                  </View>
+                ) : null}
+              </View>
+              <Text style={styles.catSlug}>/{cat.slug}</Text>
+            </View>
+            <Pressable
+              style={styles.iconBtn}
+              hitSlop={6}
+              disabled={idx <= 0}
+              onPress={() => void move(cat.id, "up")}
+            >
+              <Ionicons name="chevron-up" size={15} color={idx <= 0 ? colors.textSoft : colors.textMuted} />
+            </Pressable>
+            <Pressable
+              style={styles.iconBtn}
+              hitSlop={6}
+              disabled={idx >= siblings.length - 1}
+              onPress={() => void move(cat.id, "down")}
+            >
+              <Ionicons name="chevron-down" size={15} color={idx >= siblings.length - 1 ? colors.textSoft : colors.textMuted} />
+            </Pressable>
+            <Pressable
+              style={styles.iconBtn}
+              hitSlop={6}
+              onPress={() => {
+                setRenamingId(cat.id);
+                setRenameValue(cat.name);
+                setRenameIcon(cat.icon ?? "");
+              }}
+            >
+              <Ionicons name="pencil" size={15} color={colors.textMuted} />
+            </Pressable>
+            <Pressable
+              style={styles.iconBtn}
+              hitSlop={6}
+              onPress={() => {
+                const childIds = (cats.data ?? [])
+                  .filter((c) => c.parent_id === cat.id)
+                  .map((c) => c.id);
+                const listingCount = [cat.id, ...childIds].reduce(
+                  (sum, id) => sum + (counts.data?.[id] ?? 0),
+                  0,
+                );
+                if (childIds.length > 0 || listingCount > 0) {
+                  setPendingDelete({ id: cat.id, children: childIds.length, listings: listingCount });
+                } else {
+                  void remove(cat.id);
+                }
+              }}
+            >
+              <Ionicons name="trash-outline" size={15} color={colors.danger} />
+            </Pressable>
+          </>
+        )}
+      </View>
+    );
+  };
 
   return (
     <ScrollView contentContainerStyle={{ padding: spacing.lg, gap: 12 }}>
@@ -707,8 +779,17 @@ function CategoriesTab() {
             </Pressable>
           ))}
         </ScrollView>
+        <Text style={styles.fieldLabel}>{t("adminCategoryIcon")}</Text>
+        <IconPicker value={icon} onChange={setIcon} />
         <Button title={t("adminAddCategory")} onPress={add} loading={busy} disabled={busy || !name.trim()} />
       </View>
+
+      {renamingId ? (
+        <View style={styles.card}>
+          <Text style={styles.fieldLabel}>{t("adminCategoryIcon")}</Text>
+          <IconPicker value={renameIcon} onChange={setRenameIcon} />
+        </View>
+      ) : null}
 
       {roots.length === 0 ? (
         <Text style={styles.muted}>{t("adminNoCategories")}</Text>
@@ -728,7 +809,13 @@ function CategoriesTab() {
       <ConfirmDialog
         visible={!!pendingDelete}
         title={t("adminDeleteCategoryTitle")}
-        message={t("adminDeleteCategoryBody")}
+        message={
+          pendingDelete
+            ? t("adminDeleteCategoryAffects")
+                .replaceAll("{children}", String(pendingDelete.children))
+                .replaceAll("{listings}", String(pendingDelete.listings))
+            : t("adminDeleteCategoryBody")
+        }
         confirmLabel={t("delete")}
         cancelLabel={t("cancel")}
         destructive
@@ -740,6 +827,33 @@ function CategoriesTab() {
         }}
         onCancel={() => setPendingDelete(null)}
       />
+    </ScrollView>
+  );
+}
+
+function IconPicker({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  const { t } = useLang();
+  return (
+    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
+      <Pressable style={[styles.chip, !value && styles.chipActive]} onPress={() => onChange("")}>
+        <Text style={[styles.chipText, !value && styles.chipTextActive]}>{t("adminCategoryIconNone")}</Text>
+      </Pressable>
+      {CATEGORY_ICON_KEYS.map((key) => (
+        <Pressable
+          key={key}
+          style={[styles.chip, value === key && styles.chipActive]}
+          onPress={() => onChange(value === key ? "" : key)}
+        >
+          <Ionicons name={categoryIcon(key)} size={14} color={value === key ? colors.onPrimary : colors.textMuted} />
+          <Text style={[styles.chipText, value === key && styles.chipTextActive]}>{key}</Text>
+        </Pressable>
+      ))}
     </ScrollView>
   );
 }
@@ -860,6 +974,12 @@ function StatsTab() {
 
   const s = stats.data;
   const maxCat = Math.max(1, ...(topCats.data ?? []).map((c) => c.count));
+  const total = s?.listings || 1;
+  const segments = [
+    { label: t("adminStatusActive"), value: s?.activeListings ?? 0, color: colors.primary },
+    { label: t("adminStatusSold"), value: s?.soldListings ?? 0, color: colors.success },
+    { label: t("adminStatusOther"), value: s?.otherListings ?? 0, color: colors.textSoft },
+  ].filter((x) => x.value > 0);
 
   return (
     <ScrollView contentContainerStyle={{ padding: spacing.lg, gap: 12 }}>
@@ -868,6 +988,48 @@ function StatsTab() {
         <StatBox label={t("adminStatUsers")} value={s?.users ?? 0} icon="people" />
         <StatBox label={t("adminStatSellers")} value={s?.sellers ?? 0} icon="storefront" />
         <StatBox label={t("adminStatViews")} value={s?.totalViews ?? 0} icon="eye" />
+        <StatBox label={t("adminStatVerifiedSellers")} value={s?.verifiedSellers ?? 0} icon="shield-checkmark" />
+        <StatBox label={t("adminStatConversations")} value={s?.conversations ?? 0} icon="chatbubbles" />
+        <StatBox label={t("adminStatMessages")} value={s?.messages ?? 0} icon="chatbox" />
+        <StatBox label={t("adminStatReviews")} value={s?.reviews ?? 0} icon="star" />
+      </View>
+
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>{t("adminStatusBreakdown")}</Text>
+        {segments.length === 0 ? (
+          <Text style={styles.muted}>{t("adminNoListings")}</Text>
+        ) : (
+          <>
+            <View style={[styles.barTrack, { height: 10, flexDirection: "row", borderRadius: 999 }]}>
+              {segments.map((x) => (
+                <View
+                  key={x.label}
+                  style={[styles.barFill, { width: `${(x.value / total) * 100}%`, backgroundColor: x.color, borderRadius: 999 }]}
+                />
+              ))}
+            </View>
+            <View style={{ marginTop: 10, gap: 6 }}>
+              {segments.map((x) => (
+                <View key={x.label} style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                  <View style={{ width: 10, height: 10, borderRadius: 5, backgroundColor: x.color }} />
+                  <Text style={[styles.muted, { flex: 1 }]}>{x.label}</Text>
+                  <Text style={styles.catName}>
+                    {x.value} · {Math.round((x.value / total) * 100)}%
+                  </Text>
+                </View>
+              ))}
+            </View>
+          </>
+        )}
+      </View>
+
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>{t("adminThisWeek")}</Text>
+        <View style={styles.statGrid}>
+          <StatBox label={t("adminNewListingsWeek")} value={s?.newListings7d ?? 0} icon="add-circle" />
+          <StatBox label={t("adminNewUsersWeek")} value={s?.newUsers7d ?? 0} icon="person-add" />
+          <StatBox label={t("adminFeaturedListings")} value={s?.featuredListings ?? 0} icon="star" />
+        </View>
       </View>
 
       <View style={styles.card}>
@@ -1045,6 +1207,21 @@ const styles = StyleSheet.create({
   },
   catName: { fontSize: 14, fontWeight: "600", color: colors.text },
   catSlug: { fontSize: 11, color: colors.textSoft, marginTop: 1 },
+  catIconWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: radius.full,
+    backgroundColor: colors.secondary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  countBadge: {
+    borderRadius: radius.full,
+    backgroundColor: colors.primaryLight ?? colors.secondary,
+    paddingHorizontal: 7,
+    paddingVertical: 1,
+  },
+  countBadgeText: { fontSize: 11, fontWeight: "600", color: colors.primary },
   iconBtn: {
     width: 30,
     height: 30,

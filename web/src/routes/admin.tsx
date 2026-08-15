@@ -4,6 +4,8 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   BadgeCheck,
   Ban,
+  ChevronDown,
+  ChevronUp,
   ClipboardCheck,
   FileCheck2,
   FileText,
@@ -28,9 +30,11 @@ import {
   adminVerificationDecisionsQuery,
   adminVerificationQueueQuery,
   categoriesQuery,
+  categoryCountsQuery,
   isAdminQuery,
   type Category,
 } from "@/lib/marketplace";
+import { CATEGORY_ICON_KEYS, categoryIcon } from "@/lib/category-icons";
 import {
   adminBanUser,
   adminRevokeSessions,
@@ -649,18 +653,29 @@ function CategoriesTab() {
   const { t } = useLang();
   const queryClient = useQueryClient();
   const { data: categories } = useQuery(categoriesQuery);
+  const { data: counts } = useQuery(categoryCountsQuery);
   const [name, setName] = useState("");
   const [parentId, setParentId] = useState("");
+  const [icon, setIcon] = useState("");
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
+  const [renameIcon, setRenameIcon] = useState("");
   const [busy, setBusy] = useState(false);
-  const [pendingDelete, setPendingDelete] = useState<{ id: string } | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<{
+    id: string;
+    title: string;
+    children: number;
+    listings: number;
+  } | null>(null);
   const [deleting, setDeleting] = useState(false);
 
   const roots = (categories ?? []).filter((c) => !c.parent_id);
   const children = (categories ?? []).filter((c) => c.parent_id);
 
-  const invalidate = () => queryClient.invalidateQueries({ queryKey: ["categories"] });
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: ["categories"] });
+    queryClient.invalidateQueries({ queryKey: ["category-counts"] });
+  };
 
   const add = async () => {
     if (!name.trim()) return;
@@ -673,6 +688,7 @@ function CategoriesTab() {
       name: name.trim(),
       slug,
       parent_id: parentId || null,
+      icon: icon || null,
       sort_order: 1,
     });
     setBusy(false);
@@ -682,6 +698,7 @@ function CategoriesTab() {
     }
     setName("");
     setParentId("");
+    setIcon("");
     toast.success(t("toast.listingLive"));
     invalidate();
   };
@@ -694,13 +711,26 @@ function CategoriesTab() {
       .replace(/^-|-$/g, "");
     const { error } = await supabase
       .from("categories")
-      .update({ name: renameValue.trim(), slug })
+      .update({ name: renameValue.trim(), slug, icon: renameIcon || null })
       .eq("id", id);
     setRenamingId(null);
     if (error) {
       toast.error(t("toast.updateFailed"));
       return;
     }
+    invalidate();
+  };
+
+  const move = async (id: string, dir: "up" | "down") => {
+    const all = [...(categories ?? [])].sort((a, b) => a.sort_order - b.sort_order);
+    const row = all.find((c) => c.id === id);
+    if (!row) return;
+    const siblings = all.filter((c) => c.parent_id === row.parent_id);
+    const index = siblings.findIndex((c) => c.id === id);
+    const swap = dir === "up" ? siblings[index - 1] : siblings[index + 1];
+    if (!swap) return;
+    await supabase.from("categories").update({ sort_order: swap.sort_order }).eq("id", id);
+    await supabase.from("categories").update({ sort_order: row.sort_order }).eq("id", swap.id);
     invalidate();
   };
 
@@ -716,74 +746,153 @@ function CategoriesTab() {
     invalidate();
   };
 
-  const Row = ({ cat, depth }: { cat: Category; depth: number }) => (
-    <li
-      className={`flex items-center gap-2 rounded-lg border bg-card p-3 ${depth > 0 ? "ml-6" : ""}`}
+  const IconSelect = ({
+    value,
+    onChange,
+    className = "",
+  }: {
+    value: string;
+    onChange: (v: string) => void;
+    className?: string;
+  }) => (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className={`h-10 rounded-md border border-input bg-background px-3 text-sm ${className}`}
     >
-      {renamingId === cat.id ? (
-        <>
-          <Input
-            value={renameValue}
-            onChange={(e) => setRenameValue(e.target.value)}
-            className="h-8 flex-1"
-          />
-          <Button size="sm" onClick={() => rename(cat.id)}>
-            {t("profile.save")}
-          </Button>
-        </>
-      ) : (
-        <>
-          <span className="flex-1 text-sm font-medium">{cat.name}</span>
-          <span className="text-xs text-muted-foreground">/{cat.slug}</span>
-          <button
-            type="button"
-            aria-label="Rename"
-            onClick={() => {
-              setRenamingId(cat.id);
-              setRenameValue(cat.name);
-            }}
-            className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
-          >
-            <Pencil className="h-3.5 w-3.5" />
-          </button>
-          <button
-            type="button"
-            aria-label="Delete"
-            onClick={() => {
-              const hasChildren = !!categories?.some((c) => c.parent_id === cat.id);
-              // Only sub-category owners need the warning — plain deletes go straight through.
-              if (hasChildren) setPendingDelete({ id: cat.id });
-              else void remove(cat.id);
-            }}
-            className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-          </button>
-        </>
-      )}
-    </li>
+      <option value="">{t("admin.noIcon")}</option>
+      {CATEGORY_ICON_KEYS.map((key) => (
+        <option key={key} value={key}>
+          {key}
+        </option>
+      ))}
+    </select>
   );
+
+  const Row = ({ cat, depth }: { cat: Category; depth: number }) => {
+    const IconComp = categoryIcon(cat.icon);
+    const n = counts?.[cat.id] ?? 0;
+    const idx = (categories ?? [])
+      .filter((c) => c.parent_id === cat.parent_id)
+      .sort((a, b) => a.sort_order - b.sort_order)
+      .findIndex((c) => c.id === cat.id);
+    const sibs = (categories ?? []).filter((c) => c.parent_id === cat.parent_id);
+    return (
+      <li
+        className={`flex flex-wrap items-center gap-2 rounded-lg border bg-card p-3 ${depth > 0 ? "ml-6" : ""}`}
+      >
+        {renamingId === cat.id ? (
+          <>
+            <Input
+              value={renameValue}
+              onChange={(e) => setRenameValue(e.target.value)}
+              className="h-8 min-w-40 flex-1"
+            />
+            <IconSelect value={renameIcon} onChange={setRenameIcon} className="h-8 min-w-36" />
+            <Button size="sm" onClick={() => rename(cat.id)}>
+              {t("profile.save")}
+            </Button>
+          </>
+        ) : (
+          <>
+            <span className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-secondary">
+              <IconComp className="h-4 w-4 text-primary" />
+            </span>
+            <span className="min-w-0 flex-1 text-sm font-medium">{cat.name}</span>
+            {n > 0 ? (
+              <span
+                title={t("admin.listingsCount", { count: n })}
+                className="rounded-full bg-secondary px-2 py-0.5 text-xs text-muted-foreground"
+              >
+                {n}
+              </span>
+            ) : null}
+            <span className="hidden text-xs text-muted-foreground sm:inline">/{cat.slug}</span>
+            <div className="flex">
+              <button
+                type="button"
+                aria-label={t("admin.moveUp")}
+                disabled={idx <= 0}
+                onClick={() => void move(cat.id, "up")}
+                className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground disabled:opacity-30"
+              >
+                <ChevronUp className="h-3.5 w-3.5" />
+              </button>
+              <button
+                type="button"
+                aria-label={t("admin.moveDown")}
+                disabled={idx >= sibs.length - 1}
+                onClick={() => void move(cat.id, "down")}
+                className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground disabled:opacity-30"
+              >
+                <ChevronDown className="h-3.5 w-3.5" />
+              </button>
+            </div>
+            <button
+              type="button"
+              aria-label="Rename"
+              onClick={() => {
+                setRenamingId(cat.id);
+                setRenameValue(cat.name);
+                setRenameIcon(cat.icon ?? "");
+              }}
+              className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+            >
+              <Pencil className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              aria-label="Delete"
+              onClick={() => {
+                const childIds = (categories ?? [])
+                  .filter((c) => c.parent_id === cat.id)
+                  .map((c) => c.id);
+                const listingCount = [cat.id, ...childIds].reduce(
+                  (sum, id) => sum + (counts?.[id] ?? 0),
+                  0,
+                );
+                if (childIds.length > 0 || listingCount > 0) {
+                  setPendingDelete({
+                    id: cat.id,
+                    title: cat.name,
+                    children: childIds.length,
+                    listings: listingCount,
+                  });
+                } else {
+                  void remove(cat.id);
+                }
+              }}
+              className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          </>
+        )}
+      </li>
+    );
+  };
 
   return (
     <div>
       <div className="rounded-lg border bg-card p-4">
-        <p className="text-sm font-medium">Add category</p>
-        <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_180px_auto]">
+        <p className="text-sm font-medium">{t("admin.addCategory")}</p>
+        <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_160px_160px_auto]">
           <Input placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} />
           <select
             value={parentId}
             onChange={(e) => setParentId(e.target.value)}
             className="h-10 rounded-md border border-input bg-background px-3 text-sm"
           >
-            <option value="">Root category</option>
+            <option value="">{t("admin.rootCategory")}</option>
             {roots.map((r) => (
               <option key={r.id} value={r.id}>
                 {r.name}
               </option>
             ))}
           </select>
+          <IconSelect value={icon} onChange={setIcon} />
           <Button disabled={!name.trim() || busy} onClick={add}>
-            Add
+            {t("admin.addCategory")}
           </Button>
         </div>
       </div>
@@ -807,7 +916,23 @@ function CategoriesTab() {
           if (!open) setPendingDelete(null);
         }}
         title={t("admin.deleteCategoryTitle")}
-        description={t("admin.deleteCategoryBody")}
+        description={
+          pendingDelete
+            ? pendingDelete.children > 0
+              ? t("admin.deleteCategoryAffects", {
+                  children: pendingDelete.children,
+                  childrenPlural: pendingDelete.children === 1 ? "y" : "ies",
+                  listings: pendingDelete.listings,
+                  listingsPlural: pendingDelete.listings === 1 ? "" : "s",
+                })
+              : t("admin.deleteCategoryAffects", {
+                  children: 0,
+                  childrenPlural: "ies",
+                  listings: pendingDelete.listings,
+                  listingsPlural: pendingDelete.listings === 1 ? "" : "s",
+                })
+            : t("admin.deleteCategoryBody")
+        }
         confirmLabel={t("action.confirmDelete")}
         cancelLabel={t("action.cancel")}
         pending={deleting}
@@ -941,6 +1066,17 @@ function ListingThumb({ images }: { images: { url: string; position: number }[] 
   );
 }
 
+function StatCard({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-lg border bg-card p-5 shadow-soft">
+      <p className="font-display text-3xl font-semibold text-primary">
+        {new Intl.NumberFormat().format(value)}
+      </p>
+      <p className="mt-1 text-xs uppercase tracking-wide text-muted-foreground">{label}</p>
+    </div>
+  );
+}
+
 function StatsTab() {
   const { t } = useLang();
   const { data: stats } = useQuery(adminStatsQuery());
@@ -950,23 +1086,77 @@ function StatsTab() {
     return <p className="text-sm text-muted-foreground">{t("browse.loading")}</p>;
   }
 
-  const cards = [
+  const primary = [
     { label: t("admin.totalListings"), value: stats.listings },
     { label: t("admin.totalUsers"), value: stats.users },
     { label: t("admin.totalSellers"), value: stats.sellers },
     { label: t("admin.totalViews"), value: stats.totalViews },
   ];
+  const engagement = [
+    { label: t("admin.verifiedSellers"), value: stats.verifiedSellers },
+    { label: t("admin.conversations"), value: stats.conversations },
+    { label: t("admin.messages"), value: stats.messages },
+    { label: t("admin.reviews"), value: stats.reviews },
+  ];
+  const growth = [
+    { label: t("admin.newListingsWeek"), value: stats.newListings7d },
+    { label: t("admin.newUsersWeek"), value: stats.newUsers7d },
+    { label: t("admin.featuredListings"), value: stats.featuredListings },
+  ];
+
+  const total = stats.listings || 1;
+  const segments = [
+    { label: t("admin.statusActive"), value: stats.activeListings, color: "bg-primary" },
+    { label: t("admin.statusSold"), value: stats.soldListings, color: "bg-emerald-500" },
+    { label: t("admin.statusOther"), value: stats.otherListings, color: "bg-muted-foreground/40" },
+  ].filter((s) => s.value > 0);
 
   return (
     <div>
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        {cards.map((c) => (
-          <div key={c.label} className="rounded-lg border bg-card p-5 shadow-soft">
-            <p className="font-display text-3xl font-semibold text-primary">{c.value}</p>
-            <p className="mt-1 text-xs uppercase tracking-wide text-muted-foreground">{c.label}</p>
-          </div>
+        {primary.map((c) => (
+          <StatCard key={c.label} label={c.label} value={c.value} />
         ))}
       </div>
+
+      <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-4">
+        {engagement.map((c) => (
+          <StatCard key={c.label} label={c.label} value={c.value} />
+        ))}
+      </div>
+
+      {/* Listing status split, drawn as one bar. */}
+      <div className="mt-8 rounded-lg border bg-card p-5">
+        <p className="font-display text-lg font-semibold">{t("admin.statusBreakdown")}</p>
+        <div className="mt-3 flex h-3 overflow-hidden rounded-full bg-secondary">
+          {segments.map((s) => (
+            <div
+              key={s.label}
+              className={s.color}
+              style={{ width: `${Math.max(0, (s.value / total) * 100)}%` }}
+            />
+          ))}
+        </div>
+        <ul className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted-foreground">
+          {segments.map((s) => (
+            <li key={s.label} className="flex items-center gap-1.5">
+              <span className={`h-2 w-2 rounded-full ${s.color}`} />
+              {s.label}: <b className="font-semibold text-foreground">{s.value}</b>(
+              {Math.round((s.value / total) * 100)}%)
+            </li>
+          ))}
+        </ul>
+      </div>
+
+      <div className="mt-8">
+        <p className="mb-3 font-display text-lg font-semibold">{t("admin.thisWeek")}</p>
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3">
+          {growth.map((c) => (
+            <StatCard key={c.label} label={c.label} value={c.value} />
+          ))}
+        </div>
+      </div>
+
       {stats.topSearches.length > 0 ? (
         <div className="mt-8 rounded-lg border bg-card p-5">
           <p className="flex items-center gap-2 font-display text-lg font-semibold">

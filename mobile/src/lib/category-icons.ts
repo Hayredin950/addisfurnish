@@ -14,6 +14,19 @@ type IoniconName = keyof typeof Ionicons.glyphMap;
  * literal word "sofa", or nothing at all for the sub-categories where the
  * column is null.
  */
+export const CATEGORY_ICON_KEYS = [
+  "sofa",
+  "bed",
+  "briefcase",
+  "utensils",
+  "trees",
+  "archive",
+  "tv",
+  "lamp",
+  "wardrobe",
+  "bookshelf",
+] as const;
+
 const CATEGORY_ICONS: Record<string, IoniconName> = {
   sofa: "bed-outline",
   bed: "bed-outline",
@@ -21,6 +34,10 @@ const CATEGORY_ICONS: Record<string, IoniconName> = {
   utensils: "restaurant-outline",
   trees: "leaf-outline",
   archive: "archive-outline",
+  tv: "tv-outline",
+  lamp: "bulb-outline",
+  wardrobe: "shirt-outline",
+  bookshelf: "library-outline",
 };
 
 /** Falls back to a generic box, matching web's Package fallback. */

@@ -268,7 +268,7 @@ export async function fetchAdminCategories(): Promise<AdminCategory[]> {
   return (data ?? []) as AdminCategory[];
 }
 
-export async function createCategory(name: string, parentId?: string | null) {
+export async function createCategory(name: string, parentId?: string | null, icon?: string) {
   const slug = name
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
@@ -277,18 +277,56 @@ export async function createCategory(name: string, parentId?: string | null) {
     name: name.trim(),
     slug,
     parent_id: parentId || null,
+    icon: icon || null,
     sort_order: 1,
   });
   if (error) throw error;
 }
 
-export async function renameCategory(id: string, name: string) {
+export async function renameCategory(id: string, name: string, icon?: string) {
   const slug = name
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/^-|-$/g, "");
-  const { error } = await supabase.from("categories").update({ name: name.trim(), slug }).eq("id", id);
+  const { error } = await supabase
+    .from("categories")
+    .update({ name: name.trim(), slug, ...(icon !== undefined ? { icon: icon || null } : {}) })
+    .eq("id", id);
   if (error) throw error;
+}
+
+/**
+ * Swap a category's sort_order with the adjacent sibling so the admin can
+ * reorder the tree. Siblings = same parent_id, ordered by sort_order.
+ */
+export async function moveCategory(id: string, direction: "up" | "down") {
+  const { data, error } = await supabase
+    .from("categories")
+    .select("id,parent_id,sort_order")
+    .order("sort_order");
+  if (error) throw error;
+  const all = (data ?? []) as { id: string; parent_id: string | null; sort_order: number }[];
+  const row = all.find((c) => c.id === id);
+  if (!row) return;
+  const siblings = all.filter((c) => c.parent_id === row.parent_id).sort((a, b) => a.sort_order - b.sort_order);
+  const index = siblings.findIndex((c) => c.id === id);
+  const swap = direction === "up" ? siblings[index - 1] : siblings[index + 1];
+  if (!swap) return; // already first/last
+  await Promise.all([
+    supabase.from("categories").update({ sort_order: swap.sort_order }).eq("id", id),
+    supabase.from("categories").update({ sort_order: row.sort_order }).eq("id", swap.id),
+  ]);
+}
+
+/** Active-listing count per category (via the category_listing_counts view). */
+export async function fetchAdminCategoryCounts(): Promise<Record<string, number>> {
+  const { data, error } = await supabase.from("category_listing_counts").select("category_id,listing_count");
+  if (error) throw error;
+  const counts: Record<string, number> = {};
+  for (const row of (data ?? []) as { category_id: string | null; listing_count: number | null }[]) {
+    if (row.category_id) counts[row.category_id] = Number(row.listing_count ?? 0);
+  }
+  return counts;
 }
 
 export async function deleteCategory(id: string) {
@@ -346,31 +384,83 @@ export type AdminStats = {
   listings: number;
   users: number;
   sellers: number;
+  verifiedSellers: number;
   totalViews: number;
   topSearches: string[];
+  activeListings: number;
+  soldListings: number;
+  otherListings: number;
+  featuredListings: number;
+  conversations: number;
+  messages: number;
+  reviews: number;
+  newListings7d: number;
+  newUsers7d: number;
 };
 
 export async function fetchAdminStats(): Promise<AdminStats> {
-  const [listings, users, sellers, views, trending] = await Promise.all([
+  const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+  const [
+    listings,
+    users,
+    sellers,
+    verified,
+    views,
+    trending,
+    statuses,
+    featured,
+    conversations,
+    messages,
+    reviews,
+    newListings,
+    newUsers,
+  ] = await Promise.all([
     supabase.from("listings").select("id", { count: "exact", head: true }),
     supabase.from("profiles").select("id", { count: "exact", head: true }),
     supabase
       .from("profiles")
       .select("id", { count: "exact", head: true })
       .eq("is_seller", true),
+    supabase
+      .from("profiles")
+      .select("id", { count: "exact", head: true })
+      .eq("is_seller", true)
+      .eq("verified", true),
     supabase.from("listings").select("view_count").neq("status", "draft"),
     fetchTrendingSearches(6),
+    supabase.from("listings").select("status"),
+    supabase.from("listings").select("id", { count: "exact", head: true }).eq("featured", true),
+    supabase.from("conversations").select("id", { count: "exact", head: true }),
+    supabase.from("messages").select("id", { count: "exact", head: true }),
+    supabase.from("reviews").select("id", { count: "exact", head: true }),
+    supabase.from("listings").select("id", { count: "exact", head: true }).gte("created_at", weekAgo),
+    supabase.from("profiles").select("id", { count: "exact", head: true }).gte("created_at", weekAgo),
   ]);
   const totalViews = (views.data ?? []).reduce(
     (sum: number, l: { view_count: number }) => sum + (l.view_count ?? 0),
     0,
   );
+  const statusCounts: Record<string, number> = {};
+  for (const l of (statuses.data ?? []) as { status: string }[]) {
+    statusCounts[l.status] = (statusCounts[l.status] ?? 0) + 1;
+  }
+  const total = listings.count ?? 0;
   return {
-    listings: listings.count ?? 0,
+    listings: total,
     users: users.count ?? 0,
     sellers: sellers.count ?? 0,
+    verifiedSellers: verified.count ?? 0,
     totalViews,
     topSearches: trending,
+    activeListings: statusCounts["active"] ?? 0,
+    soldListings: statusCounts["sold"] ?? 0,
+    otherListings: total - (statusCounts["active"] ?? 0) - (statusCounts["sold"] ?? 0),
+    featuredListings: featured.count ?? 0,
+    conversations: conversations.count ?? 0,
+    messages: messages.count ?? 0,
+    reviews: reviews.count ?? 0,
+    newListings7d: newListings.count ?? 0,
+    newUsers7d: newUsers.count ?? 0,
   };
 }
 

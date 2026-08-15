@@ -776,27 +776,77 @@ export function adminTopCategoriesQuery() {
 export function adminStatsQuery() {
   return queryOptions({
     queryKey: ["admin-stats"],
+    staleTime: 1000 * 60 * 5,
     queryFn: async () => {
-      const [listings, users, sellers, views, trending] = await Promise.all([
+      const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+      const [
+        listings,
+        users,
+        sellers,
+        verified,
+        views,
+        trending,
+        statuses,
+        featured,
+        conversations,
+        messages,
+        reviews,
+        newListings,
+        newUsers,
+      ] = await Promise.all([
         supabase.from("listings").select("id", { count: "exact", head: true }),
         supabase.from("profiles").select("id", { count: "exact", head: true }),
         supabase
           .from("profiles")
           .select("id", { count: "exact", head: true })
           .eq("is_seller", true),
+        supabase
+          .from("profiles")
+          .select("id", { count: "exact", head: true })
+          .eq("is_seller", true)
+          .eq("verified", true),
         supabase.from("listings").select("view_count").neq("status", "draft"),
         fetchTrendingSearches(6),
+        supabase.from("listings").select("status"),
+        supabase.from("listings").select("id", { count: "exact", head: true }).eq("featured", true),
+        supabase.from("conversations").select("id", { count: "exact", head: true }),
+        supabase.from("messages").select("id", { count: "exact", head: true }),
+        supabase.from("reviews").select("id", { count: "exact", head: true }),
+        supabase
+          .from("listings")
+          .select("id", { count: "exact", head: true })
+          .gte("created_at", weekAgo),
+        supabase
+          .from("profiles")
+          .select("id", { count: "exact", head: true })
+          .gte("created_at", weekAgo),
       ]);
       const totalViews = (views.data ?? []).reduce(
         (sum: number, l: { view_count: number }) => sum + (l.view_count ?? 0),
         0,
       );
+      // Status breakdown (active / sold / everything else pending, e.g. draft).
+      const statusCounts: Record<string, number> = {};
+      for (const l of (statuses.data ?? []) as { status: string }[]) {
+        statusCounts[l.status] = (statusCounts[l.status] ?? 0) + 1;
+      }
       return {
         listings: listings.count ?? 0,
         users: users.count ?? 0,
         sellers: sellers.count ?? 0,
+        verifiedSellers: verified.count ?? 0,
         totalViews,
         topSearches: trending,
+        activeListings: statusCounts["active"] ?? 0,
+        soldListings: statusCounts["sold"] ?? 0,
+        otherListings:
+          listings.count ?? 0 - (statusCounts["active"] ?? 0) - (statusCounts["sold"] ?? 0),
+        featuredListings: featured.count ?? 0,
+        conversations: conversations.count ?? 0,
+        messages: messages.count ?? 0,
+        reviews: reviews.count ?? 0,
+        newListings7d: newListings.count ?? 0,
+        newUsers7d: newUsers.count ?? 0,
       };
     },
   });

@@ -909,7 +909,22 @@ export type Database = {
       };
     };
     Views: {
-      [_ in never]: never;
+      category_listing_counts: {
+        Row: {
+          category_id: string | null;
+          category_slug: string | null;
+          listing_count: number | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "categories_pkey";
+            columns: ["category_id"];
+            isOneToOne: false;
+            referencedRelation: "categories";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
     };
     Functions: {
       admin_notify_user: {
