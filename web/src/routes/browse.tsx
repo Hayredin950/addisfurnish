@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Sheet, SheetClose, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import {
   Select,
   SelectContent,
@@ -33,6 +34,7 @@ import {
   savedSearchesQuery,
   saveSearch,
   deleteSavedSearch,
+  type Category,
   type ListingFilters,
   type SavedSearch,
 } from "@/lib/marketplace";
@@ -209,103 +211,60 @@ function Browse() {
       </p>
 
       <div className="mt-8 grid gap-8 lg:grid-cols-[260px_1fr]">
-        <aside className="space-y-6">
-          <div className="flex items-center gap-2 text-sm font-medium">
-            <SlidersHorizontal className="h-4 w-4" /> {t("browse.filters")}
-            {activeCount > 0 ? (
-              <button
-                type="button"
-                className="ml-auto inline-flex items-center gap-1 text-xs text-primary"
-                onClick={() =>
-                  navigate({
-                    search: {
-                      q: "",
-                      category: "",
-                      condition: "",
-                      material: "",
-                      room: "",
-                      city: "",
-                      min: 0,
-                      max: 0,
-                      sort: "newest",
-                    },
-                  })
-                }
-              >
-                <X className="h-3 w-3" /> {t("browse.clear", { count: activeCount })}
-              </button>
-            ) : null}
-          </div>
-
-          <div className="space-y-2">
-            <Label htmlFor="q">{t("browse.keyword")}</Label>
-            <Input
-              id="q"
-              value={search.q}
-              placeholder="e.g. sofa"
-              onChange={(e) => set({ q: e.target.value })}
-            />
-          </div>
-
-          <FilterSelect
-            label={t("browse.category")}
-            value={search.category ?? ""}
-            onChange={(v) => set({ category: v })}
-            options={[
-              ...roots.map((c) => ({ value: c.slug, label: categoryName(c, lang) })),
-              ...children.map((c) => ({
-                value: c.slug,
-                label: `— ${categoryName(c, lang)}`,
-              })),
-            ]}
-          />
-          <FilterSelect
-            label={t("browse.condition")}
-            value={search.condition ?? ""}
-            onChange={(v) => set({ condition: v })}
-            options={CONDITIONS.map((c) => ({ value: c, label: c }))}
-          />
-          <FilterSelect
-            label={t("browse.material")}
-            value={search.material ?? ""}
-            onChange={(v) => set({ material: v })}
-            options={MATERIALS.map((c) => ({ value: c, label: c }))}
-          />
-          <FilterSelect
-            label={t("browse.room")}
-            value={search.room ?? ""}
-            onChange={(v) => set({ room: v })}
-            options={ROOM_TYPES.map((c) => ({ value: c, label: c }))}
-          />
-          <FilterSelect
-            label={t("browse.city")}
-            value={search.city ?? ""}
-            onChange={(v) => set({ city: v })}
-            options={CITIES.map((c) => ({ value: c, label: c }))}
-          />
-
-          <div className="space-y-2">
-            <Label>{t("browse.priceRange")}</Label>
-            <div className="flex items-center gap-2">
-              <Input
-                type="number"
-                min={0}
-                value={search.min || ""}
-                placeholder={t("browse.min")}
-                onChange={(e) => set({ min: Number(e.target.value) || 0 })}
+        {/* Mobile: filters live in a bottom sheet behind a button (mobile-app
+            parity), so results stay the first thing on screen. */}
+        <div className="lg:hidden">
+          <Sheet>
+            <SheetTrigger asChild>
+              <Button variant="outline" className="w-full">
+                <SlidersHorizontal className="h-4 w-4" />
+                {t("browse.filters")}
+                {activeCount > 0 ? (
+                  <span className="ml-1 grid h-5 min-w-5 place-items-center rounded-full bg-primary px-1.5 text-[11px] font-bold text-primary-foreground">
+                    {activeCount}
+                  </span>
+                ) : null}
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="bottom" className="max-h-[85vh] overflow-y-auto pb-20">
+              <SheetTitle className="sr-only">{t("browse.filters")}</SheetTitle>
+              <FilterControls
+                search={search}
+                set={set}
+                roots={roots}
+                children={children}
+                activeCount={activeCount}
               />
-              <Input
-                type="number"
-                min={0}
-                value={search.max || ""}
-                placeholder={t("browse.max")}
-                onChange={(e) => set({ max: Number(e.target.value) || 0 })}
-              />
-            </div>
-          </div>
+              <SheetClose asChild>
+                <Button className="mt-6 w-full">{t("browse.done")}</Button>
+              </SheetClose>
+            </SheetContent>
+          </Sheet>
+        </div>
+
+        {/* Desktop: the persistent sidebar. */}
+        <aside className="hidden lg:block">
+          <FilterControls
+            search={search}
+            set={set}
+            roots={roots}
+            children={children}
+            activeCount={activeCount}
+          />
         </aside>
 
         <div>
+          {/* Mobile search — the header search box only shows at `lg`, and the
+              keyword filter lives in the sheet, so the app-style search bar
+              below keeps searching visible on phones (mobile-app parity). */}
+          <div className="mb-3 lg:hidden">
+            <Input
+              value={search.q}
+              placeholder={t("nav.searchPlaceholder")}
+              onChange={(e) => set({ q: e.target.value })}
+              aria-label={t("nav.searchPlaceholder")}
+            />
+          </div>
           <div className="mb-4 flex items-center justify-between">
             <div className="flex flex-wrap gap-2">
               {roots.slice(0, 4).map((c) => (
@@ -452,6 +411,121 @@ function Browse() {
               </Button>
             </div>
           )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * The browse filter form — rendered twice: as the desktop sidebar (`lg+`) and
+ * inside the mobile bottom sheet, so both breakpoints share one control set.
+ */
+function FilterControls({
+  search,
+  set,
+  roots,
+  children,
+  activeCount,
+}: {
+  search: Partial<BrowseSearch>;
+  set: (patch: Partial<BrowseSearch>) => void;
+  roots: Category[];
+  children: Category[];
+  activeCount: number;
+}) {
+  const { t, lang } = useLang();
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center gap-2 text-sm font-medium">
+        <SlidersHorizontal className="h-4 w-4" /> {t("browse.filters")}
+        {activeCount > 0 ? (
+          <button
+            type="button"
+            className="ml-auto inline-flex items-center gap-1 text-xs text-primary"
+            onClick={() =>
+              set({
+                q: "",
+                category: "",
+                condition: "",
+                material: "",
+                room: "",
+                city: "",
+                min: 0,
+                max: 0,
+                sort: "newest",
+              })
+            }
+          >
+            <X className="h-3 w-3" /> {t("browse.clear", { count: activeCount })}
+          </button>
+        ) : null}
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="q">{t("browse.keyword")}</Label>
+        <Input
+          id="q"
+          value={search.q}
+          placeholder="e.g. sofa"
+          onChange={(e) => set({ q: e.target.value })}
+        />
+      </div>
+
+      <FilterSelect
+        label={t("browse.category")}
+        value={search.category ?? ""}
+        onChange={(v) => set({ category: v })}
+        options={[
+          ...roots.map((c) => ({ value: c.slug, label: categoryName(c, lang) })),
+          ...children.map((c) => ({
+            value: c.slug,
+            label: `— ${categoryName(c, lang)}`,
+          })),
+        ]}
+      />
+      <FilterSelect
+        label={t("browse.condition")}
+        value={search.condition ?? ""}
+        onChange={(v) => set({ condition: v })}
+        options={CONDITIONS.map((c) => ({ value: c, label: c }))}
+      />
+      <FilterSelect
+        label={t("browse.material")}
+        value={search.material ?? ""}
+        onChange={(v) => set({ material: v })}
+        options={MATERIALS.map((c) => ({ value: c, label: c }))}
+      />
+      <FilterSelect
+        label={t("browse.room")}
+        value={search.room ?? ""}
+        onChange={(v) => set({ room: v })}
+        options={ROOM_TYPES.map((c) => ({ value: c, label: c }))}
+      />
+      <FilterSelect
+        label={t("browse.city")}
+        value={search.city ?? ""}
+        onChange={(v) => set({ city: v })}
+        options={CITIES.map((c) => ({ value: c, label: c }))}
+      />
+
+      <div className="space-y-2">
+        <Label>{t("browse.priceRange")}</Label>
+        <div className="flex items-center gap-2">
+          <Input
+            type="number"
+            min={0}
+            value={search.min || ""}
+            placeholder={t("browse.min")}
+            onChange={(e) => set({ min: Number(e.target.value) || 0 })}
+          />
+          <Input
+            type="number"
+            min={0}
+            value={search.max || ""}
+            placeholder={t("browse.max")}
+            onChange={(e) => set({ max: Number(e.target.value) || 0 })}
+          />
         </div>
       </div>
     </div>

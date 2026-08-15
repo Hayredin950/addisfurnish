@@ -643,7 +643,14 @@ function ListingDetail() {
                 <Button
                   className="w-full"
                   disabled={!message.trim() || contact.isPending}
-                  onClick={() => contact.mutate()}
+                  onClick={() => {
+                    // Guests go to sign in first (mobile parity).
+                    if (!user) {
+                      void navigate({ to: "/auth" });
+                      return;
+                    }
+                    contact.mutate();
+                  }}
                 >
                   <Send className="mr-2 h-4 w-4" />
                   {t("listing.sendMessage")}
@@ -662,7 +669,14 @@ function ListingDetail() {
                   <Button
                     variant="outline"
                     disabled={!phone.trim() || callback.isPending}
-                    onClick={() => callback.mutate()}
+                    onClick={() => {
+                      // Guests go to sign in first (mobile parity).
+                      if (!user) {
+                        void navigate({ to: "/auth" });
+                        return;
+                      }
+                      callback.mutate();
+                    }}
                   >
                     <Phone className="h-4 w-4" />
                   </Button>
@@ -670,7 +684,19 @@ function ListingDetail() {
               </div>
 
               <div className="mt-5 border-t pt-5">
-                <Button variant="outline" className="w-full" onClick={() => setOfferOpen(true)}>
+                <Button
+                  variant="outline"
+                  className="w-full"
+                  onClick={() => {
+                    // Guests go to sign in first — the offer needs an account
+                    // to be tracked and answered (mobile parity).
+                    if (!user) {
+                      void navigate({ to: "/auth" });
+                      return;
+                    }
+                    setOfferOpen(true);
+                  }}
+                >
                   <HandCoins className="mr-2 h-4 w-4" /> {t("listing.makeOffer")}
                 </Button>
                 <p className="mt-2 text-xs text-muted-foreground">{t("listing.offerHint")}</p>

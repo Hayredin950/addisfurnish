@@ -14,6 +14,7 @@ import { AuthProvider, useAuth } from "@/lib/auth";
 import { LanguageProvider, useLang } from "@/lib/i18n";
 import { SiteHeader } from "@/components/SiteHeader";
 import { SiteFooter } from "@/components/SiteFooter";
+import { MobileTabBar } from "@/components/MobileTabBar";
 import { Toaster } from "@/components/ui/sonner";
 
 /** Applies the signed-in user's saved language once, unless they already picked one. */
@@ -164,7 +165,7 @@ function RootComponent() {
       <AuthProvider>
         <LanguageProvider>
           <LanguageSync />
-          <div className="flex min-h-screen flex-col">
+          <div className="flex min-h-screen flex-col pb-14 lg:pb-0">
             <SiteHeader />
             <main className="flex-1">
               {/* Required: nested routes render here. */}
@@ -172,6 +173,7 @@ function RootComponent() {
             </main>
             <SiteFooter />
           </div>
+          <MobileTabBar />
           <Toaster richColors position="top-center" />
         </LanguageProvider>
       </AuthProvider>

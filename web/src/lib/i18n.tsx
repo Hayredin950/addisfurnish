@@ -6,6 +6,8 @@ const STORAGE_KEY = "addisfurnish-lang";
 
 const en = {
   // ── Global / header ──────────────────────────────────────────────
+  "nav.home": "Home",
+  "nav.sell": "Sell",
   "nav.browse": "Browse",
   "nav.categories": "Categories",
   "nav.safety": "Safety",
@@ -84,6 +86,7 @@ const en = {
   "browse.saveSearch": "Save search",
   "browse.savedSearches": "Saved searches",
   "browse.allItems": "All items",
+  "browse.done": "Done",
 
   // ── Listing detail ───────────────────────────────────────────────
   "listing.back": "Back to browse",
@@ -599,6 +602,8 @@ const en = {
 type Dict = typeof en;
 
 const am: Record<keyof Dict, string> = {
+  "nav.home": "መነሻ",
+  "nav.sell": "ይሽጡ",
   "nav.browse": "ይመልከቱ",
   "nav.categories": "ምድቦች",
   "nav.safety": "ደህንነት",
@@ -672,6 +677,7 @@ const am: Record<keyof Dict, string> = {
   "browse.saveSearch": "ፍለጋ ያስቀምጡ",
   "browse.savedSearches": "የተቀመጡ ፍለጋዎች",
   "browse.allItems": "ሁሉም እቃዎች",
+  "browse.done": "ተጠናቋል",
 
   "listing.back": "ወደ እቃዎች ይመለሱ",
   "listing.description": "መግለጫ",
