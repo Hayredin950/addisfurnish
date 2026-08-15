@@ -172,7 +172,7 @@ const COPY = {
     langSet: (l: string) => `✅ ቋንቋ ወደ <b>${l}</b> ተቀይሯል።`,
     // ── Shortcut commands ──
     findIntro:
-      "🔎 <b>AddisFurnishን ያስሱ</b> — ከመላ ኢትዮጵያ ሱቆች ሶፋ፣ አልጋ፣ ጠረጴዛ እና ሌሎችም።",
+      "🔎 <b>AddisFurnishን ያስሱ</b> — ከመላ ኢትዮጵያ ሱቆች ሶፋዎችን፣ አልጋዎችን፣ ጠረጴዛዎችን እና ሌሎችንም ያገኛሉ።",
     findButton: "🛒 እቃዎችን ይመልከቱ",
     savedIntro:
       "❤️ <b>ያስቀመጧቸው እቃዎች</b> — ለመክፈት ከታች ይጫኑ።",
