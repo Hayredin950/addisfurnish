@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import * as Updates from "expo-updates";
 import { Stack, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -91,6 +92,38 @@ function usePushNotifications() {
  * on — with it scoped only to the notifications screen, foreground pushes
  * would otherwise be lost on every other screen.
  */
+/**
+ * Auto-update: EAS OTA updates apply themselves instead of waiting for the
+ * next cold start.
+ *
+ * expo-updates checks on launch and — with `checkAutomatically: ALWAYS` in
+ * app.json — every time the app returns to the foreground. `useUpdates`
+ * reports the result: when the automatic check finds a new bundle we start
+ * the download, and the moment it's staged (`isUpdatePending`) we reload so
+ * the new version is live immediately. No user action needed; the app simply
+ * restarts on the new code. The 30-minute cooldown guards against reload
+ * loops, and dev builds never auto-reload.
+ */
+function useAutoUpdate() {
+  const { isUpdatePending, isUpdateAvailable, isDownloading } = Updates.useUpdates();
+  const lastApply = useRef(0);
+
+  // The automatic check only flags availability — start the download.
+  useEffect(() => {
+    if (isUpdateAvailable && !isDownloading) {
+      void Updates.fetchUpdateAsync().catch(() => {});
+    }
+  }, [isUpdateAvailable, isDownloading]);
+
+  // Downloaded and staged: apply it now.
+  useEffect(() => {
+    if (!isUpdatePending) return;
+    if (Date.now() - lastApply.current < 30 * 60 * 1000) return;
+    lastApply.current = Date.now();
+    void Updates.reloadAsync();
+  }, [isUpdatePending]);
+}
+
 function useRealtimeBanner() {
   const { user } = useAuth();
   const { lang } = useLang();
@@ -118,6 +151,7 @@ function RootNavigator() {
   useProtectedRoute();
   usePushNotifications();
   useRealtimeBanner();
+  useAutoUpdate();
   return (
     <Stack
       screenOptions={{
