@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
@@ -25,6 +25,10 @@ import {
 } from "@/components/ui/alert-dialog";
 
 export const Route = createFileRoute("/dashboard")({
+  // exactOptionalPropertyTypes: omit the key entirely when absent so plain
+  // <Link to="/dashboard"> (no search) stays valid, like /sell and /profile.
+  validateSearch: (search: Record<string, unknown>): { offer?: string } =>
+    typeof search["offer"] === "string" && search["offer"] ? { offer: search["offer"] } : {},
   head: () => ({
     meta: [
       { title: "Seller Dashboard — AddisFurnish" },
@@ -62,6 +66,7 @@ function Dashboard() {
   const { user, profile } = useAuth();
   const { t } = useLang();
   const queryClient = useQueryClient();
+  const { offer: offerParam } = Route.useSearch();
   const [pendingDelete, setPendingDelete] = useState<{ id: string; title: string } | null>(null);
   const [deleting, setDeleting] = useState(false);
   const { data: listings } = useQuery(listingsQuery({ sellerId: user?.id ?? "none", limit: 100 }));
@@ -107,6 +112,18 @@ function Dashboard() {
       return data ?? [];
     },
   });
+
+  // Offer-alert deep link (?offer=<id>): scroll the exact offer card into
+  // view once the list has rendered, so the seller lands on the right row.
+  useEffect(() => {
+    if (!offerParam) return;
+    const timer = setTimeout(() => {
+      document
+        .getElementById(`offer-${offerParam}`)
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [offerParam, offers]);
 
   const respondToOffer = async (o: {
     id: string;
@@ -443,7 +460,13 @@ function Dashboard() {
             buyer: { full_name: string | null; phone: string | null } | null;
           };
           return (
-            <div key={offer.id} className="rounded-lg border bg-card p-4 text-sm">
+            <div
+              key={offer.id}
+              id={`offer-${offer.id}`}
+              className={`rounded-lg border bg-card p-4 text-sm transition-shadow ${
+                offerParam === offer.id ? "ring-2 ring-primary" : ""
+              }`}
+            >
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <p className="font-medium">
                   {offer.listings?.title ?? t("msg.listing")} —{" "}

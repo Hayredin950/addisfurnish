@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../lib/auth";
 import { useLang } from "../lib/lang";
@@ -34,6 +34,13 @@ export default function DashboardScreen() {
   const { user, profile } = useAuth();
   const { t } = useLang();
   const toast = useToast();
+  // Offer-alert deep link (?offer=<id>): scroll to the offers card and ring the
+  // exact row, so the seller lands on the right proposal (web parity).
+  const { offer: offerParam } = useLocalSearchParams<{ offer?: string }>();
+  const scrollRef = useRef<ScrollView>(null);
+  // State (not a ref) so the scroll effect below re-runs once layout is known.
+  const [offersCardY, setOffersCardY] = useState<number | null>(null);
+  const [targetOffer, setTargetOffer] = useState<string | null>(offerParam ?? null);
   const [confirm, setConfirm] = useState<{
     title: string;
     message: string;
@@ -46,6 +53,22 @@ export default function DashboardScreen() {
   const offers = useAsync(() => fetchOffersForSeller(user?.id ?? ""), [user?.id], !!user?.id);
   const convCount = useAsync(() => fetchConversationCount(user?.id ?? ""), [user?.id], !!user?.id);
   const views = useAsync(() => fetchViewsPerDay(user?.id ?? ""), [user?.id], !!user?.id);
+
+  // Once the offers section has laid out (or the list refetches), glide to it.
+  useEffect(() => {
+    if (!offerParam) return;
+    setTargetOffer(offerParam);
+  }, [offerParam]);
+  useEffect(() => {
+    if (!targetOffer || offersCardY === null) return;
+    const timer = setTimeout(() => {
+      scrollRef.current?.scrollTo({
+        y: Math.max(0, offersCardY - 12),
+        animated: true,
+      });
+    }, 150);
+    return () => clearTimeout(timer);
+  }, [targetOffer, offersCardY, offers.data]);
 
   if (!user) {
     return (
@@ -75,7 +98,11 @@ export default function DashboardScreen() {
   const maxDay = Math.max(1, ...viewsPerDay.map((v) => v.count));
 
   return (
-    <ScrollView style={styles.screen} contentContainerStyle={{ paddingBottom: 48 }}>
+    <ScrollView
+      ref={scrollRef}
+      style={styles.screen}
+      contentContainerStyle={{ paddingBottom: 48 }}
+    >
       {/* Headline stats */}
       <View style={styles.card}>
         <Text style={styles.cardTitle}>{t("dashTitle")}</Text>
@@ -217,13 +244,21 @@ export default function DashboardScreen() {
       </View>
 
       {/* Offers — buyers' price proposals, accept or decline (web parity) */}
-      <View style={styles.card}>
+      <View
+        style={styles.card}
+        onLayout={(e) => {
+          setOffersCardY(e.nativeEvent.layout.y);
+        }}
+      >
         <Text style={styles.cardTitle}>{t("dashOffers")}</Text>
         {!offers.data || offers.data.length === 0 ? (
           <Text style={styles.muted}>{t("dashNoOffers")}</Text>
         ) : (
           offers.data.map((o) => (
-            <View key={o.id} style={styles.cbRow}>
+            <View
+              key={o.id}
+              style={[styles.cbRow, o.id === targetOffer && styles.offerHighlight]}
+            >
               <View style={{ flex: 1 }}>
                 <Text numberOfLines={1} style={styles.manageTitle}>
                   {o.listings?.title ?? t("listing")} — {formatBirr(o.amount)}
@@ -461,6 +496,14 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
     gap: 8,
+  },
+  offerHighlight: {
+    borderRadius: radius.md,
+    borderWidth: 2,
+    borderColor: colors.primary,
+    borderBottomWidth: 2,
+    paddingHorizontal: 10,
+    backgroundColor: colors.primaryLight,
   },
   cbNote: { fontSize: 12.5, color: colors.textMuted, marginTop: 2 },
   cbTime: { fontSize: 11, color: colors.textSoft, marginTop: 2 },

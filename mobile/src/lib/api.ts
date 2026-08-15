@@ -334,11 +334,10 @@ export async function markConversationRead(conversationId: string, myUserId: str
 export async function fetchConversation(conversationId: string) {
   const { data, error } = await supabase
     .from("conversations")
-    .select(
-      "id,last_message_at,buyer_id,seller_id," +
+    .select(        "id,last_message_at,buyer_id,seller_id," +
         "listings(id,title,price,status,listing_images(url))," +
-        "buyer:profiles!conversations_buyer_id_fkey(id,full_name,shop_name,shop_logo_url)," +
-        "seller:profiles!conversations_seller_id_fkey(id,full_name,shop_name,shop_logo_url)",
+        "buyer:profiles!conversations_buyer_id_fkey(id,full_name,shop_name,shop_logo_url,phone,telegram,whatsapp)," +
+        "seller:profiles!conversations_seller_id_fkey(id,full_name,shop_name,shop_logo_url,phone,telegram,whatsapp)",
     )
     .eq("id", conversationId)
     .maybeSingle();
@@ -360,12 +359,18 @@ export async function fetchConversation(conversationId: string) {
       full_name: string;
       shop_name: string | null;
       shop_logo_url: string | null;
+      phone: string | null;
+      telegram: string | null;
+      whatsapp: string | null;
     } | null;
     seller: {
       id: string;
       full_name: string;
       shop_name: string | null;
       shop_logo_url: string | null;
+      phone: string | null;
+      telegram: string | null;
+      whatsapp: string | null;
     } | null;
   } | null;
 }
@@ -752,14 +757,18 @@ export async function makeOffer(input: {
   buyerName?: string | null;
   buyerPhone?: string | null;
 }) {
-  const { error } = await supabase.from("offers").insert({
-    listing_id: input.listingId,
-    buyer_id: input.buyerId,
-    seller_id: input.sellerId,
-    amount: input.amount,
-    message: input.message || null,
-  });
-  if (error) throw error;
+  const { data: offerRow, error } = await supabase
+    .from("offers")
+    .insert({
+      listing_id: input.listingId,
+      buyer_id: input.buyerId,
+      seller_id: input.sellerId,
+      amount: input.amount,
+      message: input.message || null,
+    })
+    .select("id")
+    .single();
+  if (error || !offerRow) throw error;
   // The conversation must exist before the notification: the offer's
   // auto-message lives there, and the seller's alert deep-links to it.
   const conversationId = await ensureConversation(input.listingId, input.buyerId, input.sellerId);
@@ -768,6 +777,7 @@ export async function makeOffer(input: {
   await notifyUser(input.sellerId, "offer_received", {
     title: input.listingTitle,
     listingId: input.listingId,
+    offerId: offerRow.id,
     amount: input.amount,
     buyerName: input.buyerName ?? null,
     buyerId: input.buyerId,

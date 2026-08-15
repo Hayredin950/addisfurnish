@@ -72,6 +72,7 @@ const MESSAGE_TYPES = new Set(["new_message", "callback_request", "callback_resp
 type NotifPayload = {
   title?: string | null;
   listingId?: string | null;
+  offerId?: string | null;
   conversationId?: string | null;
   buyerId?: string | null;
   buyerName?: string | null;
@@ -231,35 +232,40 @@ function NotificationsPage() {
               </>
             );
             // Conversation-related alerts go straight to the conversation
-            // (or the inbox when no conversation id travelled with it);
-            // offer alerts lead to the chat thread the offer was mirrored
-            // into, falling back to the dashboard when no thread exists;
-            // everything else points at the listing it concerns.
+            // (or the inbox when no conversation id travelled with it); an
+            // offer alert lands on the dashboard's exact offer row when the
+            // offer id is known, falling back to its chat thread then the
+            // plain dashboard; everything else points at the listing.
             const target =
               n.type === "new_message" && n.payload?.conversationId
                 ? ({
                     to: "/messages",
                     search: { conv: n.payload.conversationId },
                   } as const)
-                : (n.type === "offer_received" || n.type === "offer_response") &&
-                    n.payload?.conversationId
+                : n.type === "offer_received" && n.payload?.offerId
                   ? ({
-                      to: "/messages",
-                      search: { conv: n.payload.conversationId },
+                      to: "/dashboard",
+                      search: { offer: n.payload.offerId ?? undefined },
                     } as const)
-                  : n.type === "offer_received"
-                    ? ({ to: "/dashboard" } as const)
-                    : MESSAGE_TYPES.has(n.type)
-                      ? ({ to: "/messages" } as const)
-                      : n.type === "shop_reviewed" &&
-                          (n.payload as { shopSlug?: string } | null)?.shopSlug
-                        ? ({
-                            to: "/shop/$slug",
-                            params: { slug: (n.payload as { shopSlug: string }).shopSlug },
-                          } as const)
-                        : n.payload?.listingId
-                          ? ({ to: "/listing/$id", params: { id: n.payload.listingId } } as const)
-                          : null;
+                  : (n.type === "offer_received" || n.type === "offer_response") &&
+                      n.payload?.conversationId
+                    ? ({
+                        to: "/messages",
+                        search: { conv: n.payload.conversationId },
+                      } as const)
+                    : n.type === "offer_received"
+                      ? ({ to: "/dashboard" } as const)
+                      : MESSAGE_TYPES.has(n.type)
+                        ? ({ to: "/messages" } as const)
+                        : n.type === "shop_reviewed" &&
+                            (n.payload as { shopSlug?: string } | null)?.shopSlug
+                          ? ({
+                              to: "/shop/$slug",
+                              params: { slug: (n.payload as { shopSlug: string }).shopSlug },
+                            } as const)
+                          : n.payload?.listingId
+                            ? ({ to: "/listing/$id", params: { id: n.payload.listingId } } as const)
+                            : null;
 
             return (
               <div
@@ -336,15 +342,18 @@ function NotificationsPage() {
                     detail.type === "offer_received" ||
                     detail.type === "offer_response") &&
                   !!p.conversationId;
-                const to = isConversation
-                  ? ({ to: "/messages", search: { conv: p.conversationId } } as const)
-                  : detail.type === "offer_received"
-                    ? ({ to: "/dashboard" } as const)
-                    : p.shopSlug
-                      ? ({ to: "/shop/$slug", params: { slug: p.shopSlug } } as const)
-                      : p.listingId
-                        ? ({ to: "/listing/$id", params: { id: p.listingId } } as const)
-                        : null;
+                const to =
+                  detail.type === "offer_received" && p.offerId
+                    ? ({ to: "/dashboard", search: { offer: p.offerId ?? undefined } } as const)
+                    : isConversation
+                      ? ({ to: "/messages", search: { conv: p.conversationId } } as const)
+                      : detail.type === "offer_received"
+                        ? ({ to: "/dashboard" } as const)
+                        : p.shopSlug
+                          ? ({ to: "/shop/$slug", params: { slug: p.shopSlug } } as const)
+                          : p.listingId
+                            ? ({ to: "/listing/$id", params: { id: p.listingId } } as const)
+                            : null;
                 return to ? (
                   <Button asChild className="mt-2 w-full" onClick={() => setDetail(null)}>
                     <Link {...to}>

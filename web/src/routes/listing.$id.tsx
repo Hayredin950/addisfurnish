@@ -252,14 +252,18 @@ function ListingDetail() {
       if (!amount || amount <= 0) throw new Error("invalid");
       // Insert BEFORE notify: the offer row doubles as the notify_user thread
       // (same pattern as callback_requests — see the offers migration).
-      const { error } = await supabase.from("offers").insert({
-        listing_id: listing!.id,
-        buyer_id: user.id,
-        seller_id: listing!.seller_id,
-        amount,
-        message: offerMessage.trim() || null,
-      });
-      if (error) throw error;
+      const { data: offerRow, error } = await supabase
+        .from("offers")
+        .insert({
+          listing_id: listing!.id,
+          buyer_id: user.id,
+          seller_id: listing!.seller_id,
+          amount,
+          message: offerMessage.trim() || null,
+        })
+        .select("id")
+        .single();
+      if (error || !offerRow) throw error;
       const { data: me } = await supabase
         .from("profiles")
         .select("full_name,phone")
@@ -273,6 +277,7 @@ function ListingDetail() {
       await notifyUser(listing!.seller_id, "offer_received", {
         title: listing!.title,
         listingId: listing!.id,
+        offerId: offerRow.id,
         amount,
         buyerName,
         buyerId: user.id,

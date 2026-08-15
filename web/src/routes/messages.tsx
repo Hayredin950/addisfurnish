@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, CheckCheck, ExternalLink, Trash2 } from "lucide-react";
+import { Check, CheckCheck, ExternalLink, Phone, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { notifyUser } from "@/lib/marketplace";
@@ -35,6 +35,10 @@ type Participant = {
   id: string;
   full_name: string | null;
   avatar_url: string | null;
+  shop_name: string | null;
+  phone: string | null;
+  telegram: string | null;
+  whatsapp: string | null;
 } | null;
 
 /**
@@ -90,8 +94,8 @@ function Messages() {
         .select(
           "id,last_message_at,buyer_id,seller_id,listing_id," +
             "listings(id,title,price,status,listing_images(url,position))," +
-            "buyer:profiles!conversations_buyer_id_fkey(id,full_name,avatar_url)," +
-            "seller:profiles!conversations_seller_id_fkey(id,full_name,avatar_url)",
+            "buyer:profiles!conversations_buyer_id_fkey(id,full_name,avatar_url,shop_name,phone,telegram,whatsapp)," +
+            "seller:profiles!conversations_seller_id_fkey(id,full_name,avatar_url,shop_name,phone,telegram,whatsapp)",
         )
         .or(
           `and(buyer_id.eq.${user!.id},buyer_deleted_at.is.null),and(seller_id.eq.${user!.id},seller_deleted_at.is.null)`,
@@ -368,7 +372,43 @@ function Messages() {
           {counterpart ? (
             <header className="mb-3 flex items-center gap-2 border-b pb-3">
               <UserAvatar name={counterpart.full_name} avatarUrl={counterpart.avatar_url} />
-              <span className="text-sm font-medium">{counterpart.full_name}</span>
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-medium">
+                  {counterpart.full_name ?? counterpart.shop_name ?? ""}
+                </span>
+              </span>
+              {/* Contact the other party directly, like on the listing page. */}
+              <span className="flex shrink-0 flex-wrap gap-1.5">
+                {counterpart.phone ? (
+                  <Button asChild variant="outline" size="sm" className="h-8 px-2.5 text-xs">
+                    <a href={`tel:${counterpart.phone}`}>
+                      <Phone className="mr-1 h-3 w-3" /> {t("listing.call")}
+                    </a>
+                  </Button>
+                ) : null}
+                {counterpart.whatsapp ? (
+                  <Button asChild variant="outline" size="sm" className="h-8 px-2.5 text-xs">
+                    <a
+                      href={`https://wa.me/${counterpart.whatsapp.replace(/\D/g, "")}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      {t("listing.whatsapp")}
+                    </a>
+                  </Button>
+                ) : null}
+                {counterpart.telegram ? (
+                  <Button asChild variant="outline" size="sm" className="h-8 px-2.5 text-xs">
+                    <a
+                      href={`https://t.me/${counterpart.telegram.replace(/^@/, "")}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      {t("listing.telegram")}
+                    </a>
+                  </Button>
+                ) : null}
+              </span>
             </header>
           ) : null}
 

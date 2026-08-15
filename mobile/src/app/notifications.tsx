@@ -33,6 +33,7 @@ type Notif = {
   payload: {
     title?: string;
     listingId?: string;
+    offerId?: string;
     conversationId?: string;
     query?: string | null;
     status?: string;
@@ -98,6 +99,13 @@ export default function NotificationsScreen() {
     const isConv =
       (n.type === "new_message" || n.type === "offer_received" || n.type === "offer_response") &&
       !!n.payload?.conversationId;
+    // Seller-side offer alert: land on the dashboard's exact offer row.
+    if (n.type === "offer_received" && n.payload?.offerId) {
+      return {
+        label: t("notifOpenDashboard"),
+        go: () => router.push({ pathname: "/dashboard", params: { offer: n.payload!.offerId } }),
+      };
+    }
     if (isConv) {
       return { label: t("notifOpenConversation"), go: () => router.push(`/chat/${n.payload!.conversationId}`) };
     }
@@ -150,14 +158,16 @@ export default function NotificationsScreen() {
 
   const openNotif = (n: Notif) => {
     void markNotificationRead(n.id);
-    // Message + offer notifications go straight to the chat thread (offers are
-    // mirrored into the conversation); an offer without a thread falls back to
-    // the seller dashboard; everything else with a listing link opens the
-    // listing. (Web parity: /messages?conv=id.)
+    // Seller-side offer alert lands on the dashboard's exact offer row
+    // (?offer=<id>); older offers without an id fall back to the chat thread
+    // (offers are mirrored into the conversation), then the plain dashboard.
+    // Everything else with a listing link opens the listing.
     const isConv =
       (n.type === "new_message" || n.type === "offer_received" || n.type === "offer_response") &&
       !!n.payload?.conversationId;
-    if (isConv) {
+    if (n.type === "offer_received" && n.payload?.offerId) {
+      router.push({ pathname: "/dashboard", params: { offer: n.payload.offerId } });
+    } else if (isConv) {
       router.push(`/chat/${n.payload!.conversationId}`);
     } else if (n.type === "offer_received") {
       router.push("/dashboard");

@@ -3,6 +3,7 @@ import {
   FlatList,
   Image,
   KeyboardAvoidingView,
+  Linking,
   Platform,
   Pressable,
   StyleSheet,
@@ -49,6 +50,13 @@ export default function ChatScreen() {
 
   const conv = conversation.data;
   const listing = conv?.listings ?? null;
+  /** The other party — buyer sees the seller, seller sees the buyer. */
+  const counterpart =
+    conv && user
+      ? conv.buyer_id === user.id
+        ? conv.buyer
+        : conv.seller
+      : null;
 
   // Realtime delivery for this conversation — listen to *all* events so edits,
   // soft-deletes and read receipts sync live, not just new sends.
@@ -223,28 +231,69 @@ export default function ChatScreen() {
         contentContainerStyle={{ padding: spacing.lg }}
         onContentSizeChange={() => listRef.current?.scrollToEnd({ animated: false })}
         ListHeaderComponent={
-          listing ? (
-            <Pressable
-              style={styles.listingBanner}
-              onPress={() => router.push(`/listing/${listing.id}`)}
-            >
-              {listing.listing_images?.[0]?.url ? (
-                <Image source={imageSource(listing.listing_images[0].url, undefined, 600)} style={styles.bannerImg} />
-              ) : (
-                <View style={[styles.bannerImg, styles.bannerImgEmpty]}>
-                  <Text style={styles.bannerEmoji}>🛋️</Text>
+          <View>
+            {listing ? (
+              <Pressable
+                style={styles.listingBanner}
+                onPress={() => router.push(`/listing/${listing.id}`)}
+              >
+                {listing.listing_images?.[0]?.url ? (
+                  <Image source={imageSource(listing.listing_images[0].url, undefined, 600)} style={styles.bannerImg} />
+                ) : (
+                  <View style={[styles.bannerImg, styles.bannerImgEmpty]}>
+                    <Text style={styles.bannerEmoji}>🛋️</Text>
+                  </View>
+                )}
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.bannerLabel}>{t("msgAboutItem")}</Text>
+                  <Text numberOfLines={1} style={styles.bannerTitle}>
+                    {listing.title}
+                  </Text>
+                  <Text style={styles.bannerPrice}>{formatBirr(listing.price)}</Text>
                 </View>
-              )}
-              <View style={{ flex: 1 }}>
-                <Text style={styles.bannerLabel}>{t("msgAboutItem")}</Text>
-                <Text numberOfLines={1} style={styles.bannerTitle}>
-                  {listing.title}
-                </Text>
-                <Text style={styles.bannerPrice}>{formatBirr(listing.price)}</Text>
+                <Ionicons name="chevron-forward" size={16} color={colors.textSoft} />
+              </Pressable>
+            ) : null}
+            {/* Direct contact methods for the other party, like the listing page. */}
+            {counterpart &&
+            (counterpart.phone || counterpart.whatsapp || counterpart.telegram) ? (
+              <View style={styles.contactRow}>
+                {counterpart.phone ? (
+                  <Pressable
+                    style={styles.contactChip}
+                    onPress={() => Linking.openURL(`tel:${counterpart.phone}`)}
+                  >
+                    <Ionicons name="call" size={14} color={colors.primary} />
+                    <Text style={styles.contactText}>{t("callNow")}</Text>
+                  </Pressable>
+                ) : null}
+                {counterpart.whatsapp ? (
+                  <Pressable
+                    style={styles.contactChip}
+                    onPress={() =>
+                      Linking.openURL(
+                        `https://wa.me/${(counterpart.whatsapp ?? "").replace(/[^0-9]/g, "")}`,
+                      )
+                    }
+                  >
+                    <Ionicons name="logo-whatsapp" size={14} color={colors.success} />
+                    <Text style={styles.contactText}>{t("whatsapp")}</Text>
+                  </Pressable>
+                ) : null}
+                {counterpart.telegram ? (
+                  <Pressable
+                    style={styles.contactChip}
+                    onPress={() =>
+                      Linking.openURL(`https://t.me/${(counterpart.telegram ?? "").replace("@", "")}`)
+                    }
+                  >
+                    <Ionicons name="paper-plane" size={13} color={colors.info} />
+                    <Text style={styles.contactText}>{t("telegram")}</Text>
+                  </Pressable>
+                ) : null}
               </View>
-              <Ionicons name="chevron-forward" size={16} color={colors.textSoft} />
-            </Pressable>
-          ) : null
+            ) : null}
+          </View>
         }
         renderItem={renderBubble}
       />
@@ -290,8 +339,26 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
     padding: 10,
+    marginBottom: 10,
+  },
+  contactRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
     marginBottom: 14,
   },
+  contactChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: colors.card,
+    borderRadius: radius.full,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 11,
+    paddingVertical: 6,
+  },
+  contactText: { fontSize: 12, color: colors.text, fontWeight: "600" },
   bannerImg: { width: 44, height: 44, borderRadius: radius.md },
   bannerImgEmpty: { backgroundColor: colors.secondary, alignItems: "center", justifyContent: "center" },
   bannerEmoji: { fontSize: 20 },

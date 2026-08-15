@@ -74,6 +74,7 @@ export type NotificationRow = {
   payload: {
     title?: string;
     listingId?: string;
+    offerId?: string;
     conversationId?: string;
     query?: string | null;
     status?: string;
@@ -397,6 +398,7 @@ export async function notifyUser(
   payload: {
     title?: string;
     listingId?: string;
+    offerId?: string;
     conversationId?: string;
     query?: string | null;
     status?: string;
