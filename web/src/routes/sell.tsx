@@ -8,10 +8,11 @@ import { useLang } from "@/lib/i18n";
 import { RequireAuth } from "@/components/RequireAuth";
 import { LocationPicker, type Coords } from "@/components/LocationPicker";
 import { PhotoPicker, type ExistingPhoto } from "@/components/PhotoPicker";
-import { uploadListingImage } from "@/lib/storage";
+import { uploadListingImage, uploadListingVideo } from "@/lib/storage";
 import { categoriesQuery } from "@/lib/marketplace";
 import { CITIES, CONDITIONS, MATERIALS, ROOM_TYPES, SUB_CITY_COORDS } from "@/lib/format";
 import { announceListing, syncListingChannel } from "@/lib/telegram";
+import { Video } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -49,6 +50,10 @@ function Sell() {
   const { data: categories } = useQuery(categoriesQuery);
   const [busy, setBusy] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
+  // One optional short showcase video (≤ 60s). In edit mode the stored video
+  // is kept unless the seller removes it.
+  const [videoFile, setVideoFile] = useState<File | null>(null);
+  const [videoRemove, setVideoRemove] = useState(false);
   // Edit mode: photos already on the listing, and pending changes to them.
   const [removedPhotoIds, setRemovedPhotoIds] = useState<string[]>([]);
   const [coverPhotoId, setCoverPhotoId] = useState<string | null>(null);
@@ -115,6 +120,14 @@ function Sell() {
       const picked = coords ?? fallback ?? null;
       const discountExpiry = (form.get("discount_expires_at") as string) || null;
       const deliveryFeeRaw = form.get("delivery_fee") as string;
+      // Upload the showcase video first (it fails the whole submit, unlike a
+      // photo miss which only warns). A removed video stays removed.
+      let videoUrl: string | null = null;
+      if (videoFile) {
+        videoUrl = await uploadListingVideo(user!.id, videoFile);
+      } else if (editId && editing?.video_url && !videoRemove) {
+        videoUrl = editing.video_url;
+      }
       const values = {
         title: String(form.get("title")),
         description: String(form.get("description")),
@@ -136,6 +149,7 @@ function Sell() {
         delivery_fee: deliveryFeeRaw ? Number(deliveryFeeRaw) : null,
         latitude: picked?.latitude ?? null,
         longitude: picked?.longitude ?? null,
+        video_url: videoUrl,
       };
 
       let listing: { id: string };
@@ -383,6 +397,60 @@ function Sell() {
           onReorderExisting={setCoverPhotoId}
         />
 
+        <div className="space-y-2">
+          <Label>{t("video.label")}</Label>
+          <div className="flex flex-wrap items-center gap-3">
+            <Input
+              id="video"
+              type="file"
+              accept="video/*"
+              onChange={async (e) => {
+                const file = e.target.files?.[0] ?? null;
+                setVideoFile(null);
+                if (!file) return;
+                // Reject anything longer than 60s before it gets uploaded.
+                const ok = await videoWithinLimit(file);
+                if (!ok) {
+                  toast.error(t("video.tooLong"));
+                  e.target.value = "";
+                  return;
+                }
+                setVideoFile(file);
+              }}
+            />
+            {videoFile ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setVideoFile(null);
+                  const el = document.getElementById("video") as HTMLInputElement | null;
+                  if (el) el.value = "";
+                }}
+              >
+                {t("video.remove")}
+              </Button>
+            ) : null}
+            {editId && editing?.video_url && !videoRemove && !videoFile ? (
+              <span className="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
+                <Video className="h-3.5 w-3.5 text-primary" /> {t("video.attached")}
+                <button
+                  type="button"
+                  className="ml-1 text-xs font-medium text-destructive underline"
+                  onClick={() => setVideoRemove(true)}
+                >
+                  {t("video.remove")}
+                </button>
+              </span>
+            ) : null}
+            {videoRemove ? (
+              <span className="text-sm text-destructive">{t("video.willRemove")}</span>
+            ) : null}
+          </div>
+          <p className="text-xs text-muted-foreground">{t("video.hint")}</p>
+        </div>
+
         <div className="flex gap-2">
           <Button type="submit" size="lg" disabled={busy}>
             {busy ? t("sell.publishing") : editId ? t("action.saveChanges") : t("sell.publish")}
@@ -396,6 +464,25 @@ function Sell() {
       </form>
     </div>
   );
+}
+
+/** Loads a video's metadata and resolves true when it's ≤ 60 seconds. */
+async function videoWithinLimit(file: File): Promise<boolean> {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file);
+    const el = document.createElement("video");
+    el.preload = "metadata";
+    el.onloadedmetadata = () => {
+      URL.revokeObjectURL(url);
+      resolve(el.duration <= 60);
+    };
+    el.onerror = () => {
+      URL.revokeObjectURL(url);
+      // Unreadable metadata — let the upload proceed; the player handles it.
+      resolve(true);
+    };
+    el.src = url;
+  });
 }
 
 function Field({

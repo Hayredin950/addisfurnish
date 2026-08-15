@@ -831,6 +831,18 @@ export function uploadListingImage(
 }
 
 /**
+ * Short showcase video (≤ ~60s) for a listing. Stored under the seller's
+ * folder in the same public bucket, so the first path segment stays the
+ * uploader's id (the bucket's INSERT policy checks exactly that).
+ */
+export function uploadListingVideo(
+  userId: string,
+  file: { uri: string; name?: string; mimeType?: string },
+): Promise<string> {
+  return uploadToBucket("listing-images", userId, file, "videos");
+}
+
+/**
  * Shop logos live in the same public bucket but under a `logos/` folder — the
  * bucket's INSERT policy checks that the first path segment is the uploader's
  * id, so the user id has to stay first.
@@ -871,6 +883,7 @@ export async function createListing(input: {
   latitude: number | null;
   longitude: number | null;
   imagePaths: string[];
+  videoUrl?: string | null;
 }): Promise<string> {
   const { data, error } = await supabase
     .from("listings")
@@ -894,6 +907,7 @@ export async function createListing(input: {
       discount_expires_at: input.discountExpiresAt,
       latitude: input.latitude,
       longitude: input.longitude,
+      video_url: input.videoUrl ?? null,
     })
     .select("id")
     .single();
@@ -954,6 +968,7 @@ export async function updateListing(
     discount_expires_at?: string | null;
     latitude?: number | null;
     longitude?: number | null;
+    video_url?: string | null;
   },
 ) {
   const { error } = await supabase.from("listings").update(patch).eq("id", id);

@@ -25,6 +25,7 @@ import {
   updateListing,
   updateProfile,
   uploadListingImage,
+  uploadListingVideo,
 } from "../../lib/api";
 import { Button } from "../../components/Button";
 import { CalendarPicker } from "../../components/CalendarPicker";
@@ -88,6 +89,10 @@ export default function SellScreen() {
   // Discount expiry — picked from a calendar, not typed.
   const [discountDate, setDiscountDate] = useState<string | null>(null);
   const [photos, setPhotos] = useState<Photo[]>([]);
+  // One optional short showcase video (≤ ~60s). isExisting marks a video
+  // already uploaded on this listing in edit mode — its uri is then a storage
+  // path to keep, not a local file to upload.
+  const [video, setVideo] = useState<{ uri: string; name: string; isExisting?: boolean } | null>(null);
   const [publishing, setPublishing] = useState(false);
   // Listing location — defaults to the shop location; the seller can move the
   // pin or use their current location (web parity).
@@ -141,6 +146,9 @@ export default function SellScreen() {
     setDiscountDate(item.discount_expires_at ?? null);
     setLat(item.latitude ?? null);
     setLon(item.longitude ?? null);
+    setVideo(
+      item.video_url ? { uri: item.video_url, name: "existing-video.mp4", isExisting: true } : null,
+    );
     if (item.material) setMaterialCustom(!MATERIALS.includes(item.material));
     const existing = [...(item.listing_images ?? [])]
       .sort((a, b) => a.position - b.position)
@@ -170,6 +178,23 @@ export default function SellScreen() {
       name: a.fileName ?? `photo-${Date.now()}.jpg`,
     }));
     setPhotos((prev) => [...prev, ...picked].slice(0, 6));
+  };
+
+  const pickVideo = async () => {
+    const res = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["videos"],
+      allowsMultipleSelection: false,
+    });
+    if (res.canceled) return;
+    const a = res.assets?.[0];
+    if (!a) return;
+    // ImagePicker reports video length in seconds; cap at 60s so the listing
+    // stays a quick showcase, not a full clip.
+    if (a.duration != null && a.duration > 60) {
+      toast.error(null, t("videoTooLong"));
+      return;
+    }
+    setVideo({ uri: a.uri, name: a.fileName ?? `video-${Date.now()}.mp4` });
   };
 
   const takePhoto = async () => {
@@ -226,6 +251,15 @@ export default function SellScreen() {
       );
       const finalUrls = photos.map((p) => (p.isExisting ? p.uri : newPaths.shift()!));
 
+      // A newly picked video gets uploaded; an existing one keeps its stored
+      // path; none means the field is cleared.
+      let videoUrl: string | null = null;
+      if (video) {
+        videoUrl = video.isExisting
+          ? video.uri
+          : await uploadListingVideo(user.id, video);
+      }
+
       const discountExpiresAt = discountDate;
 
       const patch = {
@@ -249,6 +283,7 @@ export default function SellScreen() {
         discount_expires_at: discountExpiresAt,
         latitude: lat,
         longitude: lon,
+        video_url: videoUrl,
       };
       // If the seller never touched the pin and the shop has no location,
       // fall back to the sub-city centre (Addis Ababa) so listings still map.
@@ -287,9 +322,11 @@ export default function SellScreen() {
           latitude: patch.latitude,
           longitude: patch.longitude,
           imagePaths: finalUrls,
+          videoUrl,
         });
       }
       setPhotos([]);
+      setVideo(null);
       setTitle("");
       setDesc("");
       setPrice("");
@@ -403,6 +440,34 @@ export default function SellScreen() {
                 </Pressable>
               </>
             ) : null}
+          </View>
+
+          {/* Optional short showcase video (≤ 60s). */}
+          <View style={{ marginTop: 14 }}>
+            <Text style={styles.label}>{t("videoLabel")}</Text>
+            {video ? (
+              <View style={styles.videoRow}>
+                <View style={styles.videoInfo}>
+                  <Ionicons name="videocam" size={18} color={colors.primary} />
+                  <Text style={styles.videoName} numberOfLines={1}>
+                    {video.isExisting ? t("videoCurrent") : video.name}
+                  </Text>
+                </View>
+                <Pressable
+                  onPress={() => setVideo(null)}
+                  hitSlop={8}
+                  style={styles.videoRemove}
+                >
+                  <Ionicons name="close" size={15} color={colors.danger} />
+                </Pressable>
+              </View>
+            ) : (
+              <Pressable style={styles.videoAdd} onPress={pickVideo}>
+                <Ionicons name="videocam-outline" size={18} color={colors.primary} />
+                <Text style={styles.videoAddText}>{t("videoAdd")}</Text>
+              </Pressable>
+            )}
+            <Text style={styles.videoHint}>{t("videoHint")}</Text>
           </View>
         </View>
 
@@ -805,6 +870,41 @@ const styles = StyleSheet.create({
     textAlign: "center",
     paddingHorizontal: 4,
   },
+  videoAdd: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    borderWidth: 1.5,
+    borderStyle: "dashed",
+    borderColor: colors.borderStrong,
+    borderRadius: radius.md,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+    backgroundColor: colors.secondary,
+    alignSelf: "flex-start",
+  },
+  videoAddText: { fontSize: 13, color: colors.primary, fontWeight: "600" },
+  videoRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+    backgroundColor: colors.secondary,
+    borderRadius: radius.md,
+    paddingHorizontal: 14,
+    paddingVertical: 11,
+  },
+  videoInfo: { flexDirection: "row", alignItems: "center", gap: 8, flex: 1 },
+  videoName: { fontSize: 13, color: colors.text, fontWeight: "600", flex: 1 },
+  videoRemove: {
+    width: 26,
+    height: 26,
+    borderRadius: radius.full,
+    backgroundColor: colors.dangerLight,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  videoHint: { fontSize: 11.5, color: colors.textMuted, marginTop: 6 },
   chipWrap: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   chip: {
     backgroundColor: colors.secondary,

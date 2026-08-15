@@ -13,6 +13,7 @@ import {
   Star,
   Pencil,
   Trash2,
+  Video,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -32,6 +33,7 @@ import {
 } from "@/lib/marketplace";
 import { Stars, StarPicker } from "@/components/ReviewStars";
 import { ListingGallery } from "@/components/ListingGallery";
+import { useImageUrl } from "@/lib/storage";
 import { UserAvatar } from "@/components/UserAvatar";
 import { LocationCard } from "@/components/LocationCard";
 import { ListingCard } from "@/components/ListingCard";
@@ -69,6 +71,7 @@ function ListingDetail() {
   const { data: listing, isLoading } = useQuery(listingQuery(id));
   const { data: history } = useQuery(priceHistoryQuery(id));
   const { data: reviews } = useQuery(reviewsQuery(listing?.seller_id ?? ""));
+  const { data: videoUrl } = useImageUrl(listing?.video_url ?? null);
   const [rating, setRating] = useState(0);
   const [comment, setComment] = useState("");
   const messageBoxRef = useRef<HTMLTextAreaElement>(null);
@@ -295,6 +298,20 @@ function ListingDetail() {
       <div className="mt-6 grid gap-10 lg:grid-cols-[1.4fr_1fr]">
         <div>
           <ListingGallery images={images} alt={listing.title} />
+          {listing.video_url ? (
+            <div className="mt-4 overflow-hidden rounded-xl border bg-muted">
+              <div className="flex items-center gap-1.5 px-4 pt-3 text-xs font-semibold text-foreground">
+                <Video className="h-3.5 w-3.5 text-primary" /> {t("video.showcase")}
+              </div>
+              <video
+                src={videoUrl}
+                controls
+                preload="metadata"
+                playsInline
+                className="aspect-4/3 w-full bg-black object-contain"
+              />
+            </div>
+          ) : null}
 
           <div className="mt-8">
             <h2 className="font-display text-xl font-semibold">{t("listing.description")}</h2>

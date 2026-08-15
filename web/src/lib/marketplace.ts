@@ -53,6 +53,7 @@ export type Listing = {
   discount_expires_at: string | null;
   latitude: number | null;
   longitude: number | null;
+  video_url: string | null;
   listing_images: { id: string; url: string; position: number }[];
   profiles?: SellerSummary | null;
   categories?: { name: string; slug: string; name_am: string | null } | null;

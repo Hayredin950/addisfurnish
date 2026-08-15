@@ -47,6 +47,22 @@ export async function uploadListingImage(userId: string, file: File): Promise<st
 }
 
 /**
+ * Uploads a listing's short showcase video (≤ ~60s, validated in the sell
+ * form). Stored under `videos/` inside the seller's folder so the first path
+ * segment stays the uploader's id (bucket INSERT policy requirement).
+ */
+export async function uploadListingVideo(userId: string, file: File): Promise<string> {
+  const ext = file.name.split(".").pop() ?? "mp4";
+  const path = `${userId}/videos/${crypto.randomUUID()}.${ext}`;
+  const { error } = await supabase.storage.from(BUCKET).upload(path, file, {
+    cacheControl: "3600",
+    upsert: false,
+  });
+  if (error) throw error;
+  return path;
+}
+
+/**
  * Uploads a shop logo. The path must start with the uploader's id — the bucket's
  * INSERT policy checks `(storage.foldername(name))[1] = auth.uid()`, so a
  * top-level `logos/` prefix is rejected.

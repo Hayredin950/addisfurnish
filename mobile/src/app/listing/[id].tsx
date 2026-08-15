@@ -14,6 +14,7 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
+import { useVideoPlayer, VideoView } from "expo-video";
 import { Ionicons } from "@expo/vector-icons";
 import { useLang } from "../../lib/lang";
 import { useAsync } from "../../hooks/use-async";
@@ -42,7 +43,7 @@ import { Button } from "../../components/Button";
 import { SheetOverlay } from "../../components/SheetOverlay";
 import { useToast } from "../../components/Toast";
 import { colors, radius, spacing, shadows, font } from "../../lib/theme";
-import { imageSource } from "../../lib/storage";
+import { imageSource, imageUrl } from "../../lib/storage";
 import { formatBirr, timeAgo, ethiopianDate } from "../../lib/format";
 
 function Stars({ value, size = 14 }: { value: number; size?: number }) {
@@ -282,6 +283,9 @@ export default function ListingDetailScreen() {
           </View>
         ) : null}
       </View>
+
+      {/* Short showcase video, if the seller attached one. */}
+      {item.video_url ? <ListingVideo url={item.video_url} /> : null}
 
       {/* Price block */}
       <View style={styles.card}>
@@ -789,6 +793,34 @@ const REPORT_REASONS = [
   { value: "other", labelKey: "reportOther" as const, labelEn: "Other" },
 ] as const;
 
+/**
+ * Inline player for the listing's short showcase video (≤ ~60s). Uses the
+ * device player with native controls; auto-plays muted so the carousel above
+ * doesn't get double volume.
+ */
+function ListingVideo({ url }: { url: string }) {
+  const { t } = useLang();
+  const player = useVideoPlayer(imageUrl(url), (p) => {
+    p.loop = true;
+    p.muted = true;
+    p.play();
+  });
+  return (
+    <View style={styles.videoCard}>
+      <View style={styles.videoHeader}>
+        <Ionicons name="videocam" size={15} color={colors.primary} />
+        <Text style={styles.videoHeaderText}>{t("videoShowcase")}</Text>
+      </View>
+      <VideoView
+        player={player}
+        style={styles.videoPlayer}
+        contentFit="cover"
+        nativeControls
+      />
+    </View>
+  );
+}
+
 function DetailItem({ label, value }: { label: string; value: string }) {
   return (
     <View style={styles.detailItem}>
@@ -853,6 +885,17 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     ...shadows.card,
   },
+  videoCard: {
+    backgroundColor: colors.card,
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.md,
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+    ...shadows.card,
+  },
+  videoHeader: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 10 },
+  videoHeaderText: { fontSize: 13, fontWeight: "700", color: colors.text },
+  videoPlayer: { width: "100%", aspectRatio: 4 / 3, borderRadius: radius.md, backgroundColor: colors.secondary },
   priceRow: { flexDirection: "row", alignItems: "baseline", gap: 10, flexWrap: "wrap" },
   price: { fontSize: 26, fontWeight: "800", color: colors.primary },
   oldPrice: { fontSize: 15, color: colors.textSoft, textDecorationLine: "line-through" },

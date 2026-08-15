@@ -261,6 +261,7 @@ export type Database = {
           title: string;
           updated_at: string;
           view_count: number;
+          video_url: string | null;
         };
         Insert: {
           brand?: string | null;
@@ -289,6 +290,7 @@ export type Database = {
           title?: string;
           updated_at?: string;
           view_count?: number;
+          video_url?: string | null;
         };
         Update: {
           brand?: string | null;
@@ -317,6 +319,7 @@ export type Database = {
           title?: string;
           updated_at?: string;
           view_count?: number;
+          video_url?: string | null;
         };
         Relationships: [
           {
