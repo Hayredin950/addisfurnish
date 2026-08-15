@@ -2,10 +2,12 @@ import { createFileRoute } from "@tanstack/react-router";
 
 /**
  * EAS project id for AddisFurnish (mobile/app.json → extra.eas.projectId).
+ * The app moved from the old account (hayredins-team) to yunus750s-team
+ * (commit 74a446f); the banner must point at the new project.
  */
-const EXPO_APP_ID = "838504d6-b211-4e5c-9df7-145b3ece145e";
+const EXPO_APP_ID = "a20e2096-ff1a-49cd-8b85-77f0acf08529";
 
-const EXPO_ACCOUNT = "hayredins-team";
+const EXPO_ACCOUNT = "yunus750s-team";
 const EXPO_PROJECT = "addisfurnish";
 
 /**
@@ -18,7 +20,7 @@ const EXPO_PROJECT = "addisfurnish";
  * build artifacts after ~30 days, so an artifact link would 404 within a
  * month. The build page never expires and always offers the download.
  */
-const FALLBACK_BUILD_ID = "039be209-eac2-4556-9d22-dd6b23cdb51d";
+const FALLBACK_BUILD_ID = "19cdf6e5-3e96-4010-b7e2-bc771428b9e1";
 
 function buildPageUrl(id: string) {
   return `https://expo.dev/accounts/${EXPO_ACCOUNT}/projects/${EXPO_PROJECT}/builds/${id}`;
