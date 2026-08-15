@@ -387,6 +387,41 @@ async function isChannelMember(chatId: number): Promise<boolean | null> {
   }
 }
 
+/**
+ * Shared join verification (callback button and /verifyjoin): check channel
+ * membership and, when confirmed, mark the profile verified. Returns the
+ * outcome so the caller can phrase the reply.
+ */
+async function verifyAndMark(
+  supabase: any,
+  profileId: string,
+  userId: number,
+): Promise<"verified" | "not_member"> {
+  const member = await isChannelMember(userId);
+  if (member === null) {
+    // Same fallback as the callback: an un-resolvable channel id must not
+    // lock users out — accept the check as proof, but log loudly so the
+    // team knows to switch TELEGRAM_CHANNEL_ID to @username or the numeric
+    // id for real verification.
+    console.error(
+      `channel verify: could not resolve ${CHANNEL_ID.slice(0, 8)}… as a chat — falling back to tap confirmation`,
+    );
+    await supabase
+      .from("profiles")
+      .update({ telegram_channel_joined_at: new Date().toISOString() })
+      .eq("id", profileId);
+    return "verified";
+  }
+  if (member) {
+    await supabase
+      .from("profiles")
+      .update({ telegram_channel_joined_at: new Date().toISOString() })
+      .eq("id", profileId);
+    return "verified";
+  }
+  return "not_member";
+}
+
 // ── Sell via Bot ──────────────────────────────────────────────────────────
 
 async function sendCategoryPicker(supabase: ReturnType<typeof createClient>, chatId: number, copy: (typeof COPY)[Lang], lang: Lang) {
@@ -656,27 +691,8 @@ Deno.serve(async (req) => {
       return new Response("ok", { status: 200 });
     }
 
-    const member = await isChannelMember(cbUserId);
-    if (member === null) {
-      // The configured id may be an invite hash that getChatMember can't
-      // resolve (it needs @username or the numeric chat id). Rather than
-      // locking users out forever, accept the tap as proof — but log loudly
-      // so the team knows to switch TELEGRAM_CHANNEL_ID to @username or the
-      // numeric id for real verification.
-      console.error(
-        `channel verify: could not resolve ${CHANNEL_ID.slice(0, 8)}… as a chat — falling back to tap confirmation`,
-      );
-      await supabase
-        .from("profiles")
-        .update({ telegram_channel_joined_at: new Date().toISOString() })
-        .eq("id", cbProfile.id);
-      await answerCallback(callback.id ?? "", "✅");
-      await sendMessage(cbChatId, cbCopy.joinVerified);
-    } else if (member) {
-      await supabase
-        .from("profiles")
-        .update({ telegram_channel_joined_at: new Date().toISOString() })
-        .eq("id", cbProfile.id);
+    const outcome = await verifyAndMark(supabase, cbProfile.id, cbUserId);
+    if (outcome === "verified") {
       await answerCallback(callback.id ?? "", "✅");
       await sendMessage(cbChatId, cbCopy.joinVerified);
     } else {
@@ -708,6 +724,12 @@ Deno.serve(async (req) => {
   }
   const lang: Lang = current?.preferred_language === "am" ? "am" : "en";
   const copy = COPY[lang];
+
+  // /help works for linked and unlinked chats alike.
+  if (text === "/help") {
+    await sendMessage(chatId, copy.help(SITE_URL));
+    return new Response("ok", { status: 200 });
+  }
 
   // ── Shared contact: the phone-verification proof ───────────────────────
   // Runs before the command branches — a shared contact arrives with no text,
@@ -918,6 +940,26 @@ Deno.serve(async (req) => {
     return new Response("ok", { status: 200 });
   }
 
+  // /verifyjoin — same membership check as the "✅ I've joined" button, but
+  // triggered by typing instead of a tap.
+  if (text.startsWith("/verifyjoin")) {
+    if (!current) {
+      await sendMessage(chatId, copy.notLinked);
+      return new Response("ok", { status: 200 });
+    }
+    if (current.telegram_channel_joined_at) {
+      await sendMessage(chatId, copy.alreadyVerified);
+      return new Response("ok", { status: 200 });
+    }
+    if (!CHANNEL_ID) {
+      await sendMessage(chatId, copy.joinNotFound);
+      return new Response("ok", { status: 200 });
+    }
+    const outcome = await verifyAndMark(supabase, current.id, message.from?.id ?? chatId);
+    await sendMessage(chatId, outcome === "verified" ? copy.joinVerified : copy.joinNotYet);
+    return new Response("ok", { status: 200 });
+  }
+
   if (text.startsWith("/stop")) {
     if (!current) {
       await sendMessage(chatId, copy.notLinked);
@@ -1064,6 +1106,11 @@ Deno.serve(async (req) => {
     .select("*")
     .eq("chat_id", String(chatId))
     .maybeSingle();
+  // /cancel with nothing in flight is a no-op, not an error.
+  if (text === "/cancel" && !sellSession) {
+    await sendMessage(chatId, copy.sellCanceled);
+    return new Response("ok", { status: 200 });
+  }
   if (sellSession) {
     if (text === "/cancel") {
       await supabase.from("telegram_sell_sessions").delete().eq("id", sellSession.id);
