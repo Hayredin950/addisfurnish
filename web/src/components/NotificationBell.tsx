@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Bell, CheckCheck } from "lucide-react";
@@ -25,6 +26,7 @@ const TYPE_KEY: Record<
   | "notif.callbackResponse"
   | "notif.sellerVerified"
   | "notif.sellerRejected"
+  | "notif.shopReviewed"
 > = {
   new_message: "notif.newMessage",
   callback_request: "notif.callbackRequest",
@@ -34,6 +36,7 @@ const TYPE_KEY: Record<
   callback_response: "notif.callbackResponse",
   seller_verified: "notif.sellerVerified",
   seller_rejected: "notif.sellerRejected",
+  shop_reviewed: "notif.shopReviewed",
 };
 
 export function NotificationBell() {
@@ -41,6 +44,29 @@ export function NotificationBell() {
   const { t } = useLang();
   const queryClient = useQueryClient();
   const { data: notifications } = useQuery(notificationsQuery(user?.id ?? ""));
+
+  // Live badge: refetch when a realtime INSERT lands, so the unread count and
+  // list stay in sync with the mobile app without a page reload.
+  useEffect(() => {
+    if (!user) return;
+    const channel = supabase
+      .channel(`notif-bell-${user.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "notifications",
+          filter: `user_id=eq.${user.id}`,
+        },
+        () => queryClient.invalidateQueries({ queryKey: ["notifications"] }),
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
 
   const unread = (notifications ?? []).filter((n) => !n.is_read).length;
 
@@ -102,15 +128,33 @@ export function NotificationBell() {
                     : n.type === "callback_response"
                       ? { status: n.payload?.status ?? "" }
                       : { title };
-              return (
-                <div
-                  key={n.id}
-                  className={`border-b px-3 py-2.5 text-sm last:border-0 ${
-                    n.is_read ? "opacity-60" : ""
-                  }`}
-                >
-                  <p className="leading-snug">{t(key, vars)}</p>
+              // Deep-link straight to what the notification is about — the
+              // same targets the /notifications page uses.
+              const link =
+                n.type === "new_message" && n.payload?.conversationId
+                  ? ({ to: "/messages", search: { conv: n.payload.conversationId } } as const)
+                  : n.type === "shop_reviewed" &&
+                      (n.payload as { shopSlug?: string } | null)?.shopSlug
+                    ? ({
+                        to: "/shop/$slug",
+                        params: { slug: (n.payload as { shopSlug: string }).shopSlug },
+                      } as const)
+                    : n.payload?.listingId
+                      ? ({ to: "/listing/$id", params: { id: n.payload.listingId } } as const)
+                      : null;
+              const row = (
+                <div className="border-b px-3 py-2.5 text-sm last:border-0">
+                  <p className={`leading-snug ${n.is_read ? "opacity-60" : ""}`}>{t(key, vars)}</p>
                   <p className="mt-0.5 text-xs text-muted-foreground">{timeAgo(n.created_at)}</p>
+                </div>
+              );
+              return link ? (
+                <Link key={n.id} {...link} className="block">
+                  {row}
+                </Link>
+              ) : (
+                <div key={n.id} className={`${n.is_read ? "opacity-60" : ""}`}>
+                  {row}
                 </div>
               );
             })

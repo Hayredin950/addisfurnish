@@ -78,6 +78,8 @@ export type NotificationRow = {
     status?: string;
     oldPrice?: number;
     newPrice?: number;
+    rating?: number;
+    shopSlug?: string;
   } | null;
   is_read: boolean;
   created_at: string;

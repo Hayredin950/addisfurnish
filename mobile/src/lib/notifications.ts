@@ -110,7 +110,14 @@ export async function registerForPushNotifications(userId: string): Promise<stri
 export function notificationText(
   lang: Lang,
   type: string,
-  payload: { title?: string; query?: string | null; status?: string; reason?: string } | null,
+  payload: {
+    title?: string;
+    query?: string | null;
+    status?: string;
+    reason?: string;
+    rating?: number;
+    shopSlug?: string;
+  } | null,
 ): { title: string; body: string } {
   const p = payload ?? {};
   const listing = p.title ?? "";
@@ -127,6 +134,14 @@ export function notificationText(
       return { title: translate(lang, "discount"), body: listing };
     case "saved_search_match":
       return { title: translate(lang, "searchResults"), body: p.query ?? "" };
+    case "shop_reviewed":
+      return {
+        title: translate(lang, "shopReviewed"),
+        body:
+          p.rating != null
+            ? `${p.rating}/5${p.title ? ` — ${p.title}` : ""}`
+            : (p.title ?? ""),
+      };
     case "seller_verified":
       return { title: translate(lang, "shopVerified"), body: "" };
     case "seller_rejected":

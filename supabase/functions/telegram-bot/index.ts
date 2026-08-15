@@ -27,6 +27,9 @@ const WEBHOOK_SECRET = Deno.env.get("TELEGRAM_WEBHOOK_SECRET");
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL");
 const SERVICE_ROLE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 const SITE_URL = Deno.env.get("SITE_URL") ?? "";
+// When set, new links must join this channel and verify before alerts flow.
+// Accepts @username, a numeric chat id, or a t.me/joinchat/ invite link.
+const CHANNEL_ID = Deno.env.get("TELEGRAM_CHANNEL_ID") ?? "";
 
 type Lang = "en" | "am";
 
@@ -40,11 +43,22 @@ const COPY = {
       "This link has expired — they're valid for 15 minutes. Open your AddisFurnish profile and tap “Connect Telegram” for a new one.",
     noToken:
       "Hello! 👋 I send AddisFurnish alerts.\n\nTo connect, open your AddisFurnish profile and tap “Connect Telegram”.",
+    joinAsk:
+      "Almost done! 🎉\n\nTo start receiving alerts, please join our channel and tap the button below.",
+    joinButton: "✅ I've joined — verify",
+    joinNotFound: "I can't find that channel yet — tell the team to set TELEGRAM_CHANNEL_ID and try again.",
+    joinVerified:
+      "🎉 Verified! You're in.\n\nFrom now on I'll send you alerts here — new messages, callback requests, price drops and listings matching your preferences.",
+    joinNotYet:
+      "It doesn't look like you've joined yet. 😅\n\nOpen the channel link above, tap Join, then come back and press the button again.",
+    joinFailed:
+      "I couldn't verify your membership right now (Telegram may be busy). Try the button again in a minute.",
+    alreadyVerified: "✅ You're already verified — alerts are active. Nothing to do!",
     stopped:
       "🔕 Disconnected. You won't get any more alerts here.\n\nReconnect any time from your AddisFurnish profile.",
     notLinked: "This chat isn't connected to an AddisFurnish account.",
     help: (site: string) =>
-      `I deliver AddisFurnish alerts — new messages, callback requests, and listings matching your saved preferences.\n\n/start — connect your account\n/stop — stop alerts\n/help — this message${
+      `I deliver AddisFurnish alerts — new messages, callback requests, and listings matching your saved preferences.\n\n/start — connect your account\n/join — join our channel (required before alerts start)\n/stop — stop alerts\n/help — this message${
         site ? `\n\n${site}` : ""
       }`,
     fallback: "I only send alerts. Use /help to see what I can do.",
@@ -70,10 +84,21 @@ const COPY = {
       "የዚህ ሊንክ ጊዜ አልፎበታል — ለ15 ደቂቃ ብቻ ይሰራል። የAddisFurnish መገለጫዎን ከፍተው አዲስ ያግኙ።",
     noToken:
       "ሰላም! 👋 የAddisFurnish ማሳወቂያዎችን እልካለሁ።\n\nለማገናኘት የAddisFurnish መገለጫዎን ከፍተው “ቴሌግራም አገናኝ” ይጫኑ።",
+    joinAsk:
+      "ተይቶ ተጠናቋል! 🎉\n\nማሳወቂያ መቀበል ለመጀመር እባክዎ ቻናላችንን ይቀላቀሉ እና ከታች ያለውን ቁልፍ ይጫኑ።",
+    joinButton: "✅ ተቀላቅያለሁ — አረጋግጥ",
+    joinNotFound: "ቻናሉን ማግኘት አልቻልኩም — ቡድኑ TELEGRAM_CHANNEL_ID ን እንዲያዘጋጅ ንገሯቸው።",
+    joinVerified:
+      "🎉 ተረጋግጧል! እንኳን ደህና መጡ።\n\nከአሁን ጀምሮ ማሳወቂያዎችን እዚህ እልክልዎታለሁ — አዲስ መልእክቶች፣ የጥሪ ጥያቄዎች፣ የዋጋ ቅናሾች እና ከምርጫዎ ጋር የሚስማሙ ዕቃዎች።",
+    joinNotYet:
+      "እስካሁን የተቀላቀሉ አይመስሉም። 😅\n\nከላይ ያለውን ቻናል ይክፈቱ፣ Join ይጫኑ፣ ከዚያ ተመልሰው ቁልፉን ይጫኑ።",
+    joinFailed:
+      "አባልነትዎን ማረጋገጥ አልቻልኩም (ቴሌግራም ስራ ላይ ነው ሊሆን)። ከአንድ ደቂቃ በኋላ እንደገና ይሞክሩ።",
+    alreadyVerified: "✅ አስቀድመው ተረጋግጠዋል — ማሳወቂያዎች ንቁ ናቸው። ምንም አይጠበቅም!",
     stopped: "🔕 ተቋርጧል። ከዚህ በኋላ ማሳወቂያ አይደርስዎትም።\n\nበማንኛውም ጊዜ ከመገለጫዎ እንደገና ማገናኘት ይችላሉ።",
     notLinked: "ይህ ውይይት ከAddisFurnish መለያ ጋር አልተገናኘም።",
     help: (site: string) =>
-      `የAddisFurnish ማሳወቂያዎችን አደርሳለሁ — አዲስ መልእክቶች፣ የጥሪ ጥያቄዎች እና ከምርጫዎ ጋር የሚስማሙ ዕቃዎች።\n\n/start — መለያዎን ያገናኙ\n/stop — ማሳወቂያ ያቁሙ\n/help — ይህ መልእክት${
+      `የAddisFurnish ማሳወቂያዎችን አደርሳለሁ — አዲስ መልእክቶች፣ የጥሪ ጥያቄዎች እና ከምርጫዎ ጋር የሚስማሙ ዕቃዎች።\n\n/start — መለያዎን ያገናኙ\n/join — ቻናላችንን ይቀላቀሉ (ማሳወቂያ ከመጀመሩ በፊት ያስፈልጋል)\n/stop — ማሳወቂያ ያቁሙ\n/help — ይህ መልእክት${
         site ? `\n\n${site}` : ""
       }`,
     fallback: "ማሳወቂያ ብቻ ነው የምልከው። /help ይጠቀሙ።",
@@ -108,6 +133,83 @@ async function sendMessage(chatId: number, text: string, replyMarkup?: unknown) 
     });
   } catch {
     // Telegram unreachable — nothing useful to do inside a webhook.
+  }
+}
+
+/**
+ * Inline "join the channel" prompt with a Join button and a verify button.
+ * The Join URL is derived from TELEGRAM_CHANNEL_ID (t.me/<username> for
+ * @username, the raw link for t.me/... links; numeric ids can't build a
+ * public URL, so those get the text prompt without a button).
+ */
+async function sendChannelPrompt(chatId: number, text: string, verifyLabel: string) {
+  if (!BOT_TOKEN || !CHANNEL_ID) return;
+  let url: string | null = null;
+  if (CHANNEL_ID.startsWith("@")) url = `https://t.me/${CHANNEL_ID.slice(1)}`;
+  else if (CHANNEL_ID.startsWith("https://t.me/")) url = CHANNEL_ID;
+  try {
+    await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: text.slice(0, 4096),
+        parse_mode: "HTML",
+        reply_markup: {
+          inline_keyboard: [
+            ...(url ? [[{ text: "📢 Join channel", url }]] : []),
+            [{ text: verifyLabel, callback_data: "verify_channel_join" }],
+          ],
+        },
+      }),
+    });
+  } catch {
+    // Telegram unreachable — nothing useful to do inside a webhook.
+  }
+}
+
+async function answerCallback(callbackQueryId: string, text?: string) {
+  if (!BOT_TOKEN) return;
+  try {
+    await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/answerCallbackQuery`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        callback_query_id: callbackQueryId,
+        ...(text ? { text: text.slice(0, 200) } : {}),
+      }),
+    });
+  } catch {
+    // Best-effort.
+  }
+}
+
+/**
+ * Membership check via getChatMember. Returns true when the user is a member
+ * (including admins/creators and restricted members who are still in).
+ */
+async function isChannelMember(chatId: number): Promise<boolean | null> {
+  if (!BOT_TOKEN || !CHANNEL_ID) return null;
+  try {
+    const res = await fetch(
+      `https://api.telegram.org/bot${BOT_TOKEN}/getChatMember?chat_id=${encodeURIComponent(CHANNEL_ID)}&user_id=${chatId}`,
+    );
+    if (!res.ok) return null;
+    const body = (await res.json()) as {
+      ok: boolean;
+      result?: { status: string; is_member?: boolean };
+      description?: string;
+    };
+    if (!body.ok) {
+      console.error("getChatMember failed", body.description);
+      return null;
+    }
+    const status = body.result?.status;
+    if (status === "creator" || status === "administrator" || status === "member") return true;
+    if (status === "restricted") return body.result?.is_member ?? false;
+    return false;
+  } catch {
+    return null;
   }
 }
 
@@ -148,9 +250,60 @@ Deno.serve(async (req) => {
   }
 
   const body = await req.json().catch(() => null);
-  const message = body?.message;
-  if (!message || !SUPABASE_URL || !SERVICE_ROLE) {
+  if (!body || !SUPABASE_URL || !SERVICE_ROLE) {
     // Always 200 to Telegram — a non-2xx makes it retry the same update.
+    return new Response("ok", { status: 200 });
+  }
+
+  const supabase = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
+
+  // ── Callback query: "✅ I've joined — verify" ─────────────────────────
+  const callback = body.callback_query as
+    | { id?: string; data?: string; from?: { id?: number }; message?: { chat?: { id?: number } } }
+    | undefined;
+  if (callback?.data === "verify_channel_join") {
+    const cbChatId = (callback.message?.chat?.id ?? callback.from?.id) as number | undefined;
+    const cbUserId = (callback.from?.id ?? cbChatId) as number | undefined;
+    if (!cbChatId || !cbUserId) {
+      await answerCallback(callback.id ?? "", "Something went wrong — try again.");
+      return new Response("ok", { status: 200 });
+    }
+
+    const { data: cbProfile } = await supabase
+      .from("profiles")
+      .select("id, preferred_language, telegram_chat_id, telegram_channel_joined_at")
+      .eq("telegram_chat_id", String(cbChatId))
+      .maybeSingle();
+    const cbCopy = COPY[cbProfile?.preferred_language === "am" ? "am" : "en"];
+
+    if (!cbProfile) {
+      await answerCallback(callback.id ?? "", cbCopy.notLinked);
+      return new Response("ok", { status: 200 });
+    }
+    if (cbProfile.telegram_channel_joined_at) {
+      await answerCallback(callback.id ?? "", cbCopy.alreadyVerified);
+      return new Response("ok", { status: 200 });
+    }
+
+    const member = await isChannelMember(cbUserId);
+    if (member === null) {
+      await answerCallback(callback.id ?? "", cbCopy.joinNotFound);
+    } else if (member) {
+      await supabase
+        .from("profiles")
+        .update({ telegram_channel_joined_at: new Date().toISOString() })
+        .eq("id", cbProfile.id);
+      await answerCallback(callback.id ?? "", "✅");
+      await sendMessage(cbChatId, cbCopy.joinVerified);
+    } else {
+      await answerCallback(callback.id ?? "", cbCopy.joinNotYet);
+    }
+    return new Response("ok", { status: 200 });
+  }
+
+  const message = body.message;
+  if (!message) {
+    // A non-message, non-callback update (e.g. channel post) — nothing to do.
     return new Response("ok", { status: 200 });
   }
 
@@ -158,12 +311,10 @@ Deno.serve(async (req) => {
   const text = (message.text ?? "").trim();
   if (!chatId) return new Response("ok", { status: 200 });
 
-  const supabase = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
-
   // Language follows the account when this chat is already linked.
   const { data: current } = await supabase
     .from("profiles")
-    .select("id, preferred_language")
+    .select("id, preferred_language, telegram_channel_joined_at")
     .eq("telegram_chat_id", String(chatId))
     .maybeSingle();
   const lang: Lang = current?.preferred_language === "am" ? "am" : "en";
@@ -352,6 +503,29 @@ Deno.serve(async (req) => {
       (profile.full_name as string | null) ??
       "AddisFurnish";
     await sendMessage(chatId, linkedCopy.linked(name));
+
+    // Channel gate: if a channel is configured, new links must join and verify
+    // before alerts flow (telegram-notify skips chats without the flag).
+    if (CHANNEL_ID) {
+      await sendChannelPrompt(chatId, linkedCopy.joinAsk, linkedCopy.joinButton);
+    }
+    return new Response("ok", { status: 200 });
+  }
+
+  if (text.startsWith("/join")) {
+    if (!current) {
+      await sendMessage(chatId, copy.notLinked);
+      return new Response("ok", { status: 200 });
+    }
+    if (current.telegram_channel_joined_at) {
+      await sendMessage(chatId, copy.alreadyVerified);
+      return new Response("ok", { status: 200 });
+    }
+    if (!CHANNEL_ID) {
+      await sendMessage(chatId, copy.joinNotFound);
+      return new Response("ok", { status: 200 });
+    }
+    await sendChannelPrompt(chatId, copy.joinAsk, copy.joinButton);
     return new Response("ok", { status: 200 });
   }
 

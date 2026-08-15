@@ -493,6 +493,7 @@ const en = {
   "notif.dismiss": "Dismiss",
   "notif.reportResolved": "We reviewed your report and took action. Thank you.",
   "notif.reportDismissed": "We reviewed your report and found no violation.",
+  "notif.shopReviewed": "New review on your shop — {title}",
 
   // ── Photos ───────────────────────────────────────────────────────
   "sell.addPhotos": "Add photos",
@@ -968,6 +969,7 @@ const am: Record<keyof Dict, string> = {
   "notif.dismiss": "አስወግድ",
   "notif.reportResolved": "ጥቆማዎን ገምግመን እርምጃ ወስደናል። እናመሰግናለን።",
   "notif.reportDismissed": "ጥቆማዎን ገምግመን ጥሰት አላገኘንም።",
+  "notif.shopReviewed": "በሱቅዎ ላይ አዲስ ግምገማ — {title}",
 
   // ── Photos ───────────────────────────────────────────────────────
   "sell.addPhotos": "ፎቶዎች ጨምር",

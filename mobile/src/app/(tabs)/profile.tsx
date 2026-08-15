@@ -24,6 +24,7 @@ import { useAsync } from "../../hooks/use-async";
 import {
   disconnectTelegram,
   fetchBuyerPreferences,
+  fetchCategories,
   fetchMyVerificationDocs,
   getTelegramConnectUrl,
   saveBuyerPreferences,
@@ -96,12 +97,15 @@ export default function ProfileScreen() {
     preferred_cities: [],
     telegram_alerts_enabled: false,
   });
+  const [prefMin, setPrefMin] = useState("");
+  const [prefMax, setPrefMax] = useState("");
   const [prefsLoaded, setPrefsLoaded] = useState(false);
   const [telegramBusy, setTelegramBusy] = useState(false);
   const [updateBusy, setUpdateBusy] = useState(false);
   const [admin, setAdmin] = useState(false);
 
   const docs = useAsync(() => fetchMyVerificationDocs(user?.id ?? ""), [user?.id], !!user);
+  const cats = useAsync(fetchCategories, []);
 
   useEffect(() => {
     if (profile) {
@@ -127,7 +131,11 @@ export default function ProfileScreen() {
   useEffect(() => {
     if (user && !prefsLoaded) {
       void fetchBuyerPreferences(user.id).then((p) => {
-        if (p) setPrefs(p);
+        if (p) {
+          setPrefs(p);
+          setPrefMin(p.price_min != null ? String(p.price_min) : "");
+          setPrefMax(p.price_max != null ? String(p.price_max) : "");
+        }
         setPrefsLoaded(true);
       });
     }
@@ -277,12 +285,32 @@ export default function ProfileScreen() {
   const savePrefs = async () => {
     if (!user) return;
     try {
-      await saveBuyerPreferences(user.id, prefs);
+      await saveBuyerPreferences(user.id, {
+        ...prefs,
+        price_min: prefMin ? Number(prefMin) : null,
+        price_max: prefMax ? Number(prefMax) : null,
+      });
       toast.success(t("saved"));
     } catch (err) {
       toast.error(err, t("oops"));
     }
   };
+
+  const togglePrefCategory = (id: string) =>
+    setPrefs((p) => ({
+      ...p,
+      category_ids: p.category_ids.includes(id)
+        ? p.category_ids.filter((c) => c !== id)
+        : [...p.category_ids, id],
+    }));
+
+  const togglePrefCity = (city: string) =>
+    setPrefs((p) => ({
+      ...p,
+      preferred_cities: p.preferred_cities.includes(city)
+        ? p.preferred_cities.filter((c) => c !== city)
+        : [...p.preferred_cities, city],
+    }));
 
   const connectTelegram = async () => {
     setTelegramBusy(true);
@@ -667,6 +695,66 @@ export default function ProfileScreen() {
               )}
             </View>
           ) : null}
+          {/* Category preference — pick which furniture categories interest you. */}
+          <Text style={styles.prefLabel}>{t("prefCategories")}</Text>
+          <View style={styles.chipWrap}>
+            {(cats.data ?? [])
+              .filter((c) => !c.parent_id)
+              .map((c) => {
+                const active = prefs.category_ids.includes(c.id);
+                return (
+                  <Pressable
+                    key={c.id}
+                    style={[styles.chip, active && styles.chipActive]}
+                    onPress={() => togglePrefCategory(c.id)}
+                  >
+                    <Text style={[styles.chipText, active && styles.chipTextActive]}>
+                      {lang === "am" ? (c.name_am ?? c.name) : c.name}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+          </View>
+
+          {/* City preference */}
+          <Text style={[styles.prefLabel, { marginTop: 12 }]}>{t("preferredCities")}</Text>
+          <View style={styles.chipWrap}>
+            {CITIES.map((c) => {
+              const active = prefs.preferred_cities.includes(c);
+              return (
+                <Pressable
+                  key={c}
+                  style={[styles.chip, active && styles.chipActive]}
+                  onPress={() => togglePrefCity(c)}
+                >
+                  <Text style={[styles.chipText, active && styles.chipTextActive]}>{c}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          {/* Price range preference */}
+          <Text style={[styles.prefLabel, { marginTop: 12 }]}>{t("priceRange")}</Text>
+          <View style={styles.priceRow}>
+            <TextInput
+              value={prefMin}
+              onChangeText={setPrefMin}
+              placeholder={t("minPrice")}
+              keyboardType="number-pad"
+              placeholderTextColor={colors.textSoft}
+              style={styles.priceInput}
+            />
+            <Text style={styles.priceSep}>{t("to")}</Text>
+            <TextInput
+              value={prefMax}
+              onChangeText={setPrefMax}
+              placeholder={t("maxPrice")}
+              keyboardType="number-pad"
+              placeholderTextColor={colors.textSoft}
+              style={styles.priceInput}
+            />
+          </View>
+
           <View style={styles.prefRow}>
             <Text style={styles.prefLabel}>{t("telegramAlerts")}</Text>
             <Switch
@@ -954,6 +1042,17 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   prefLabel: { fontSize: 13.5, color: colors.text, fontWeight: "600" },
+  priceRow: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 },
+  priceInput: {
+    flex: 1,
+    backgroundColor: colors.secondary,
+    borderRadius: radius.md,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 14,
+    color: colors.text,
+  },
+  priceSep: { color: colors.textMuted },
   langRow: { flexDirection: "row", gap: 10, marginTop: 8 },
   langBtn: {
     flex: 1,

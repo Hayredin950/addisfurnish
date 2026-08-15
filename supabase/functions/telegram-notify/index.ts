@@ -54,6 +54,10 @@ type NotifPayload = {
   reason?: string;
   oldPrice?: number | string;
   newPrice?: number | string;
+  rating?: number | string;
+  shopSlug?: string;
+  price?: number | string;
+  negotiable?: boolean;
 };
 
 function formatPrice(value: number): string {
@@ -95,7 +99,12 @@ function copyFor(type: string, payload: NotifPayload, lang: Lang): string {
     price_drop: `📉 Price drop on “${listing}”${
       payload.newPrice != null ? ` — now ${formatPrice(Number(payload.newPrice))}` : ""
     }`,
-    saved_search_match: `🔎 New match for “${payload.query ?? "your saved search"}”: ${listing}`,
+    saved_search_match: `🔎 New match for “${payload.query ?? "your saved search"}”: ${listing}${
+      payload.price != null
+        ? ` — ${formatPrice(Number(payload.price))}${payload.negotiable ? " (negotiable)" : ""}`
+        : ""
+    }`,
+    shop_reviewed: `⭐ New review on your shop${payload.rating != null ? ` — ${payload.rating}/5` : ""}${payload.title ? `: “${payload.title}”` : ""}`,
     seller_verified: "✅ Your shop has been verified on AddisFurnish. Your badge is now live.",
     seller_rejected: `❌ Your verification was not approved${
       payload.reason ? `: ${payload.reason}` : "."
@@ -111,7 +120,12 @@ function copyFor(type: string, payload: NotifPayload, lang: Lang): string {
     price_drop: `📉 “${listing}” ዋጋ ቀንሷል${
       payload.newPrice != null ? ` — አሁን ${formatPrice(Number(payload.newPrice))}` : ""
     }`,
-    saved_search_match: `🔎 ለ“${payload.query ?? "የተቀመጠ ፍለጋዎ"}” አዲስ ውጤት፦ ${listing}`,
+    saved_search_match: `🔎 ለ“${payload.query ?? "የተቀመጠ ፍለጋዎ"}” አዲስ ውጤት፦ ${listing}${
+      payload.price != null
+        ? ` — ${formatPrice(Number(payload.price))}${payload.negotiable ? " (negotiable)" : ""}`
+        : ""
+    }`,
+    shop_reviewed: `⭐ በሱቅዎ ላይ አዲስ ግምገማ${payload.rating != null ? ` — ${payload.rating}/5` : ""}${payload.title ? `፦ “${payload.title}”` : ""}`,
     seller_verified: "✅ ሱቅዎ በAddisFurnish ተረጋግጧል። የማረጋገጫ ምልክትዎ አሁን ይታያል።",
     seller_rejected: `❌ ማረጋገጫዎ አልጸደቀም${
       payload.reason ? `፦ ${payload.reason}` : "።"
@@ -153,11 +167,17 @@ async function handleNotification(
 
   const { data: profile } = await supabase
     .from("profiles")
-    .select("telegram_chat_id, preferred_language")
+    .select("telegram_chat_id, preferred_language, telegram_channel_joined_at")
     .eq("id", userId)
     .maybeSingle();
   const chatId = profile?.telegram_chat_id as string | null | undefined;
   if (!chatId) return new Response("not linked", { status: 200 });
+  // Channel gate: when a channel is configured, alerts only flow after the
+  // chat proved it joined (telegram-bot /join → verify). Backfilled for
+  // pre-existing links, so only brand-new links are affected.
+  if (CHANNEL_ID && !profile?.telegram_channel_joined_at) {
+    return new Response("channel join pending", { status: 200 });
+  }
 
   const lang: Lang = profile?.preferred_language === "am" ? "am" : "en";
   const type = (notif.type as string | null) ?? "";
@@ -252,16 +272,21 @@ type BuyerPrefRow = {
 
 type LinkedProfileRow = {
   id: string;
-  telegram_chat_id: string;
-  preferred_language: string | null;
+  telegram_chat_id: string | null;
+  telegram_channel_joined_at: string | null;
 };
 
 /**
- * Buyer bot: DM every linked user whose saved preferences match this listing.
+ * Buyer broadcast: notify every user whose saved preferences match this
+ * listing, across ALL channels — in-app centre, push and Telegram.
  *
- * Deliberately independent of postToChannel — it used to run inside it, behind
- * two early returns, so matched buyers got nothing whenever the channel was
- * unconfigured or the listing had already been posted.
+ * It inserts a `saved_search_match` notifications row per matched buyer (the
+ * same type the DB trigger uses for saved searches); the existing
+ * push_on_notification / telegram_on_notification triggers then deliver push
+ * and Telegram automatically. That keeps one code path for every channel and
+ * is deliberately independent of postToChannel — it used to run inside it,
+ * behind two early returns, so matched buyers got nothing whenever the channel
+ * was unconfigured or the listing had already been posted.
  */
 async function broadcastToMatchedBuyers(
   supabase: SupabaseClient,
@@ -290,36 +315,23 @@ async function broadcastToMatchedBuyers(
   });
   if (matching.length === 0) return 0;
 
-  const { data: profiles } = await supabase
-    .from("profiles")
-    .select("id,telegram_chat_id,preferred_language")
-    .in(
-      "id",
-      matching.map((m) => m.user_id),
-    )
-    .not("telegram_chat_id", "is", null);
-  if (!profiles || profiles.length === 0) return 0;
+  // Never notify the seller about their own listing.
+  const recipients = matching.filter((m) => m.user_id !== listing.seller_id).slice(0, MAX_BROADCAST_SENDS);
+  if (recipients.length === 0) return 0;
 
-  // Never DM the seller about their own listing.
-  const recipients = (profiles as LinkedProfileRow[]).filter((p) => p.id !== listing.seller_id);
-  const link = listingLink(listing.id);
-  let sent = 0;
-  for (const p of recipients) {
-    if (sent >= MAX_BROADCAST_SENDS) {
-      console.log(
-        `broadcast: capped at ${MAX_BROADCAST_SENDS} sends, ${
-          recipients.length - sent
-        } matched buyer(s) not notified for listing ${listing.id}`,
-      );
-      break;
-    }
-    const text =
-      p.preferred_language === "am"
-        ? `🪑 አዲስ፦ ${listing.title} — ${formatPrice(price)}${link}`
-        : `🪑 New: ${listing.title} — ${formatPrice(price)}${link}`;
-    if (await sendMessage(p.telegram_chat_id, text)) sent += 1;
-  }
-  return sent;
+  const rows = recipients.map((m) => ({
+    user_id: m.user_id,
+    type: "saved_search_match",
+    payload: {
+      title: listing.title,
+      listingId: listing.id,
+      query: listing.categories?.name ?? null,
+      price: price,
+      negotiable: listing.negotiable,
+    },
+  }));
+  const { data: inserted } = await supabase.from("notifications").insert(rows).select("user_id");
+  return inserted?.length ?? 0;
 }
 
 /** Shape B — a listing was just published (images included). */
@@ -366,7 +378,7 @@ async function handleView(
 ): Promise<Response> {
   const { data: listing } = await supabase
     .from("listings")
-    .select("id,title,seller_id,profiles(telegram_chat_id,preferred_language)")
+    .select("id,title,seller_id,profiles(telegram_chat_id,preferred_language,telegram_channel_joined_at)")
     .eq("id", listingId)
     .maybeSingle();
   if (!listing) return new Response("listing not found", { status: 404 });
@@ -376,8 +388,14 @@ async function handleView(
   const seller = listing.profiles as {
     telegram_chat_id: string | null;
     preferred_language: string | null;
+    telegram_channel_joined_at: string | null;
   } | null;
   if (!seller?.telegram_chat_id) return new Response("not linked", { status: 200 });
+  // Same channel gate as notification delivery — alerts wait until the chat
+  // proved it joined the marketing channel.
+  if (CHANNEL_ID && !seller?.telegram_channel_joined_at) {
+    return new Response("channel join pending", { status: 200 });
+  }
 
   // Throttle to at most one alert per listing per 10 minutes, so a listing on
   // the front page doesn't buzz the seller's phone continuously.

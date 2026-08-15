@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Bell, CheckCheck, X } from "lucide-react";
@@ -38,6 +39,7 @@ const TYPE_KEY: Record<
   | "notif.sellerRejected"
   | "notif.reportResolved"
   | "notif.reportDismissed"
+  | "notif.shopReviewed"
 > = {
   new_message: "notif.newMessage",
   callback_request: "notif.callbackRequest",
@@ -49,6 +51,7 @@ const TYPE_KEY: Record<
   seller_rejected: "notif.sellerRejected",
   report_resolved: "notif.reportResolved",
   report_dismissed: "notif.reportDismissed",
+  shop_reviewed: "notif.shopReviewed",
 };
 
 /** Types that should open the inbox rather than the listing page. */
@@ -59,6 +62,29 @@ function NotificationsPage() {
   const { t } = useLang();
   const queryClient = useQueryClient();
   const { data: notifications } = useQuery(notificationsQuery(user?.id ?? ""));
+
+  // Live delivery — refetch whenever a realtime INSERT lands for this user, so
+  // the web inbox stays in sync with the mobile app (mobile does the same).
+  useEffect(() => {
+    if (!user) return;
+    const channel = supabase
+      .channel(`notif-web-${user.id}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "notifications",
+          filter: `user_id=eq.${user.id}`,
+        },
+        () => queryClient.invalidateQueries({ queryKey: ["notifications"] }),
+      )
+      .subscribe();
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.id]);
 
   const markAllRead = useMutation({
     mutationFn: async () => {
@@ -141,9 +167,15 @@ function NotificationsPage() {
                   } as const)
                 : MESSAGE_TYPES.has(n.type)
                   ? ({ to: "/messages" } as const)
-                  : n.payload?.listingId
-                    ? ({ to: "/listing/$id", params: { id: n.payload.listingId } } as const)
-                    : null;
+                  : n.type === "shop_reviewed" &&
+                      (n.payload as { shopSlug?: string } | null)?.shopSlug
+                    ? ({
+                        to: "/shop/$slug",
+                        params: { slug: (n.payload as { shopSlug: string }).shopSlug },
+                      } as const)
+                    : n.payload?.listingId
+                      ? ({ to: "/listing/$id", params: { id: n.payload.listingId } } as const)
+                      : null;
 
             return (
               <div

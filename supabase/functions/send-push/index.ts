@@ -31,6 +31,10 @@ type NotifPayload = {
   query?: string | null;
   status?: string;
   reason?: string;
+  rating?: number | string;
+  shopSlug?: string;
+  price?: number | string;
+  negotiable?: boolean;
 };
 
 /** Human-friendly title/body per notification type (mirrors the app). */
@@ -50,7 +54,16 @@ function copyFor(type: string, payload: NotifPayload): { title: string; body: st
     case "saved_search_match":
       return {
         title: "New match",
-        body: `New listings for “${payload.query ?? "your saved search"}”`,
+        body:
+          `New listing for “${payload.query ?? "your saved search"}”` +
+          (payload.price != null
+            ? ` — ETB ${Number(payload.price).toLocaleString()}${payload.negotiable ? " (negotiable)" : ""}`
+            : ""),
+      };
+    case "shop_reviewed":
+      return {
+        title: "New review on your shop",
+        body: payload.rating != null ? `Rated ${payload.rating}/5 — ${payload.title ?? ""}`.trim() : payload.title ?? "Someone reviewed your shop",
       };
     case "seller_verified":
       return { title: "Shop verified", body: "Your shop is now verified — great work!" };

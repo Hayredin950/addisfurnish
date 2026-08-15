@@ -65,6 +65,14 @@ export function SiteHeader() {
     navigate({ to: "/browse", search: { q } });
   }
 
+  // Suggestions must navigate programmatically too: closing the dropdown on
+  // mousedown unmounts the <Link> before its click event can fire, which is
+  // exactly why "clicking a suggestion did nothing".
+  function goToListing(id: string) {
+    setOpen(false);
+    navigate({ to: "/listing/$id", params: { id } });
+  }
+
   const showTrending = open && term.trim().length < 2;
   const showSuggestions = open && term.trim().length >= 2;
 
@@ -135,17 +143,16 @@ export function SiteHeader() {
                     <ul className="max-h-72 overflow-y-auto py-1">
                       {suggestions!.map((s) => (
                         <li key={s.id}>
-                          <Link
-                            to="/listing/$id"
-                            params={{ id: s.id }}
-                            onMouseDown={() => setOpen(false)}
-                            className="flex items-center justify-between gap-3 px-3 py-2 text-sm transition-colors hover:bg-secondary"
+                          <button
+                            type="button"
+                            onMouseDown={() => goToListing(s.id)}
+                            className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm transition-colors hover:bg-secondary"
                           >
                             <span className="truncate font-medium">{s.title}</span>
                             <span className="shrink-0 text-xs text-muted-foreground">
                               {formatBirr(s.price)}
                             </span>
-                          </Link>
+                          </button>
                         </li>
                       ))}
                     </ul>

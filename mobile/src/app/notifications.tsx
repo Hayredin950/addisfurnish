@@ -27,6 +27,8 @@ type Notif = {
     status?: string;
     newPrice?: number;
     reason?: string;
+    rating?: number;
+    shopSlug?: string;
   } | null;
   is_read: boolean;
   created_at: string;
@@ -88,6 +90,8 @@ export default function NotificationsScreen() {
     // with a listing link opens the listing. (Web parity: /messages?conv=id.)
     if (n.type === "new_message" && n.payload?.conversationId) {
       router.push(`/chat/${n.payload.conversationId}`);
+    } else if (n.type === "shop_reviewed" && (n.payload as { shopSlug?: string } | null)?.shopSlug) {
+      router.push(`/shop/${(n.payload as { shopSlug: string }).shopSlug}`);
     } else if (n.payload?.listingId) {
       router.push(`/listing/${n.payload.listingId}`);
     } else {
@@ -129,8 +133,10 @@ export default function NotificationsScreen() {
                     ? "checkmark-circle"
                     : item.type === "price_drop"
                       ? "trending-down"
-                      : item.type === "saved_search_match"
-                        ? "search"
+                    : item.type === "saved_search_match"
+                      ? "search"
+                      : item.type === "shop_reviewed"
+                        ? "star"
                         : item.type === "seller_verified"
                           ? "shield-checkmark"
                           : "notifications";

@@ -381,6 +381,7 @@ export type Database = {
           shop_slug: string | null;
           telegram: string | null;
           telegram_chat_id: string | null;
+          telegram_channel_joined_at: string | null;
           telegram_link_token: string | null;
           telegram_link_token_expires_at: string | null;
           phone_verify_token: string | null;
@@ -417,6 +418,7 @@ export type Database = {
           shop_slug?: string | null;
           telegram?: string | null;
           telegram_chat_id?: string | null;
+          telegram_channel_joined_at?: string | null;
           telegram_link_token?: string | null;
           telegram_link_token_expires_at?: string | null;
           phone_verify_token?: string | null;
@@ -453,6 +455,7 @@ export type Database = {
           shop_slug?: string | null;
           telegram?: string | null;
           telegram_chat_id?: string | null;
+          telegram_channel_joined_at?: string | null;
           telegram_link_token?: string | null;
           telegram_link_token_expires_at?: string | null;
           phone_verify_token?: string | null;

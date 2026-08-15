@@ -373,6 +373,30 @@ export default function ListingDetailScreen() {
         </View>
       </View>
 
+      {/* Owner tools — this is my listing: edit it, or open my shop (web parity). */}
+      {user && item.seller_id === user.id ? (
+        <View style={styles.card}>
+          <Text style={styles.sectionTitle}>{t("manageListing")}</Text>
+          <View style={styles.contactRow}>
+            <Button
+              title={t("editListing")}
+              size="sm"
+              style={{ flex: 1 }}
+              onPress={() => router.push({ pathname: "/sell", params: { edit: item.id } })}
+            />
+            {seller?.shop_slug ? (
+              <Button
+                title={t("myShop")}
+                size="sm"
+                variant="outline"
+                style={{ flex: 1 }}
+                onPress={() => router.push(`/shop/${seller.shop_slug}`)}
+              />
+            ) : null}
+          </View>
+        </View>
+      ) : null}
+
       {/* Seller card */}
       {seller ? (
         <Pressable
@@ -869,6 +893,7 @@ const styles = StyleSheet.create({
   socialText: { fontSize: 13, color: colors.text, fontWeight: "600" },
   sectionTitle: { fontSize: 16, fontWeight: "700", color: colors.text, marginBottom: 10 },
   sectionTitleOuter: { fontSize: 18, fontWeight: "700", color: colors.text, marginBottom: 14 },
+  manageListing: { fontSize: 15, fontWeight: "700", color: colors.text, marginBottom: 2 },
   detailGrid: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
   detailItem: {
     backgroundColor: colors.secondary,
