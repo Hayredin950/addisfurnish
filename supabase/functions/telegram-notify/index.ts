@@ -41,6 +41,16 @@ const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 const BOT_TOKEN = Deno.env.get("TELEGRAM_BOT_TOKEN");
 const CHANNEL_ID = Deno.env.get("TELEGRAM_CHANNEL_ID");
 const SITE_URL = Deno.env.get("SITE_URL") ?? "";
+const SITE_BASE = SITE_URL || "https://addisfurnish.vercel.app";
+
+// The single acceptable fallback image: every card is a photo card, so a
+// listing with no usable cover still renders as a photo message with the
+// AddisFurnish logo instead of plain text with a raw link.
+const ADDISFURNISH_LOGO_URL = `${SITE_BASE}/logo-mark.png`;
+
+/** Telegram's URL fetcher truncates large files behind Cloudflare — relay
+ * bytes directly (photos cap at 10 MB) instead of making Telegram fetch. */
+const MAX_PHOTO_BYTES = 8 * 1024 * 1024;
 
 /** Buyer-broadcast caps. Exceeding these is logged, never silent. */
 const MAX_PREFS_SCANNED = 500;
@@ -247,6 +257,7 @@ async function sendMessageFull(
   chatId: string,
   text: string,
   kind = "notify",
+  replyMarkup?: unknown,
 ): Promise<{ ok: boolean; message_id?: number }> {
   if (!BOT_TOKEN) return { ok: false };
   await throttleChat(chatId);
@@ -259,6 +270,7 @@ async function sendMessageFull(
         chat_id: chatId,
         text: text.slice(0, 4096),
         parse_mode: "HTML",
+        ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
       }),
     });
     const body = (await res.json().catch(() => null)) as {
@@ -284,10 +296,69 @@ async function sendMessage(chatId: string, text: string): Promise<boolean> {
   return (await sendMessageFull(chatId, text)).ok;
 }
 
+/** Download a photo URL's bytes for direct re-upload (size-capped). */
+async function downloadBytes(url: string, cap: number): Promise<Uint8Array | null> {
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const buf = await res.arrayBuffer();
+    if (buf.byteLength === 0 || buf.byteLength > cap) return null;
+    return new Uint8Array(buf);
+  } catch {
+    return null;
+  }
+}
+
+/** Send raw photo bytes as a multipart upload — bypasses Telegram's URL fetch. */
+async function uploadPhotoBytes(
+  chatId: string,
+  bytes: Uint8Array,
+  caption: string,
+  replyMarkup: unknown,
+  kind: string,
+): Promise<{ ok: boolean; message_id?: number } | null> {
+  if (!BOT_TOKEN) return null;
+  try {
+    const form = new FormData();
+    form.append("chat_id", chatId);
+    form.append("photo", new Blob([bytes as unknown as BlobPart], { type: "image/jpeg" }), "photo.jpg");
+    form.append("caption", caption);
+    form.append("parse_mode", "HTML");
+    if (replyMarkup) form.append("reply_markup", JSON.stringify(replyMarkup));
+    const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
+      method: "POST",
+      body: form,
+    });
+    const body = (await res.json().catch(() => null)) as {
+      ok?: boolean;
+      result?: { message_id?: number };
+      description?: string;
+      error_code?: number;
+    } | null;
+    if (res.ok && body?.ok) {
+      await logSend(kind, chatId, true, null);
+      return { ok: true, message_id: body.result?.message_id };
+    }
+    await logSend(kind, chatId, false, body?.description ?? `HTTP ${res.status}`);
+    if (body?.error_code === 403) await markBlocked(chatId);
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Send a photo message (listing card) with an optional inline button.
- * Falls back to a plain text message when the photo URL is unusable, so a
- * broken image can never swallow the alert. Returns the sent message id.
+ *
+ * Every card is a photo card — never plain text with a raw link (Telegram
+ * would unfurl the generic site card). Strategy, in order:
+ *   1. sendPhoto with the real photo URL (or the logo when none exists)
+ *   2. if the URL send fails, download the bytes and upload them directly
+ *      (Telegram's fetcher truncates large Cloudflare-fronted files, which
+ *      surfaced as "wrong type of the web page content")
+ *   3. last resort: a plain message, keeping the button as a real inline
+ *      keyboard instead of a pasted URL.
+ * Returns the sent message id.
  */
 async function sendCard(
   chatId: string,
@@ -299,16 +370,17 @@ async function sendCard(
   if (!BOT_TOKEN) return { ok: false };
   await throttleChat(chatId);
   const reply_markup = button ? { inline_keyboard: [button] } : undefined;
-  if (photoUrl) {
+  const caption = html.slice(0, 1024); // 1024 is Telegram's cap for a photo caption.
+
+  const sendUrl = async (photo: string): Promise<{ ok: boolean; message_id?: number } | null> => {
     try {
       const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
         method: "POST",
         headers: { "content-type": "application/json" },
-        // 1024 is Telegram's cap for a photo caption (vs 4096 for a message).
         body: JSON.stringify({
           chat_id: chatId,
-          photo: photoUrl,
-          caption: html.slice(0, 1024),
+          photo,
+          caption,
           parse_mode: "HTML",
           reply_markup,
         }),
@@ -319,19 +391,33 @@ async function sendCard(
         description?: string;
         error_code?: number;
       } | null;
-      if (res.ok) {
+      if (res.ok && body?.ok) {
         await logSend(kind, chatId, true, null);
-        return { ok: true, message_id: body?.result?.message_id };
+        return { ok: true, message_id: body.result?.message_id };
       }
       await logSend(kind, chatId, false, body?.description ?? `HTTP ${res.status}`);
       if (body?.error_code === 403) await markBlocked(chatId);
+      return null;
     } catch {
-      // fall through to the text message
+      return null;
+    }
+  };
+
+  const sent = await sendUrl(photoUrl || ADDISFURNISH_LOGO_URL);
+  if (sent) return sent;
+
+  // The real listing photo failed as a URL (large/truncated fetch) — relay
+  // the bytes directly instead of giving up on the photo.
+  if (photoUrl) {
+    const bytes = await downloadBytes(photoUrl, MAX_PHOTO_BYTES);
+    if (bytes) {
+      const upload = await uploadPhotoBytes(chatId, bytes, caption, reply_markup, kind);
+      if (upload?.ok) return upload;
     }
   }
-  const url = button?.[0]?.url as string | undefined;
-  const text = url ? `${html}\n\n🔗 ${url}` : html;
-  return sendMessageFull(chatId, text, kind);
+
+  // Last resort: keep the button as an inline keyboard on the text message.
+  return sendMessageFull(chatId, html, kind, reply_markup);
 }
 
 /** Refresh a channel post's caption when the listing changes (sold, price…). */

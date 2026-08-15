@@ -127,12 +127,31 @@ function Dashboard() {
     toast.success(o.status === "accepted" ? t("offer.acceptedToast") : t("offer.declinedToast"));
     queryClient.invalidateQueries({ queryKey: ["offers"] });
     if (o.buyerId) {
-      const payload: { status: string; title?: string; listingId?: string; amount: number } = {
+      // The offer's auto-message lives in the (listing, buyer) conversation —
+      // the buyer's alert deep-links there so they see the reply in context.
+      let conversationId: string | undefined;
+      if (o.listingId) {
+        const { data: conv } = await supabase
+          .from("conversations")
+          .select("id")
+          .eq("listing_id", o.listingId)
+          .eq("buyer_id", o.buyerId)
+          .maybeSingle();
+        conversationId = (conv as { id: string } | null)?.id ?? undefined;
+      }
+      const payload: {
+        status: string;
+        title?: string;
+        listingId?: string;
+        amount: number;
+        conversationId?: string;
+      } = {
         status: o.status,
         amount: o.amount,
       };
       if (o.listingTitle) payload.title = o.listingTitle;
       if (o.listingId) payload.listingId = o.listingId;
+      if (conversationId) payload.conversationId = conversationId;
       await notifyUser(o.buyerId, "offer_response", payload);
     }
   };

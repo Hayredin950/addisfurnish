@@ -222,6 +222,8 @@ function NotificationsPage() {
             );
             // Conversation-related alerts go straight to the conversation
             // (or the inbox when no conversation id travelled with it);
+            // offer alerts lead to the chat thread the offer was mirrored
+            // into, falling back to the dashboard when no thread exists;
             // everything else points at the listing it concerns.
             const target =
               n.type === "new_message" && n.payload?.conversationId
@@ -229,19 +231,25 @@ function NotificationsPage() {
                     to: "/messages",
                     search: { conv: n.payload.conversationId },
                   } as const)
-                : n.type === "offer_received"
-                  ? ({ to: "/dashboard" } as const)
-                  : MESSAGE_TYPES.has(n.type)
-                    ? ({ to: "/messages" } as const)
-                    : n.type === "shop_reviewed" &&
-                        (n.payload as { shopSlug?: string } | null)?.shopSlug
-                      ? ({
-                          to: "/shop/$slug",
-                          params: { slug: (n.payload as { shopSlug: string }).shopSlug },
-                        } as const)
-                      : n.payload?.listingId
-                        ? ({ to: "/listing/$id", params: { id: n.payload.listingId } } as const)
-                        : null;
+                : (n.type === "offer_received" || n.type === "offer_response") &&
+                    n.payload?.conversationId
+                  ? ({
+                      to: "/messages",
+                      search: { conv: n.payload.conversationId },
+                    } as const)
+                  : n.type === "offer_received"
+                    ? ({ to: "/dashboard" } as const)
+                    : MESSAGE_TYPES.has(n.type)
+                      ? ({ to: "/messages" } as const)
+                      : n.type === "shop_reviewed" &&
+                          (n.payload as { shopSlug?: string } | null)?.shopSlug
+                        ? ({
+                            to: "/shop/$slug",
+                            params: { slug: (n.payload as { shopSlug: string }).shopSlug },
+                          } as const)
+                        : n.payload?.listingId
+                          ? ({ to: "/listing/$id", params: { id: n.payload.listingId } } as const)
+                          : null;
 
             return (
               <div
@@ -313,8 +321,13 @@ function NotificationsPage() {
               ))}
               {(() => {
                 const p = detail.payload ?? {};
+                const isConversation =
+                  (detail.type === "new_message" ||
+                    detail.type === "offer_received" ||
+                    detail.type === "offer_response") &&
+                  !!p.conversationId;
                 const to =
-                  detail.type === "new_message" && p.conversationId
+                  isConversation
                     ? ({ to: "/messages", search: { conv: p.conversationId } } as const)
                     : detail.type === "offer_received"
                       ? ({ to: "/dashboard" } as const)
@@ -326,7 +339,7 @@ function NotificationsPage() {
                 return to ? (
                   <Button asChild className="mt-2 w-full" onClick={() => setDetail(null)}>
                     <Link {...to}>
-                      {detail.type === "new_message"
+                      {isConversation
                         ? t("notif.openConversation")
                         : detail.type === "offer_received"
                           ? t("notif.openDashboard")

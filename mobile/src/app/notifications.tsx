@@ -91,7 +91,10 @@ export default function NotificationsScreen() {
 
   /** Primary action for the detail sheet (same targets as row taps). */
   const openDetailTarget = (n: Notif) => {
-    if (n.type === "new_message" && n.payload?.conversationId) {
+    const isConv =
+      (n.type === "new_message" || n.type === "offer_received" || n.type === "offer_response") &&
+      !!n.payload?.conversationId;
+    if (isConv) {
       return { label: t("notifOpenConversation"), go: () => router.push(`/chat/${n.payload!.conversationId}`) };
     }
     if (n.type === "offer_received") {
@@ -143,11 +146,15 @@ export default function NotificationsScreen() {
 
   const openNotif = (n: Notif) => {
     void markNotificationRead(n.id);
-    // Message notifications go straight to the conversation; an offer lands on
-    // the seller dashboard where it can be accepted or declined; everything
-    // else with a listing link opens the listing. (Web parity: /messages?conv=id.)
-    if (n.type === "new_message" && n.payload?.conversationId) {
-      router.push(`/chat/${n.payload.conversationId}`);
+    // Message + offer notifications go straight to the chat thread (offers are
+    // mirrored into the conversation); an offer without a thread falls back to
+    // the seller dashboard; everything else with a listing link opens the
+    // listing. (Web parity: /messages?conv=id.)
+    const isConv =
+      (n.type === "new_message" || n.type === "offer_received" || n.type === "offer_response") &&
+      !!n.payload?.conversationId;
+    if (isConv) {
+      router.push(`/chat/${n.payload!.conversationId}`);
     } else if (n.type === "offer_received") {
       router.push("/dashboard");
     } else if (n.type === "shop_reviewed" && (n.payload as { shopSlug?: string } | null)?.shopSlug) {

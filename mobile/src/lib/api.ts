@@ -760,6 +760,9 @@ export async function makeOffer(input: {
     message: input.message || null,
   });
   if (error) throw error;
+  // The conversation must exist before the notification: the offer's
+  // auto-message lives there, and the seller's alert deep-links to it.
+  const conversationId = await ensureConversation(input.listingId, input.buyerId, input.sellerId);
   // Buyer contact + message travel in the payload so the seller's detail view
   // (and Telegram card) shows who offered what.
   await notifyUser(input.sellerId, "offer_received", {
@@ -768,11 +771,11 @@ export async function makeOffer(input: {
     amount: input.amount,
     buyerName: input.buyerName ?? null,
     buyerId: input.buyerId,
+    conversationId,
     ...(input.buyerPhone ? { buyerPhone: input.buyerPhone } : {}),
     ...(input.message ? { message: input.message } : {}),
   });
   // Mirror the offer into the chat with the amount and the buyer's contact.
-  const conversationId = await ensureConversation(input.listingId, input.buyerId, input.sellerId);
   const name = input.buyerName || "A buyer";
   let body = `💰 Offer — ${name} offers ${formatBirr(input.amount)} for "${input.listingTitle}".`;
   if (input.message) body += `\nMessage: ${input.message}`;
@@ -816,11 +819,24 @@ export async function respondToOffer(input: {
     .update({ status: input.status, updated_at: new Date().toISOString() })
     .eq("id", input.id);
   if (error) throw error;
+  // The offer's auto-message lives in the (listing, buyer) conversation — the
+  // buyer's alert deep-links there so they see the reply in context.
+  let conversationId: string | undefined;
+  if (input.listingId && input.buyerId) {
+    const { data: conv } = await supabase
+      .from("conversations")
+      .select("id")
+      .eq("listing_id", input.listingId)
+      .eq("buyer_id", input.buyerId)
+      .maybeSingle();
+    conversationId = (conv as { id: string } | null)?.id ?? undefined;
+  }
   await notifyUser(input.buyerId, "offer_response", {
     status: input.status,
     title: input.listingTitle,
     listingId: input.listingId,
     amount: input.amount,
+    ...(conversationId ? { conversationId } : {}),
   });
 }
 

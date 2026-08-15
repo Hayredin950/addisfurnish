@@ -140,21 +140,28 @@ export function NotificationBell() {
                           ? { title, status: n.payload?.status ?? "" }
                           : { title };
               // Deep-link straight to what the notification is about — the
-              // same targets the /notifications page uses.
+              // same targets the /notifications page uses. Offer alerts lead
+              // to the chat thread the offer was mirrored into when possible.
               const link =
                 n.type === "new_message" && n.payload?.conversationId
                   ? ({ to: "/messages", search: { conv: n.payload.conversationId } } as const)
-                  : n.type === "offer_received"
-                    ? ({ to: "/dashboard" } as const)
-                    : n.type === "shop_reviewed" &&
-                        (n.payload as { shopSlug?: string } | null)?.shopSlug
-                      ? ({
-                          to: "/shop/$slug",
-                          params: { slug: (n.payload as { shopSlug: string }).shopSlug },
-                        } as const)
-                      : n.payload?.listingId
-                        ? ({ to: "/listing/$id", params: { id: n.payload.listingId } } as const)
-                        : null;
+                  : (n.type === "offer_received" || n.type === "offer_response") &&
+                      n.payload?.conversationId
+                    ? ({
+                        to: "/messages",
+                        search: { conv: n.payload.conversationId },
+                      } as const)
+                    : n.type === "offer_received"
+                      ? ({ to: "/dashboard" } as const)
+                      : n.type === "shop_reviewed" &&
+                          (n.payload as { shopSlug?: string } | null)?.shopSlug
+                        ? ({
+                            to: "/shop/$slug",
+                            params: { slug: (n.payload as { shopSlug: string }).shopSlug },
+                          } as const)
+                        : n.payload?.listingId
+                          ? ({ to: "/listing/$id", params: { id: n.payload.listingId } } as const)
+                          : null;
               const row = (
                 <div className="border-b px-3 py-2.5 text-sm last:border-0">
                   <p className={`leading-snug ${n.is_read ? "opacity-60" : ""}`}>{t(key, vars)}</p>

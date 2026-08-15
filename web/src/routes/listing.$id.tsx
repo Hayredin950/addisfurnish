@@ -267,17 +267,20 @@ function ListingDetail() {
         .maybeSingle();
       const buyerName = me?.full_name || "";
       const buyerPhone = me?.phone || "";
+      // The conversation must exist before the notification: the offer's
+      // auto-message lives there, and the seller's alert deep-links to it.
+      const conversationId = await ensureConversation(listing!.id, user.id, listing!.seller_id);
       await notifyUser(listing!.seller_id, "offer_received", {
         title: listing!.title,
         listingId: listing!.id,
         amount,
         buyerName,
         buyerId: user.id,
+        conversationId,
         ...(buyerPhone ? { buyerPhone } : {}),
         ...(offerMessage.trim() ? { message: offerMessage.trim() } : {}),
       });
       // Mirror the offer into the chat with the amount + buyer contact.
-      const conversationId = await ensureConversation(listing!.id, user.id, listing!.seller_id);
       let msg = `💰 Offer — ${buyerName || "A buyer"} offers ${formatBirr(amount)} for "${listing!.title}".`;
       if (offerMessage.trim()) msg += `\nMessage: ${offerMessage.trim()}`;
       if (buyerPhone) msg += `\nContact: ${buyerPhone}`;
