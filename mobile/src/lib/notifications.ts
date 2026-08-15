@@ -117,13 +117,18 @@ export function notificationText(
     reason?: string;
     rating?: number;
     shopSlug?: string;
+    senderName?: string;
+    messagePreview?: string;
   } | null,
 ): { title: string; body: string } {
   const p = payload ?? {};
   const listing = p.title ?? "";
   switch (type) {
     case "new_message":
-      return { title: translate(lang, "appName"), body: translate(lang, "newListing") };
+      return {
+        title: p.senderName || translate(lang, "appName"),
+        body: p.messagePreview || (listing ? `Re: ${listing}` : ""),
+      };
     case "callback_request":
       return { title: translate(lang, "requestCallback"), body: listing };
     case "callback_response":
