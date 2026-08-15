@@ -793,6 +793,11 @@ export function adminStatsQuery() {
         reviews,
         newListings,
         newUsers,
+        telegramLog,
+        telegramLinked,
+        telegramBlocked,
+        telegramChannelPosts,
+        telegramProcessed,
       ] = await Promise.all([
         supabase.from("listings").select("id", { count: "exact", head: true }),
         supabase.from("profiles").select("id", { count: "exact", head: true }),
@@ -835,6 +840,18 @@ export function adminStatsQuery() {
           .from("profiles")
           .select("id", { count: "exact", head: true })
           .gte("created_at", weekAgo),
+        // ── Telegram integration health (spec §19 monitoring gap) ──
+        supabase.from("telegram_delivery_log").select("ok,error").gte("created_at", weekAgo),
+        supabase
+          .from("profiles")
+          .select("id", { count: "exact", head: true })
+          .not("telegram_chat_id", "is", null),
+        supabase
+          .from("profiles")
+          .select("id", { count: "exact", head: true })
+          .eq("telegram_blocked", true),
+        supabase.from("telegram_channel_posts").select("id", { count: "exact", head: true }),
+        supabase.from("telegram_processed_updates").select("id", { count: "exact", head: true }),
       ]);
       const totalViews = (views.data ?? []).reduce(
         (sum: number, l: { view_count: number }) => sum + (l.view_count ?? 0),
@@ -862,6 +879,21 @@ export function adminStatsQuery() {
         reviews: reviews.count ?? 0,
         newListings7d: newListings.count ?? 0,
         newUsers7d: newUsers.count ?? 0,
+        // Telegram delivery health — last 7 days of sends.
+        telegramSends7d: (telegramLog.data ?? []).length,
+        telegramOk7d: (telegramLog.data ?? []).filter((r) => r.ok).length,
+        telegramFailures7d: (telegramLog.data ?? []).filter((r) => !r.ok).length,
+        telegramFailureReasons: [
+          ...new Map(
+            (telegramLog.data ?? [])
+              .filter((r) => !r.ok && r.error)
+              .map((r) => [r.error as string, r.error as string]),
+          ).keys(),
+        ].slice(0, 3),
+        telegramLinkedUsers: telegramLinked.count ?? 0,
+        telegramBlockedUsers: telegramBlocked.count ?? 0,
+        telegramChannelPosts: telegramChannelPosts.count ?? 0,
+        telegramProcessedUpdates: telegramProcessed.count ?? 0,
       };
     },
   });

@@ -11,7 +11,7 @@ import { PhotoPicker, type ExistingPhoto } from "@/components/PhotoPicker";
 import { uploadListingImage } from "@/lib/storage";
 import { categoriesQuery } from "@/lib/marketplace";
 import { CITIES, CONDITIONS, MATERIALS, ROOM_TYPES, SUB_CITY_COORDS } from "@/lib/format";
-import { announceListing } from "@/lib/telegram";
+import { announceListing, syncListingChannel } from "@/lib/telegram";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -198,8 +198,11 @@ function Sell() {
         }
       }
 
-      // Only announce brand-new listings to the channel; edits shouldn't re-post.
-      if (!editId) announceListing(listing.id);
+      // Only announce brand-new listings to the channel; edits shouldn't
+      // re-post, but the existing post's caption is re-rendered (price drop,
+      // title change…).
+      if (editId) syncListingChannel(listing.id);
+      else announceListing(listing.id);
 
       if (imagesFailed) toast.error(t("toast.imageUploadFailed"));
       else toast.success(t(editId ? "toast.listingUpdated" : "toast.listingLive"));

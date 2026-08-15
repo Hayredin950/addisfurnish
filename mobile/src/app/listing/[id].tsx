@@ -33,6 +33,8 @@ import {
   submitReport,
   submitReview,
   toggleFavorite,
+  shareUrl,
+  trackShare,
 } from "../../lib/api";
 import { ListingCard } from "../../components/ListingCard";
 import { LocationCardMap } from "../../components/LocationCardMap";
@@ -364,9 +366,13 @@ export default function ListingDetailScreen() {
             style={styles.favBtn}
             onPress={() => {
               try {
+                // Attributed link + a concise visual message (spec §4). The
+                // OS sheet handles Telegram / WhatsApp / copy automatically.
                 void Share.share({
                   message: `${item.title} — ${formatBirr(item.price)} on AddisFurnish`,
+                  url: shareUrl(item.id, "mobile"),
                 });
+                void trackShare("mobile", item.id);
               } catch {
                 // ignore
               }

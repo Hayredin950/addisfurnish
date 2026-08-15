@@ -439,6 +439,18 @@ export function pingListingView(listingId: string) {
 }
 
 /**
+ * Keep the public channel post in sync with the listing's real state.
+ *
+ * Call AFTER an edit (price drop, title, sold…) so the post's caption is
+ * re-rendered (sold listings get a "✅ SOLD" header). For a hard delete, call
+ * with action "delete" BEFORE deleting the listings row — the channel-post
+ * record cascades off it, so there's no way to find the message afterwards.
+ */
+export function syncListingChannel(listingId: string, action: "auto" | "delete" = "auto") {
+  void invokeTelegram({ kind: "sync_listing", listing_id: listingId, action });
+}
+
+/**
  * Mints a single-use, 15-minute token and returns the t.me deep link that binds
  * this user's Telegram chat to their account when they press Start.
  * Returns null when no bot is configured for the build.
@@ -621,6 +633,8 @@ export async function updateListingStatus(id: string, status: string) {
 /** Mark a listing sold and ping every buyer who has a conversation about it. */
 export async function markListingSold(id: string, title: string) {
   await updateListingStatus(id, "sold");
+  // The channel post gets a "✅ SOLD" header (no-op if never posted).
+  syncListingChannel(id);
   const { data: buyers, error } = await supabase
     .from("conversations")
     .select("buyer_id")
@@ -633,6 +647,9 @@ export async function markListingSold(id: string, title: string) {
 
 /** Delete a listing (images cascade; storage objects removed best-effort). */
 export async function deleteListing(id: string): Promise<void> {
+  // Retract the channel post BEFORE the row is deleted — the channel-post
+  // record cascades off the listing, so afterwards there's no way to find it.
+  syncListingChannel(id, "delete");
   const { data: listing } = await supabase
     .from("listings")
     .select("listing_images(url)")
@@ -941,6 +958,8 @@ export async function updateListing(
 ) {
   const { error } = await supabase.from("listings").update(patch).eq("id", id);
   if (error) throw error;
+  // Keep the channel post in sync (price drop, title change…).
+  syncListingChannel(id);
 }
 
 /** Replace the image set for an edited listing (delete-then-insert in one call). */
@@ -955,6 +974,33 @@ export async function replaceListingImages(listingId: string, urls: string[]) {
     .from("listing_images")
     .insert(urls.map((url, i) => ({ listing_id: listingId, url, position: i })));
   if (insErr) throw insErr;
+}
+
+// ── Sharing & attribution (spec §4) ─────────────────────────────────────
+
+/** Public web URL used in shared listing links (override in .env). */
+export const SITE_URL =
+  process.env.EXPO_PUBLIC_SITE_URL ?? "https://addisfurnish.vercel.app";
+
+/** Listing link with utm attribution, for the OS share sheet. */
+export function shareUrl(listingId: string, source = "mobile"): string {
+  return `${SITE_URL}/listing/${listingId}?utm_source=${encodeURIComponent(source)}&utm_medium=share`;
+}
+
+/** Record the share for the admin analytics view — never blocks the share. */
+export async function trackShare(source: string, listingId?: string | null) {
+  try {
+    const { data } = await supabase.auth.getUser();
+    await supabase.from("analytics_events").insert({
+      event_name: "listing_shared",
+      user_id: data.user?.id ?? null,
+      listing_id: listingId ?? null,
+      source,
+      medium: "share",
+    });
+  } catch {
+    // analytics must never break a share
+  }
 }
 
 // ── Search suggestions / trending ────────────────────────────────────────

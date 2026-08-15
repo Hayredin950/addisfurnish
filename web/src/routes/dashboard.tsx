@@ -9,6 +9,7 @@ import { useAuth } from "@/lib/auth";
 import { useLang } from "@/lib/i18n";
 import { RequireAuth } from "@/components/RequireAuth";
 import { listingsQuery, notifyUser, sellerViewsPerDayQuery } from "@/lib/marketplace";
+import { syncListingChannel } from "@/lib/telegram";
 import { formatBirr, STATUSES } from "@/lib/format";
 import { ListingImage } from "@/components/ListingImage";
 import { Button } from "@/components/ui/button";
@@ -126,6 +127,9 @@ function Dashboard() {
         .map((img) => img.url)
         .filter((url): url is string => !!url && !url.startsWith("http"));
 
+      // Retract the channel post BEFORE the row is deleted — the channel-post
+      // record cascades off the listing, so afterwards there's no way to find it.
+      syncListingChannel(pendingDelete.id, "delete");
       const { error } = await supabase.from("listings").delete().eq("id", pendingDelete.id);
       if (error) throw error;
 
@@ -151,6 +155,9 @@ function Dashboard() {
     }
     toast.success(t("toast.listingUpdated"));
     queryClient.invalidateQueries({ queryKey: ["listings"] });
+
+    // Mark the channel post as sold (no-op if the listing was never posted).
+    if (status === "sold") syncListingChannel(id);
 
     // Notify interested buyers when an item is marked sold.
     if (status === "sold" && listing) {

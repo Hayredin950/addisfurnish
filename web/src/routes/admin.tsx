@@ -19,10 +19,12 @@ import {
   Mail,
   MessageSquare,
   Pencil,
+  Send,
   ShieldCheck,
   Star,
   Trash2,
   TrendingUp,
+  Users,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -56,6 +58,7 @@ import { BanDialog } from "@/components/admin/BanDialog";
 import { DocumentViewer } from "@/components/admin/DocumentViewer";
 import { useImageUrl } from "@/lib/storage";
 import { timeAgo, formatBirr } from "@/lib/format";
+import { syncListingChannel } from "@/lib/telegram";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -984,6 +987,9 @@ function ListingsTab() {
 
   const remove = async (id: string) => {
     setDeleting(true);
+    // Retract the channel post BEFORE the row is deleted — the channel-post
+    // record cascades off the listing, so afterwards there's no way to find it.
+    syncListingChannel(id, "delete");
     const { error } = await supabase.from("listings").delete().eq("id", id);
     setDeleting(false);
     if (error) {
@@ -1530,6 +1536,66 @@ function StatsTab({
           </ul>
         </div>
       ) : null}
+
+      {/* Telegram integration health (spec §19 monitoring gap). */}
+      <div className="rounded-xl border bg-card p-5">
+        <PanelTitle
+          icon={<Send className="h-5 w-5 text-primary" />}
+          title={t("admin.telegramHealth")}
+          accent="bg-emerald-500"
+        />
+        <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <div className="rounded-lg border bg-background p-3">
+            <p className="font-display text-2xl font-semibold text-primary">
+              {stats.telegramSends7d}
+            </p>
+            <p className="mt-0.5 text-xs text-muted-foreground">{t("admin.tgSends")}</p>
+          </div>
+          <div className="rounded-lg border bg-background p-3">
+            <p className="font-display text-2xl font-semibold text-emerald-600">
+              {stats.telegramSends7d > 0
+                ? Math.round((stats.telegramOk7d / stats.telegramSends7d) * 100)
+                : 100}
+              %
+            </p>
+            <p className="mt-0.5 text-xs text-muted-foreground">{t("admin.tgSuccess")}</p>
+          </div>
+          <div className="rounded-lg border bg-background p-3">
+            <p className="font-display text-2xl font-semibold text-destructive">
+              {stats.telegramFailures7d}
+            </p>
+            <p className="mt-0.5 text-xs text-muted-foreground">{t("admin.tgFailures")}</p>
+          </div>
+          <div className="rounded-lg border bg-background p-3">
+            <p className="font-display text-2xl font-semibold">{stats.telegramLinkedUsers}</p>
+            <p className="mt-0.5 text-xs text-muted-foreground">{t("admin.tgLinked")}</p>
+          </div>
+        </div>
+        <div className="mt-4 grid grid-cols-2 gap-3 text-xs text-muted-foreground sm:grid-cols-4">
+          <span>
+            <Users className="mr-1 inline h-3.5 w-3.5" />
+            {t("admin.tgChannelPosts")}:{" "}
+            <b className="text-foreground">{stats.telegramChannelPosts}</b>
+          </span>
+          <span>
+            <Activity className="mr-1 inline h-3.5 w-3.5" />
+            {t("admin.tgProcessed")}:{" "}
+            <b className="text-foreground">{stats.telegramProcessedUpdates}</b>
+          </span>
+          <span>
+            <Ban className="mr-1 inline h-3.5 w-3.5" />
+            {t("admin.tgBlocked")}: <b className="text-foreground">{stats.telegramBlockedUsers}</b>
+          </span>
+          <span>{t("admin.tgFailures7d")}</span>
+        </div>
+        {stats.telegramFailureReasons.length > 0 ? (
+          <ul className="mt-2 space-y-1 text-xs text-muted-foreground">
+            {stats.telegramFailureReasons.map((r) => (
+              <li key={r}>· {r}</li>
+            ))}
+          </ul>
+        ) : null}
+      </div>
     </div>
   );
 }

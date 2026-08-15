@@ -8,6 +8,42 @@ export type Database = {
   };
   public: {
     Tables: {
+      analytics_events: {
+        Row: {
+          id: string;
+          event_name: string;
+          user_id: string | null;
+          listing_id: string | null;
+          source: string | null;
+          medium: string | null;
+          campaign: string | null;
+          metadata: Json;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          event_name: string;
+          user_id?: string | null;
+          listing_id?: string | null;
+          source?: string | null;
+          medium?: string | null;
+          campaign?: string | null;
+          metadata?: Json;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          event_name?: string;
+          user_id?: string | null;
+          listing_id?: string | null;
+          source?: string | null;
+          medium?: string | null;
+          campaign?: string | null;
+          metadata?: Json;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
       callback_requests: {
         Row: {
           buyer_id: string;
@@ -401,6 +437,7 @@ export type Database = {
           shop_name: string | null;
           shop_slug: string | null;
           telegram: string | null;
+          telegram_blocked: boolean;
           telegram_chat_id: string | null;
           telegram_channel_joined_at: string | null;
           telegram_link_token: string | null;
@@ -438,6 +475,7 @@ export type Database = {
           shop_name?: string | null;
           shop_slug?: string | null;
           telegram?: string | null;
+          telegram_blocked?: boolean;
           telegram_chat_id?: string | null;
           telegram_channel_joined_at?: string | null;
           telegram_link_token?: string | null;
@@ -475,6 +513,7 @@ export type Database = {
           shop_name?: string | null;
           shop_slug?: string | null;
           telegram?: string | null;
+          telegram_blocked?: boolean;
           telegram_chat_id?: string | null;
           telegram_channel_joined_at?: string | null;
           telegram_link_token?: string | null;
@@ -846,6 +885,126 @@ export type Database = {
             referencedColumns: ["id"];
           },
         ];
+      };
+      telegram_channel_posts: {
+        Row: {
+          listing_id: string;
+          chat_id: string;
+          message_id: number;
+          posted_at: string;
+        };
+        Insert: {
+          listing_id: string;
+          chat_id: string;
+          message_id: number;
+          posted_at?: string;
+        };
+        Update: {
+          listing_id?: string;
+          chat_id?: string;
+          message_id?: number;
+          posted_at?: string;
+        };
+        Relationships: [];
+      };
+      telegram_chat_rate: {
+        Row: {
+          chat_id: string;
+          last_sent_at: string;
+        };
+        Insert: {
+          chat_id: string;
+          last_sent_at?: string;
+        };
+        Update: {
+          chat_id?: string;
+          last_sent_at?: string;
+        };
+        Relationships: [];
+      };
+      telegram_delivery_log: {
+        Row: {
+          id: number;
+          kind: string;
+          chat_id: string | null;
+          ok: boolean;
+          error: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: number;
+          kind: string;
+          chat_id?: string | null;
+          ok?: boolean;
+          error?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: number;
+          kind?: string;
+          chat_id?: string | null;
+          ok?: boolean;
+          error?: string | null;
+          created_at?: string;
+        };
+        Relationships: [];
+      };
+      telegram_processed_updates: {
+        Row: {
+          update_id: number;
+          processed_at: string;
+        };
+        Insert: {
+          update_id: number;
+          processed_at?: string;
+        };
+        Update: {
+          update_id?: number;
+          processed_at?: string;
+        };
+        Relationships: [];
+      };
+      telegram_sell_sessions: {
+        Row: {
+          id: string;
+          user_id: string;
+          chat_id: string;
+          step: string;
+          photo_file_ids: string[];
+          category_id: string | null;
+          condition: string | null;
+          price: number | null;
+          city: string | null;
+          listing_id: string | null;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          chat_id: string;
+          step?: string;
+          photo_file_ids?: string[];
+          category_id?: string | null;
+          condition?: string | null;
+          price?: number | null;
+          city?: string | null;
+          listing_id?: string | null;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          chat_id?: string;
+          step?: string;
+          photo_file_ids?: string[];
+          category_id?: string | null;
+          condition?: string | null;
+          price?: number | null;
+          city?: string | null;
+          listing_id?: string | null;
+          updated_at?: string;
+        };
+        Relationships: [];
       };
       verification_decisions: {
         Row: {

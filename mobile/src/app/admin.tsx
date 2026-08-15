@@ -1171,6 +1171,42 @@ function StatsTab({ onOpenUsers }: { onOpenUsers?: (f: "all" | "sellers") => voi
           ))
         )}
       </View>
+
+      {/* Telegram integration health (spec §19 monitoring gap). */}
+      <View style={styles.card}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <Ionicons name="paper-plane" size={15} color={colors.success} />
+          <Text style={styles.cardTitle}>{t("adminTelegramHealth")}</Text>
+        </View>
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 10, marginTop: 10 }}>
+          <EngItem icon="paper-plane" label={t("adminTgSends")} value={s?.telegramSends7d ?? 0} />
+          <EngItem
+            icon="checkmark-circle"
+            label={t("adminTgSuccess")}
+            value={
+              (s?.telegramSends7d ?? 0) > 0
+                ? `${Math.round(((s?.telegramOk7d ?? 0) / (s?.telegramSends7d ?? 1)) * 100)}%`
+                : "100%"
+            }
+          />
+          <EngItem icon="close-circle" label={t("adminTgFailures")} value={s?.telegramFailures7d ?? 0} />
+          <EngItem icon="people" label={t("adminTgLinked")} value={s?.telegramLinkedUsers ?? 0} />
+        </View>
+        <View style={{ marginTop: 10, gap: 4 }}>
+          <Text style={styles.muted}>
+            {t("adminTgChannelPosts")}: <Text style={styles.catName}>{s?.telegramChannelPosts ?? 0}</Text>
+          </Text>
+          <Text style={styles.muted}>
+            {t("adminTgProcessed")}: <Text style={styles.catName}>{s?.telegramProcessedUpdates ?? 0}</Text>
+          </Text>
+          <Text style={styles.muted}>
+            {t("adminTgBlocked")}: <Text style={styles.catName}>{s?.telegramBlockedUsers ?? 0}</Text>
+          </Text>
+          {(s?.telegramFailureReasons ?? []).length > 0 ? (
+            <Text style={[styles.muted, { marginTop: 4 }]}>· {(s?.telegramFailureReasons ?? []).join(" · ")}</Text>
+          ) : null}
+        </View>
+      </View>
     </ScrollView>
   );
 }
@@ -1201,7 +1237,7 @@ function EngItem({
 }: {
   icon: keyof typeof Ionicons.glyphMap;
   label: string;
-  value: number;
+  value: number | string;
 }) {
   return (
     <View style={{ flexDirection: "row", alignItems: "center", gap: 6, minWidth: "46%", flex: 1 }}>

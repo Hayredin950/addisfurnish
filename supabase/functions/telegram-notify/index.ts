@@ -83,9 +83,13 @@ function formatPrice(value: number | string | null | undefined): string {
   return new Intl.NumberFormat("en-ET", { maximumFractionDigits: 0 }).format(n) + " ETB";
 }
 
-function listingUrl(listingId: string | undefined): string {
+/**
+ * Listing URL with Telegram attribution (spec §4). Channel posts and bot DMs
+ * carry utm_source=telegram so the marketplace can measure the channel.
+ */
+function listingUrl(listingId: string | undefined, medium = "notification"): string {
   if (!listingId || !SITE_URL) return "";
-  return `${SITE_URL}/listing/${listingId}`;
+  return `${SITE_URL}/listing/${listingId}?utm_source=telegram&utm_medium=${medium}`;
 }
 
 function listingLink(listingId: string | undefined): string {
@@ -94,8 +98,11 @@ function listingLink(listingId: string | undefined): string {
 }
 
 /** One tappable "View full listing" button under a listing card. */
-function viewButton(listingId: string | undefined): Record<string, unknown>[] | undefined {
-  const url = listingUrl(listingId);
+function viewButton(
+  listingId: string | undefined,
+  medium = "notification",
+): Record<string, unknown>[] | undefined {
+  const url = listingUrl(listingId, medium);
   if (!url) return undefined;
   return [{ text: "View full listing", url }];
 }
@@ -157,8 +164,73 @@ function listingCardHtml(row: {
   return lines.join("\n");
 }
 
-async function sendMessage(chatId: string, text: string): Promise<boolean> {
-  if (!BOT_TOKEN) return false;
+// Lazy service-role client for logging / blocked-user / throttle helpers.
+let _db: ReturnType<typeof createClient> | null = null;
+function db() {
+  if (!_db) {
+    _db = createClient(SUPABASE_URL ?? "", SERVICE_ROLE_KEY ?? "", {
+      auth: { persistSession: false },
+    });
+  }
+  return _db;
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/** Record a delivery attempt for the admin health view. */
+async function logSend(kind: string, chatId: string, ok: boolean, error?: string | null) {
+  try {
+    await db().from("telegram_delivery_log").insert({
+      kind,
+      chat_id: chatId,
+      ok,
+      error: error ?? null,
+    });
+  } catch {
+    // Logging must never break a send.
+  }
+}
+
+/** Telegram returned 403 — the user blocked the bot. Stop alerting them. */
+async function markBlocked(chatId: string) {
+  try {
+    await db().from("profiles").update({ telegram_blocked: true }).eq("telegram_chat_id", chatId);
+  } catch {
+    // Best-effort.
+  }
+}
+
+/**
+ * Telegram allows ~1 message/second per chat. Serialize sends to the same
+ * chat (short sleep instead of dropping) so a milestone burst or fan-out
+ * doesn't trip the 429 rate limit.
+ */
+async function throttleChat(chatId: string) {
+  try {
+    const { data: row } = await db()
+      .from("telegram_chat_rate")
+      .select("last_sent_at")
+      .eq("chat_id", chatId)
+      .maybeSingle();
+    const last = row?.last_sent_at ? new Date(row.last_sent_at as string).getTime() : 0;
+    const wait = 1000 - (Date.now() - last);
+    if (wait > 0) await sleep(Math.min(wait, 1000));
+    await db()
+      .from("telegram_chat_rate")
+      .upsert({ chat_id: chatId, last_sent_at: new Date().toISOString() }, { onConflict: "chat_id" });
+  } catch {
+    // Throttle infra failure must not block a send.
+  }
+}
+
+/** Full sendMessage: throttle, delivery log, 403→blocked. Returns the id. */
+async function sendMessageFull(
+  chatId: string,
+  text: string,
+  kind = "notify",
+): Promise<{ ok: boolean; message_id?: number }> {
+  if (!BOT_TOKEN) return { ok: false };
+  await throttleChat(chatId);
   try {
     const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
       method: "POST",
@@ -170,24 +242,43 @@ async function sendMessage(chatId: string, text: string): Promise<boolean> {
         parse_mode: "HTML",
       }),
     });
-    return res.ok;
+    const body = (await res.json().catch(() => null)) as {
+      ok?: boolean;
+      result?: { message_id?: number };
+      description?: string;
+      error_code?: number;
+    } | null;
+    if (!res.ok) {
+      await logSend(kind, chatId, false, body?.description ?? `HTTP ${res.status}`);
+      if (body?.error_code === 403) await markBlocked(chatId);
+      return { ok: false };
+    }
+    await logSend(kind, chatId, true, null);
+    return { ok: true, message_id: body?.result?.message_id };
   } catch {
-    return false;
+    await logSend(kind, chatId, false, "network");
+    return { ok: false };
   }
+}
+
+async function sendMessage(chatId: string, text: string): Promise<boolean> {
+  return (await sendMessageFull(chatId, text)).ok;
 }
 
 /**
  * Send a photo message (listing card) with an optional inline button.
  * Falls back to a plain text message when the photo URL is unusable, so a
- * broken image can never swallow the alert.
+ * broken image can never swallow the alert. Returns the sent message id.
  */
 async function sendCard(
   chatId: string,
   html: string,
   photoUrl: string | null,
   button?: Record<string, unknown>[] | undefined,
-): Promise<boolean> {
-  if (!BOT_TOKEN) return false;
+  kind = "notify",
+): Promise<{ ok: boolean; message_id?: number }> {
+  if (!BOT_TOKEN) return { ok: false };
+  await throttleChat(chatId);
   const reply_markup = button ? { inline_keyboard: [button] } : undefined;
   if (photoUrl) {
     try {
@@ -203,14 +294,62 @@ async function sendCard(
           reply_markup,
         }),
       });
-      if (res.ok) return true;
+      const body = (await res.json().catch(() => null)) as {
+        ok?: boolean;
+        result?: { message_id?: number };
+        description?: string;
+        error_code?: number;
+      } | null;
+      if (res.ok) {
+        await logSend(kind, chatId, true, null);
+        return { ok: true, message_id: body?.result?.message_id };
+      }
+      await logSend(kind, chatId, false, body?.description ?? `HTTP ${res.status}`);
+      if (body?.error_code === 403) await markBlocked(chatId);
     } catch {
       // fall through to the text message
     }
   }
   const url = button?.[0]?.url as string | undefined;
   const text = url ? `${html}\n\n🔗 ${url}` : html;
-  return sendMessage(chatId, text);
+  return sendMessageFull(chatId, text, kind);
+}
+
+/** Refresh a channel post's caption when the listing changes (sold, price…). */
+async function editChannelCaption(
+  chatId: string,
+  messageId: number,
+  html: string,
+): Promise<boolean> {
+  if (!BOT_TOKEN) return false;
+  const caption = html.slice(0, 1024);
+  // A photo post edits via caption; a text-fallback post edits via text.
+  for (const method of ["editMessageCaption", "editMessageText"]) {
+    const body = {
+      chat_id: chatId,
+      message_id: messageId,
+      parse_mode: "HTML",
+      ...(method === "editMessageCaption" ? { caption } : { text: caption }),
+    };
+    const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/${method}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (res.ok) return true;
+  }
+  return false;
+}
+
+/** Remove a channel post when the listing is deleted. */
+async function deleteChannelMessage(chatId: string, messageId: number): Promise<boolean> {
+  if (!BOT_TOKEN) return false;
+  const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/deleteMessage`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ chat_id: chatId, message_id: messageId }),
+  });
+  return res.ok;
 }
 
 /**
@@ -451,14 +590,23 @@ async function postToChannel(supabase: SupabaseClient, listing: ListingRow): Pro
   });
 
   const photo = coverUrl(listing, SUPABASE_URL);
-  const sent = await sendCard(CHANNEL_ID, html, photo, viewButton(listing.id));
-  if (sent) {
+  const sent = await sendCard(CHANNEL_ID, html, photo, viewButton(listing.id, "channel"), "channel_post");
+  if (sent.ok) {
     await supabase
       .from("listings")
       .update({ telegram_posted_at: new Date().toISOString() })
       .eq("id", listing.id);
+    // Remember where it lives so price drops / sold / deletes can edit or
+    // remove the post instead of letting it go stale.
+    if (sent.message_id) {
+      await supabase.from("telegram_channel_posts").upsert({
+        listing_id: listing.id,
+        chat_id: CHANNEL_ID,
+        message_id: sent.message_id,
+      });
+    }
   }
-  return sent;
+  return sent.ok;
 }
 
 type BuyerPrefRow = {
@@ -566,6 +714,81 @@ async function handleListing(
   return Response.json({ ok: true, posted, dmed });
 }
 
+/**
+ * Shape D — { kind: "sync_listing", listing_id, action? }
+ *
+ * Keeps the public channel in sync with the listing's real state (spec §3,
+ * "what happens to a channel post after the listing changes"):
+ *
+ *   - action "auto" (default): the listing was edited (price drop, title…)
+ *     or marked sold → the channel post's caption is re-rendered from the
+ *     current row, with a "✅ SOLD" header when the status is sold.
+ *   - action "delete": the listing is about to be hard-deleted → the channel
+ *     message is removed. MUST be called BEFORE the listings row is deleted,
+ *     because telegram_channel_posts cascades off it (once the row is gone
+ *     there is no record of which message to retract).
+ *
+ * User-initiated, so it requires a real user JWT like shapes B and C. The
+ * seller/owner and admins are the only callers the app surfaces.
+ */
+async function handleChannelSync(
+  supabase: SupabaseClient,
+  listingId: string,
+  action: "auto" | "delete",
+): Promise<Response> {
+  const { data: post } = await supabase
+    .from("telegram_channel_posts")
+    .select("chat_id,message_id")
+    .eq("listing_id", listingId)
+    .maybeSingle();
+  if (!post) return new Response("not posted", { status: 200 });
+
+  const chatId = post.chat_id as string;
+  const messageId = Number(post.message_id);
+  if (!chatId || !messageId) return new Response("invalid post", { status: 200 });
+
+  if (action === "delete") {
+    const ok = await deleteChannelMessage(chatId, messageId);
+    await logSend("channel_delete", chatId, ok, ok ? null : "delete failed");
+    // Row cleanup happens via the listings cascade; nothing more to do here.
+    return Response.json({ ok, action });
+  }
+
+  const { data: listing } = await supabase
+    .from("listings")
+    .select(LISTING_SELECT)
+    .eq("id", listingId)
+    .maybeSingle();
+  // Listing already gone without a delete-sync — retract the stale post.
+  if (!listing) {
+    const ok = await deleteChannelMessage(chatId, messageId);
+    await logSend("channel_delete", chatId, ok, ok ? null : "delete failed");
+    return Response.json({ ok, action: "delete" });
+  }
+
+  const row = listing as unknown as ListingRow;
+  const card = listingCardHtml({
+    title: row.title,
+    price: row.price,
+    original_price: row.original_price,
+    negotiable: row.negotiable,
+    delivery_offered: row.delivery_offered,
+    delivery_fee: row.delivery_fee,
+    room_type: row.room_type,
+    condition: row.condition,
+    city: row.city,
+    material: row.material,
+    color: row.color,
+    shop_name: row.profiles?.shop_name ?? null,
+    category: row.categories?.name ?? null,
+    discount_percent: row.discount_percent,
+  });
+  const html = row.status === "sold" ? `✅ <b>SOLD</b>\n\n${card}` : card;
+  const ok = await editChannelCaption(chatId, messageId, html);
+  await logSend("channel_edit", chatId, ok, ok ? null : "edit failed");
+  return Response.json({ ok, action: "edited" });
+}
+
 /** Shape C — one-time view-milestone "your item is getting views" ping. */
 async function handleView(
   supabase: SupabaseClient,
@@ -640,9 +863,9 @@ Deno.serve(async (req) => {
 
   const kind = body.kind as string | undefined;
 
-  // Shapes B and C are user-initiated, so they must carry a real user JWT —
+  // Shapes B, C and D are user-initiated, so they must carry a real user JWT —
   // the anon key that satisfies shape A must not be enough to reach them.
-  if (kind === "listing" || kind === "view") {
+  if (kind === "listing" || kind === "view" || kind === "sync_listing") {
     const authHeader = req.headers.get("Authorization") ?? "";
     const jwt = authHeader.replace(/^Bearer\s+/i, "");
     const { data: userData } = await supabase.auth.getUser(jwt);
@@ -653,9 +876,9 @@ Deno.serve(async (req) => {
     if (!listingId) return new Response("missing listing_id", { status: 400 });
 
     try {
-      return kind === "listing"
-        ? await handleListing(supabase, listingId, callerId)
-        : await handleView(supabase, listingId, callerId);
+      if (kind === "listing") return await handleListing(supabase, listingId, callerId);
+      if (kind === "view") return await handleView(supabase, listingId, callerId);
+      return await handleChannelSync(supabase, listingId, body.action === "delete" ? "delete" : "auto");
     } catch (error) {
       // Telegram must never fail a publish — the listing is already live.
       console.error("telegram-notify failed", error);

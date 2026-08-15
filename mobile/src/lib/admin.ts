@@ -1,5 +1,5 @@
 import { supabase } from "./supabase";
-import { fetchTrendingSearches } from "./api";
+import { fetchTrendingSearches, syncListingChannel } from "./api";
 
 /**
  * Admin-only moderation actions for the mobile app.
@@ -365,6 +365,9 @@ export async function toggleFeatured(id: string, featured: boolean) {
 }
 
 export async function deleteListingAdmin(id: string) {
+  // Retract the channel post BEFORE the row is deleted — the channel-post
+  // record cascades off the listing, so afterwards there's no way to find it.
+  syncListingChannel(id, "delete");
   const { data: listing } = await supabase
     .from("listings")
     .select("listing_images(url)")
@@ -396,6 +399,15 @@ export type AdminStats = {
   reviews: number;
   newListings7d: number;
   newUsers7d: number;
+  // Telegram integration health (spec §19 monitoring gap).
+  telegramSends7d: number;
+  telegramOk7d: number;
+  telegramFailures7d: number;
+  telegramFailureReasons: string[];
+  telegramLinkedUsers: number;
+  telegramBlockedUsers: number;
+  telegramChannelPosts: number;
+  telegramProcessedUpdates: number;
 };
 
 export async function fetchAdminStats(): Promise<AdminStats> {
@@ -414,6 +426,11 @@ export async function fetchAdminStats(): Promise<AdminStats> {
     reviews,
     newListings,
     newUsers,
+    telegramLog,
+    telegramLinked,
+    telegramBlocked,
+    telegramChannelPosts,
+    telegramProcessed,
   ] = await Promise.all([
     supabase.from("listings").select("id", { count: "exact", head: true }),
     supabase.from("profiles").select("id", { count: "exact", head: true }),
@@ -435,6 +452,21 @@ export async function fetchAdminStats(): Promise<AdminStats> {
     supabase.from("reviews").select("id", { count: "exact", head: true }),
     supabase.from("listings").select("id", { count: "exact", head: true }).gte("created_at", weekAgo),
     supabase.from("profiles").select("id", { count: "exact", head: true }).gte("created_at", weekAgo),
+    // ── Telegram integration health (spec §19 monitoring gap) ──
+    supabase
+      .from("telegram_delivery_log")
+      .select("ok,error")
+      .gte("created_at", weekAgo),
+    supabase
+      .from("profiles")
+      .select("id", { count: "exact", head: true })
+      .not("telegram_chat_id", "is", null),
+    supabase
+      .from("profiles")
+      .select("id", { count: "exact", head: true })
+      .eq("telegram_blocked", true),
+    supabase.from("telegram_channel_posts").select("id", { count: "exact", head: true }),
+    supabase.from("telegram_processed_updates").select("id", { count: "exact", head: true }),
   ]);
   const totalViews = (views.data ?? []).reduce(
     (sum: number, l: { view_count: number }) => sum + (l.view_count ?? 0),
@@ -461,6 +493,21 @@ export async function fetchAdminStats(): Promise<AdminStats> {
     reviews: reviews.count ?? 0,
     newListings7d: newListings.count ?? 0,
     newUsers7d: newUsers.count ?? 0,
+    // Telegram delivery health — last 7 days of sends.
+    telegramSends7d: (telegramLog.data ?? []).length,
+    telegramOk7d: (telegramLog.data ?? []).filter((r) => r.ok).length,
+    telegramFailures7d: (telegramLog.data ?? []).filter((r) => !r.ok).length,
+    telegramFailureReasons: [
+      ...new Map(
+        (telegramLog.data ?? [])
+          .filter((r: { ok: boolean; error: string | null }) => !r.ok && r.error)
+          .map((r: { error: string | null }) => [r.error as string, r.error as string]),
+      ).keys(),
+    ].slice(0, 3),
+    telegramLinkedUsers: telegramLinked.count ?? 0,
+    telegramBlockedUsers: telegramBlocked.count ?? 0,
+    telegramChannelPosts: telegramChannelPosts.count ?? 0,
+    telegramProcessedUpdates: telegramProcessed.count ?? 0,
   };
 }
 

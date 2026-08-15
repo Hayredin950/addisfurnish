@@ -36,6 +36,18 @@ export function pingListingView(listingId: string): void {
   void invokeTelegram({ kind: "view", listing_id: listingId });
 }
 
+/**
+ * Keep the public channel post in sync with the listing's real state.
+ *
+ * Call AFTER an edit (price drop, title, sold…) so the post's caption is
+ * re-rendered (sold listings get a "✅ SOLD" header). For a hard delete, call
+ * with action "delete" BEFORE deleting the listings row — the channel-post
+ * record cascades off it, so there's no way to find the message afterwards.
+ */
+export function syncListingChannel(listingId: string, action: "auto" | "delete" = "auto"): void {
+  void invokeTelegram({ kind: "sync_listing", listing_id: listingId, action });
+}
+
 /** True when a bot username is configured — gates the Connect UI. */
 export function telegramConfigured(): boolean {
   return BOT_USERNAME.length > 0;

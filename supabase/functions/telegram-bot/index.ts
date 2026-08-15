@@ -31,6 +31,19 @@ const SITE_URL = Deno.env.get("SITE_URL") ?? "";
 // Accepts @username, a numeric chat id, or a t.me/joinchat/ invite link.
 const CHANNEL_ID = Deno.env.get("TELEGRAM_CHANNEL_ID") ?? "";
 
+// Mirrors mobile/src/lib/format.ts CITIES and web/src/lib/format.ts.
+const CITIES = [
+  "Addis Ababa",
+  "Dire Dawa",
+  "Hawassa",
+  "Bahir Dar",
+  "Mekelle",
+  "Adama",
+  "Gondar",
+];
+const CONDITIONS = ["New", "Used - Like New", "Used - Good", "Used - Fair"];
+const MAX_SELL_PHOTOS = 4;
+
 type Lang = "en" | "am";
 
 const COPY = {
@@ -58,7 +71,7 @@ const COPY = {
       "🔕 Disconnected. You won't get any more alerts here.\n\nReconnect any time from your AddisFurnish profile.",
     notLinked: "This chat isn't connected to an AddisFurnish account.",
     help: (site: string) =>
-      `I deliver AddisFurnish alerts — new messages, callback requests, and listings matching your saved preferences.\n\n/start — connect your account\n/join — join our channel (required before alerts start)\n/stop — stop alerts\n/help — this message${
+      `I deliver AddisFurnish alerts — new messages, callback requests, and listings matching your saved preferences.\n\n/start — connect your account\n/join — join our channel (required before alerts start)\n/sell — create a draft listing from here\n/lang — switch language (English / አማርኛ)\n/stop — stop alerts\n/help — this message${
         site ? `\n\n${site}` : ""
       }`,
     fallback: "I only send alerts. Use /help to see what I can do.",
@@ -74,6 +87,28 @@ const COPY = {
       "Start from your AddisFurnish profile — open “Verify phone” there and I'll take it from here.",
     codeSent: (code: string) =>
       `✅ Number confirmed.\n\nYour verification code is <b>${code}</b>\n\nType it on the AddisFurnish page you came from. It expires in 10 minutes.`,
+    // ── Language ──
+    langAsk: "Choose the language for this bot:\n\nቋንቋ ይምረጡ:",
+    langSet: (l: string) => `✅ Language set to <b>${l}</b>.`,
+    // ── Sell via Bot ──
+    sellIntro:
+      "🛍️ <b>Let's create a draft listing!</b>\n\nSend me up to 4 photos of the item (one per message), then tap Done.",
+    sellPhotosGot: (n: number) =>
+      `📷 ${n}/4 photos received — send more or tap <b>Done</b>.`,
+    sellPhotosFull: "📷 4/4 photos received — tap <b>Done</b> to continue.",
+    sellDonePhotos: "✅ Done with photos",
+    sellCategory: "🏷️ Choose a category:",
+    sellCondition: "📦 Condition?",
+    sellPrice: "💰 Enter the price in ETB (numbers only, e.g. 8500).",
+    sellCity: "📍 Which city?",
+    sellInvalidPrice: "That doesn't look like a price. Send a number, e.g. 8500.",
+    sellCreating: "⏳ Creating your draft…",
+    sellDone: (title: string) =>
+      `✅ <b>Draft created!</b>\n\n${title}\n\nTap below to finish the details (title, description, delivery…) and publish from the marketplace.`,
+    sellFinishButton: "✏️ Finish in marketplace",
+    sellCanceled: "🚫 Sell flow canceled. Send /sell to start again anytime.",
+    sellCancel: "🚫 Cancel",
+    sellTitlePrefix: "New listing — ",
   },
   am: {
     linked: (shop: string) =>
@@ -98,7 +133,7 @@ const COPY = {
     stopped: "🔕 ተቋርጧል። ከዚህ በኋላ ማሳወቂያ አይደርስዎትም።\n\nበማንኛውም ጊዜ ከመገለጫዎ እንደገና ማገናኘት ይችላሉ።",
     notLinked: "ይህ ውይይት ከAddisFurnish መለያ ጋር አልተገናኘም።",
     help: (site: string) =>
-      `የAddisFurnish ማሳወቂያዎችን አደርሳለሁ — አዲስ መልእክቶች፣ የጥሪ ጥያቄዎች እና ከምርጫዎ ጋር የሚስማሙ ዕቃዎች።\n\n/start — መለያዎን ያገናኙ\n/join — ቻናላችንን ይቀላቀሉ (ማሳወቂያ ከመጀመሩ በፊት ያስፈልጋል)\n/stop — ማሳወቂያ ያቁሙ\n/help — ይህ መልእክት${
+      `የAddisFurnish ማሳወቂያዎችን አደርሳለሁ — አዲስ መልእክቶች፣ የጥሪ ጥያቄዎች እና ከምርጫዎ ጋር የሚስማሙ ዕቃዎች።\n\n/start — መለያዎን ያገናኙ\n/join — ቻናላችንን ይቀላቀሉ (ማሳወቂያ ከመጀመሩ በፊት ያስፈልጋል)\n/sell — ከዚህ የረቂቅ ማስታወቂያ ይፍጠሩ\n/lang — ቋንቋ ይቀይሩ (English / አማርኛ)\n/stop — ማሳወቂያ ያቁሙ\n/help — ይህ መልእክት${
         site ? `\n\n${site}` : ""
       }`,
     fallback: "ማሳወቂያ ብቻ ነው የምልከው። /help ይጠቀሙ።",
@@ -113,15 +148,92 @@ const COPY = {
     shareNoPending: "ከAddisFurnish መገለጫዎ ይጀምሩ — “ስልክ አረጋግጥ” የሚለውን ይክፈቱ።",
     codeSent: (code: string) =>
       `✅ ቁጥሩ ተረጋግጧል።\n\nየማረጋገጫ ኮድዎ <b>${code}</b> ነው\n\nመጥተውበት ባለው የAddisFurnish ገጽ ላይ ያስገቡት። በ10 ደቂቃ ውስጥ ያልፋል።`,
+    // ── Language ──
+    langAsk: "ለዚህ ቦት ቋንቋ ይምረጡ:\n\nChoose the language for this bot:",
+    langSet: (l: string) => `✅ ቋንቋ ወደ <b>${l}</b> ተቀይሯል።`,
+    // ── Sell via Bot ──
+    sellIntro:
+      "🛍️ <b>የረቂቅ ማስታወቂያ እንፍጠር!</b>\n\nእስከ 4 ፎቶዎች ይላኩ (በአንድ መልእክት አንድ)፣ ከዚያ የተጠናቀቀ ይጫኑ።",
+    sellPhotosGot: (n: number) =>
+      `📷 ${n}/4 ፎቶዎች ደርሰዋል — ተጨማሪ ይላኩ ወይም <b>ተጠናቅቋል</b> ይጫኑ።`,
+    sellPhotosFull: "📷 4/4 ፎቶዎች ደርሰዋል — ለመቀጠል <b>ተጠናቅቋል</b> ይጫኑ።",
+    sellDonePhotos: "✅ ፎቶዎች ተጠናቀዋል",
+    sellCategory: "🏷️ ምድብ ይምረጡ:",
+    sellCondition: "📦 ሁኔታ?",
+    sellPrice: "💰 ዋጋውን በብር ያስገቡ (ቁጥር ብቻ፣ ለምሳሌ 8500)።",
+    sellCity: "📍 የትኛው ከተማ?",
+    sellInvalidPrice: "ያ ዋጋ አይመስልም። ቁጥር ይላኩ፣ ለምሳሌ 8500።",
+    sellCreating: "⏳ ረቂቅዎን በመፍጠር ላይ…",
+    sellDone: (title: string) =>
+      `✅ <b>ረቂቅ ተፈጥሯል!</b>\n\n${title}\n\nዝርዝሮቹን ለማጠናቀቅ (ርዕስ፣ መግለጫ፣ ማድረስ…) እና ለማተም ከታች ይጫኑ።`,
+    sellFinishButton: "✏️ በመደብሩ ውስጥ ይጨርሱ",
+    sellCanceled: "🚫 የመሸጫ ሂደት ተሰርዟል። በማንኛውም ጊዜ /sell ይላኩ።",
+    sellCancel: "🚫 ሰርዝ",
+    sellTitlePrefix: "አዲስ ማስታወቂያ — ",
   },
 } as const;
 
+// Lazy service-role client for the log/blocked helpers — the webhook handler
+// creates its own, but these fire from deep inside send paths.
+let _db: ReturnType<typeof createClient> | null = null;
+function db() {
+  if (!_db) {
+    _db = createClient(SUPABASE_URL ?? "", SERVICE_ROLE ?? "", {
+      auth: { persistSession: false },
+    });
+  }
+  return _db;
+}
+
+/** Record a delivery attempt for the admin health view. */
+async function logSend(kind: string, chatId: string, ok: boolean, error?: string | null) {
+  try {
+    await db().from("telegram_delivery_log").insert({
+      kind,
+      chat_id: chatId,
+      ok,
+      error: error ?? null,
+    });
+  } catch {
+    // Logging must never break a send.
+  }
+}
+
+/** Telegram returned 403 — the user blocked the bot. Stop alerting them. */
+async function markBlocked(chatId: string) {
+  try {
+    await db()
+      .from("profiles")
+      .update({ telegram_blocked: true })
+      .eq("telegram_chat_id", chatId);
+  } catch {
+    // Best-effort.
+  }
+}
+
+/** Download a Telegram photo (getFile → file bytes) for sell-via-bot drafts. */
+async function downloadTelegramFile(fileId: string): Promise<Uint8Array | null> {
+  if (!BOT_TOKEN) return null;
+  try {
+    const meta = (await (
+      await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/getFile?file_id=${encodeURIComponent(fileId)}`)
+    ).json()) as { result?: { file_path?: string } };
+    const path = meta.result?.file_path;
+    if (!path) return null;
+    const res = await fetch(`https://api.telegram.org/file/bot${BOT_TOKEN}/${path}`);
+    if (!res.ok) return null;
+    return new Uint8Array(await res.arrayBuffer());
+  } catch {
+    return null;
+  }
+}
+
 // replyMarkup carries the request_contact keyboard during phone verification,
 // and { remove_keyboard: true } to clear it again afterwards.
-async function sendMessage(chatId: number, text: string, replyMarkup?: unknown) {
-  if (!BOT_TOKEN) return;
+async function sendMessage(chatId: number, text: string, replyMarkup?: unknown): Promise<boolean> {
+  if (!BOT_TOKEN) return false;
   try {
-    await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
+    const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({
@@ -131,8 +243,20 @@ async function sendMessage(chatId: number, text: string, replyMarkup?: unknown) 
         ...(replyMarkup ? { reply_markup: replyMarkup } : {}),
       }),
     });
+    const body = (await res.json().catch(() => null)) as {
+      ok?: boolean;
+      description?: string;
+      error_code?: number;
+    } | null;
+    if (!res.ok) {
+      await logSend("webhook", String(chatId), false, body?.description ?? `HTTP ${res.status}`);
+      if (body?.error_code === 403) await markBlocked(String(chatId));
+      return false;
+    }
+    await logSend("webhook", String(chatId), true, null);
+    return true;
   } catch {
-    // Telegram unreachable — nothing useful to do inside a webhook.
+    return false;
   }
 }
 
@@ -225,6 +349,98 @@ async function isChannelMember(chatId: number): Promise<boolean | null> {
   }
 }
 
+// ── Sell via Bot ──────────────────────────────────────────────────────────
+
+async function sendCategoryPicker(supabase: ReturnType<typeof createClient>, chatId: number, copy: (typeof COPY)[Lang], lang: Lang) {
+  const { data: cats } = await supabase
+    .from("categories")
+    .select("id,name,name_am,parent_id")
+    .order("sort_order");
+  const roots = (cats ?? []).filter((c: { parent_id: string | null }) => !c.parent_id).slice(0, 12);
+  const kb: { text: string; callback_data: string }[][] = [];
+  for (let i = 0; i < roots.length; i += 2) {
+    kb.push(
+      roots.slice(i, i + 2).map((c: { id: string; name: string; name_am: string | null }) => ({
+        text: lang === "am" && c.name_am ? c.name_am : c.name,
+        callback_data: `sell_cat:${c.id}`,
+      })),
+    );
+  }
+  kb.push([{ text: copy.sellCancel, callback_data: "sell_cancel" }]);
+  await sendMessage(chatId, copy.sellCategory, { inline_keyboard: kb });
+}
+
+async function sendConditionPicker(chatId: number, copy: (typeof COPY)[Lang]) {
+  const kb = CONDITIONS.map((o) => [{ text: o, callback_data: `sell_cond:${o}` }]);
+  kb.push([{ text: copy.sellCancel, callback_data: "sell_cancel" }]);
+  await sendMessage(chatId, copy.sellCondition, { inline_keyboard: kb });
+}
+
+/**
+ * Create the DRAFT listing + upload photos + send the finish-in-marketplace
+ * button. Never publishes: the marketplace editor owns status → active.
+ */
+async function finalizeSellDraft(
+  supabase: ReturnType<typeof createClient>,
+  chatId: number,
+  userId: string,
+  session: { id: string; category_id: string | null; condition: string | null; price: number | string | null; city: string | null; photo_file_ids: string[] | null },
+  copy: (typeof COPY)[Lang],
+) {
+  const { data: cat } = await supabase
+    .from("categories")
+    .select("name")
+    .eq("id", session.category_id ?? "")
+    .maybeSingle();
+  const price = Number(session.price);
+  await sendMessage(chatId, copy.sellCreating);
+
+  // Telegram photo → storage.
+  const paths: string[] = [];
+  const fids = session.photo_file_ids ?? [];
+  for (let i = 0; i < fids.length && i < MAX_SELL_PHOTOS; i++) {
+    const bytes = await downloadTelegramFile(fids[i]);
+    if (!bytes) continue;
+    const path = `${userId}/bot-${Date.now()}-${i}.jpg`;
+    const { error } = await supabase.storage
+      .from("listing-images")
+      .upload(path, bytes, { contentType: "image/jpeg", upsert: false });
+    if (!error) paths.push(path);
+  }
+
+  const { data: draft, error } = await supabase
+    .from("listings")
+    .insert({
+      seller_id: userId,
+      title: `${copy.sellTitlePrefix}${cat?.name ?? ""}`.trim(),
+      description: "",
+      price,
+      negotiable: true,
+      condition: session.condition ?? "Used - Good",
+      city: session.city ?? "Addis Ababa",
+      status: "draft",
+      category_id: session.category_id,
+    })
+    .select("id")
+    .single();
+  if (error || !draft) {
+    console.error("sell draft create failed", error);
+    await sendMessage(chatId, copy.invalid);
+    return;
+  }
+  if (paths.length > 0) {
+    await supabase
+      .from("listing_images")
+      .insert(paths.map((p, i) => ({ listing_id: draft.id, url: p, position: i })));
+  }
+  await supabase.from("telegram_sell_sessions").delete().eq("id", session.id);
+
+  const finishUrl = `${SITE_URL}/sell?edit=${draft.id}`;
+  await sendMessage(chatId, copy.sellDone(`🏷️ ${cat?.name ?? ""} · 💰 ${price.toLocaleString()} ETB · 📍 ${session.city ?? "—"}`), {
+    inline_keyboard: [[{ text: copy.sellFinishButton, url: finishUrl }]],
+  });
+}
+
 // Mirror of normalizePhone in web/src/lib/otp.ts. Duplicated rather than
 // imported because edge functions can't reach web/src — keep the two in step.
 // Ethiopian mobile numbers: 09xxxxxxxx / 9xxxxxxxx / +2519xxxxxxxx → +2519xxxxxxxx.
@@ -269,10 +485,115 @@ Deno.serve(async (req) => {
 
   const supabase = createClient(SUPABASE_URL, SERVICE_ROLE, { auth: { persistSession: false } });
 
-  // ── Callback query: "✅ I've joined — verify" ─────────────────────────
+  // ── Idempotency ────────────────────────────────────────────────────────
+  // Telegram redelivers an update when we're slow to ack. The PRIMARY KEY on
+  // update_id turns a repeat into a no-op, so a retried webhook can't create
+  // a duplicate draft, link, or notification.
+  const updateId = body.update_id as number | undefined;
+  if (typeof updateId === "number") {
+    const { error: dupErr } = await supabase
+      .from("telegram_processed_updates")
+      .insert({ update_id: updateId });
+    if (dupErr) {
+      return new Response("ok", { status: 200 }); // already processed
+    }
+  }
+
+  // ── Callback queries: language switch + sell-via-bot steps ─────────────
   const callback = body.callback_query as
     | { id?: string; data?: string; from?: { id?: number }; message?: { chat?: { id?: number } } }
     | undefined;
+  if (callback?.data?.startsWith("lang:")) {
+    const cbChatId = (callback.message?.chat?.id ?? callback.from?.id) as number | undefined;
+    if (!cbChatId) return new Response("ok", { status: 200 });
+    const toLang: Lang = callback.data === "lang:am" ? "am" : "en";
+    const { data: prof } = await supabase
+      .from("profiles")
+      .select("id")
+      .eq("telegram_chat_id", String(cbChatId))
+      .maybeSingle();
+    if (prof) {
+      await supabase.from("profiles").update({ preferred_language: toLang }).eq("id", prof.id);
+    }
+    await answerCallback(callback.id ?? "", "✅");
+    await sendMessage(cbChatId, COPY[toLang].langSet(toLang === "am" ? "አማርኛ" : "English"));
+    return new Response("ok", { status: 200 });
+  }
+
+  if (callback?.data?.startsWith("sell_")) {
+    const cbChatId = (callback.message?.chat?.id ?? callback.from?.id) as number | undefined;
+    if (!cbChatId) return new Response("ok", { status: 200 });
+    const { data: prof } = await supabase
+      .from("profiles")
+      .select("id, preferred_language")
+      .eq("telegram_chat_id", String(cbChatId))
+      .maybeSingle();
+    const sLang: Lang = prof?.preferred_language === "am" ? "am" : "en";
+    const sCopy = COPY[sLang];
+    const { data: session } = await supabase
+      .from("telegram_sell_sessions")
+      .select("*")
+      .eq("chat_id", String(cbChatId))
+      .maybeSingle();
+    if (!session) {
+      await answerCallback(callback.id ?? "", "Send /sell to start.");
+      return new Response("ok", { status: 200 });
+    }
+    const data = callback.data;
+    if (data === "sell_cancel") {
+      await supabase.from("telegram_sell_sessions").delete().eq("id", session.id);
+      await answerCallback(callback.id ?? "", "🚫");
+      await sendMessage(cbChatId, sCopy.sellCanceled);
+      return new Response("ok", { status: 200 });
+    }
+    if (data === "sell_done_photos") {
+      await answerCallback(callback.id ?? "", "✅");
+      await supabase.from("telegram_sell_sessions").update({ step: "category" }).eq("id", session.id);
+      await sendCategoryPicker(supabase, cbChatId, sCopy, sLang);
+      return new Response("ok", { status: 200 });
+    }
+    if (data.startsWith("sell_cat:")) {
+      await answerCallback(callback.id ?? "", "✅");
+      await supabase
+        .from("telegram_sell_sessions")
+        .update({ category_id: data.slice("sell_cat:".length), step: "condition" })
+        .eq("id", session.id);
+      await sendConditionPicker(cbChatId, sCopy);
+      return new Response("ok", { status: 200 });
+    }
+    if (data.startsWith("sell_cond:")) {
+      await answerCallback(callback.id ?? "", "✅");
+      await supabase
+        .from("telegram_sell_sessions")
+        .update({ condition: data.slice("sell_cond:".length), step: "price" })
+        .eq("id", session.id);
+      await sendMessage(cbChatId, sCopy.sellPrice);
+      return new Response("ok", { status: 200 });
+    }
+    if (data.startsWith("sell_city:")) {
+      await answerCallback(callback.id ?? "", "✅");
+      await supabase
+        .from("telegram_sell_sessions")
+        .update({ city: data.slice("sell_city:".length), step: "done" })
+        .eq("id", session.id);
+      const fresh = (await supabase
+        .from("telegram_sell_sessions")
+        .select("*")
+        .eq("id", session.id)
+        .maybeSingle()) as { data: typeof session | null };
+      await finalizeSellDraft(
+        supabase,
+        cbChatId,
+        String(prof?.id ?? session.user_id),
+        (fresh.data ?? session) as never,
+        sCopy,
+      );
+      return new Response("ok", { status: 200 });
+    }
+    return new Response("ok", { status: 200 });
+  }
+
+  // ── Callback query: "✅ I've joined — verify" ─────────────────────────
   if (callback?.data === "verify_channel_join") {
     const cbChatId = (callback.message?.chat?.id ?? callback.from?.id) as number | undefined;
     const cbUserId = (callback.from?.id ?? cbChatId) as number | undefined;
@@ -339,9 +660,14 @@ Deno.serve(async (req) => {
   // Language follows the account when this chat is already linked.
   const { data: current } = await supabase
     .from("profiles")
-    .select("id, preferred_language, telegram_channel_joined_at")
+    .select("id, preferred_language, telegram_channel_joined_at, telegram_blocked")
     .eq("telegram_chat_id", String(chatId))
     .maybeSingle();
+  // If the bot can receive a message from this chat, the user isn't blocking
+  // it anymore — clear the auto-set flag so alerts resume.
+  if (current?.telegram_blocked) {
+    await supabase.from("profiles").update({ telegram_blocked: false }).eq("id", current.id);
+  }
   const lang: Lang = current?.preferred_language === "am" ? "am" : "en";
   const copy = COPY[lang];
 
@@ -573,8 +899,94 @@ Deno.serve(async (req) => {
     return new Response("ok", { status: 200 });
   }
 
-  if (text.startsWith("/help")) {
-    await sendMessage(chatId, copy.help(SITE_URL));
+  if (text.startsWith("/lang")) {
+    if (!current) {
+      await sendMessage(chatId, copy.notLinked);
+      return new Response("ok", { status: 200 });
+    }
+    await sendMessage(chatId, copy.langAsk, {
+      inline_keyboard: [
+        [
+          { text: "English 🇬🇧", callback_data: "lang:en" },
+          { text: "አማርኛ 🇪🇹", callback_data: "lang:am" },
+        ],
+      ],
+    });
+    return new Response("ok", { status: 200 });
+  }
+
+  if (text.startsWith("/sell")) {
+    if (!current) {
+      await sendMessage(chatId, copy.notLinked);
+      return new Response("ok", { status: 200 });
+    }
+    // Fresh start — drop any half-finished session for this chat.
+    await supabase.from("telegram_sell_sessions").delete().eq("chat_id", String(chatId));
+    const { error: sessErr } = await supabase.from("telegram_sell_sessions").insert({
+      user_id: current.id,
+      chat_id: String(chatId),
+      step: "photos",
+    });
+    if (sessErr) {
+      console.error("sell session start failed", sessErr);
+      await sendMessage(chatId, copy.invalid);
+      return new Response("ok", { status: 200 });
+    }
+    await sendMessage(chatId, copy.sellIntro);
+    return new Response("ok", { status: 200 });
+  }
+
+  // ── Sell-via-bot state machine: photos and price arrive as messages. ───
+  const { data: sellSession } = await supabase
+    .from("telegram_sell_sessions")
+    .select("*")
+    .eq("chat_id", String(chatId))
+    .maybeSingle();
+  if (sellSession) {
+    if (text === "/cancel") {
+      await supabase.from("telegram_sell_sessions").delete().eq("id", sellSession.id);
+      await sendMessage(chatId, copy.sellCanceled);
+      return new Response("ok", { status: 200 });
+    }
+    if (sellSession.step === "photos") {
+      const photo = (message.photo as { file_id?: string }[] | undefined)?.slice(-1)[0];
+      if (!photo?.file_id) {
+        await sendMessage(chatId, copy.sellPhotosGot((sellSession.photo_file_ids ?? []).length));
+        return new Response("ok", { status: 200 });
+      }
+      const fids = [...(sellSession.photo_file_ids ?? []), photo.file_id].slice(0, MAX_SELL_PHOTOS);
+      await supabase
+        .from("telegram_sell_sessions")
+        .update({ photo_file_ids: fids, updated_at: new Date().toISOString() })
+        .eq("id", sellSession.id);
+      const kb = [
+        [{ text: copy.sellDonePhotos, callback_data: "sell_done_photos" }],
+        [{ text: copy.sellCancel, callback_data: "sell_cancel" }],
+      ];
+      await sendMessage(
+        chatId,
+        fids.length >= MAX_SELL_PHOTOS ? copy.sellPhotosFull : copy.sellPhotosGot(fids.length),
+        { inline_keyboard: kb },
+      );
+      return new Response("ok", { status: 200 });
+    }
+    if (sellSession.step === "price") {
+      const n = Number((text ?? "").replace(/[^\d]/g, ""));
+      if (!text || Number.isNaN(n) || n <= 0) {
+        await sendMessage(chatId, copy.sellInvalidPrice);
+        return new Response("ok", { status: 200 });
+      }
+      await supabase
+        .from("telegram_sell_sessions")
+        .update({ price: n, step: "city", updated_at: new Date().toISOString() })
+        .eq("id", sellSession.id);
+      const kb = CITIES.map((c) => [{ text: c, callback_data: `sell_city:${c}` }]);
+      kb.push([{ text: copy.sellCancel, callback_data: "sell_cancel" }]);
+      await sendMessage(chatId, copy.sellCity, { inline_keyboard: kb });
+      return new Response("ok", { status: 200 });
+    }
+    // Any other step while a session is live: nudge toward the buttons.
+    await sendMessage(chatId, copy.fallback);
     return new Response("ok", { status: 200 });
   }
 
