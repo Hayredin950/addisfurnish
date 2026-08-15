@@ -55,6 +55,28 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
+/** Find or create the buyer↔seller conversation for a listing (mobile parity). */
+async function ensureConversation(
+  listingId: string,
+  buyerId: string,
+  sellerId: string,
+): Promise<string> {
+  const { data: existing } = await supabase
+    .from("conversations")
+    .select("id")
+    .eq("listing_id", listingId)
+    .eq("buyer_id", buyerId)
+    .maybeSingle();
+  if (existing?.id) return existing.id;
+  const { data, error } = await supabase
+    .from("conversations")
+    .insert({ listing_id: listingId, buyer_id: buyerId, seller_id: sellerId })
+    .select("id")
+    .single();
+  if (error) throw error;
+  return data.id;
+}
+
 export const Route = createFileRoute("/listing/$id")({
   head: () => ({
     meta: [
@@ -238,11 +260,31 @@ function ListingDetail() {
         message: offerMessage.trim() || null,
       });
       if (error) throw error;
+      const { data: me } = await supabase
+        .from("profiles")
+        .select("full_name,phone")
+        .eq("id", user.id)
+        .maybeSingle();
+      const buyerName = me?.full_name || "";
+      const buyerPhone = me?.phone || "";
       await notifyUser(listing!.seller_id, "offer_received", {
         title: listing!.title,
         listingId: listing!.id,
         amount,
+        buyerName,
+        buyerId: user.id,
+        ...(buyerPhone ? { buyerPhone } : {}),
+        ...(offerMessage.trim() ? { message: offerMessage.trim() } : {}),
       });
+      // Mirror the offer into the chat with the amount + buyer contact.
+      const conversationId = await ensureConversation(listing!.id, user.id, listing!.seller_id);
+      let msg = `💰 Offer — ${buyerName || "A buyer"} offers ${formatBirr(amount)} for "${listing!.title}".`;
+      if (offerMessage.trim()) msg += `\nMessage: ${offerMessage.trim()}`;
+      if (buyerPhone) msg += `\nContact: ${buyerPhone}`;
+      const { error: msgErr } = await supabase
+        .from("messages")
+        .insert({ conversation_id: conversationId, sender_id: user.id, body: msg });
+      if (msgErr) throw msgErr;
     },
     onSuccess: () => {
       setOfferOpen(false);
@@ -279,8 +321,19 @@ function ListingDetail() {
         title: listing!.title,
         listingId: listing!.id,
         phone,
+        buyerId: user.id,
         ...(buyerName ? { buyerName } : {}),
+        ...(message.trim() ? { note: message.trim() } : {}),
       });
+      // Mirror the callback into the chat so the number lives with the
+      // conversation, not just in alerts.
+      const conversationId = await ensureConversation(listing!.id, user.id, listing!.seller_id);
+      let cbMsg = `📞 Callback request — ${buyerName || "A buyer"} (${phone}) would like you to call them back about "${listing!.title}".`;
+      if (message.trim()) cbMsg += `\nNote: ${message.trim()}`;
+      const { error: cbErr } = await supabase
+        .from("messages")
+        .insert({ conversation_id: conversationId, sender_id: user.id, body: cbMsg });
+      if (cbErr) throw cbErr;
     },
     onSuccess: () => {
       setPhone("");

@@ -176,6 +176,8 @@ export default function ListingDetailScreen() {
         listingTitle: item.title,
         amount,
         message: offerMessage.trim() || null,
+        buyerName: myProfile.data?.full_name ?? null,
+        buyerPhone: myProfile.data?.phone ?? null,
       });
       setOfferOpen(false);
       setOfferAmount("");
@@ -186,7 +188,7 @@ export default function ListingDetailScreen() {
     } finally {
       setOfferBusy(false);
     }
-  }, [user, item, offerAmount, offerMessage, t, toast]);
+  }, [user, item, offerAmount, offerMessage, t, toast, myProfile]);
 
   const sendCallback = useCallback(async () => {
     if (!user || !item || !callbackPhone.trim()) return;

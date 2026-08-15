@@ -566,11 +566,17 @@ async function handleNotification(
         const caller = payload.buyerName ? esc(payload.buyerName) : "A buyer";
         header = `📞 <b>${caller} requested a callback</b>${
           payload.phone ? `\n\n📱 <b>${esc(payload.phone)}</b> — call them straight back` : ""
-        }\n\n`;
+        }`;
+        if (payload.note) header += `\n📝 “${esc(payload.note)}”`;
+        header += `\n\n`;
       } else if (type === "offer_received") {
         header = `💰 <b>New offer</b>${
           payload.amount != null ? ` — ${esc(formatPrice(payload.amount))}` : ""
-        }\n\n`;
+        }`;
+        if (payload.buyerName) header += `\nFrom: <b>${esc(payload.buyerName)}</b>`;
+        if (payload.buyerPhone) header += `\n📱 ${esc(payload.buyerPhone)}`;
+        if (payload.message) header += `\n“${esc(payload.message)}”`;
+        header += `\n\n`;
       } else if (type === "offer_response") {
         const verb = payload.status === "accepted" ? "accepted ✅" : "declined";
         header = `💰 <b>Your offer was ${verb}</b>\n\n`;

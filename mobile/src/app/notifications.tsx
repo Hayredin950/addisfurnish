@@ -1,5 +1,14 @@
-import { useEffect } from "react";
-import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from "react-native";
+import { useEffect, useState } from "react";
+import {
+  ActivityIndicator,
+  FlatList,
+  Modal,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  View,
+} from "react-native";
 import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../lib/auth";
@@ -13,8 +22,10 @@ import {
 } from "../lib/api";
 import { subscribeNotifications, notificationText } from "../lib/notifications";
 import { EmptyState } from "../components/EmptyState";
+import { Button } from "../components/Button";
+import { SheetOverlay } from "../components/SheetOverlay";
 import { colors, radius, spacing } from "../lib/theme";
-import { timeAgo } from "../lib/format";
+import { formatBirr, timeAgo } from "../lib/format";
 
 type Notif = {
   id: string;
@@ -29,6 +40,15 @@ type Notif = {
     reason?: string;
     rating?: number;
     shopSlug?: string;
+    buyerId?: string;
+    buyerName?: string;
+    buyerPhone?: string;
+    senderName?: string;
+    messagePreview?: string;
+    message?: string;
+    note?: string;
+    phone?: string;
+    amount?: number;
   } | null;
   is_read: boolean;
   created_at: string;
@@ -45,11 +65,48 @@ export default function NotificationsScreen() {
   );
 
   const notifs = (data ?? []) as unknown as Notif[];
+  const [detail, setDetail] = useState<Notif | null>(null);
 
   // Single-line label for the list: "Title — body" (or just one of them).
   const labelFor = (n: Notif): string => {
     const { title, body } = notificationText(lang, n.type, n.payload);
     return [title, body].filter(Boolean).join(" — ");
+  };
+
+  /** Label/value rows for the detail sheet, driven by the payload. */
+  const detailRows = (n: Notif): { label: string; value: string }[] => {
+    const p = n.payload ?? {};
+    const from = p.buyerName || p.senderName || "";
+    const rows: { label: string; value: string }[] = [];
+    if (from) rows.push({ label: t("notifFrom"), value: from });
+    if (p.amount != null) rows.push({ label: t("notifAmount"), value: formatBirr(Number(p.amount)) });
+    if (p.phone) rows.push({ label: t("notifPhone"), value: p.phone });
+    if (p.buyerPhone) rows.push({ label: t("notifPhone"), value: p.buyerPhone });
+    if (p.message) rows.push({ label: t("notifMessage"), value: p.message });
+    if (p.note) rows.push({ label: t("notifNote"), value: p.note });
+    if (p.messagePreview) rows.push({ label: t("notifMessage"), value: p.messagePreview });
+    if (p.status) rows.push({ label: t("notifStatus"), value: p.status });
+    return rows;
+  };
+
+  /** Primary action for the detail sheet (same targets as row taps). */
+  const openDetailTarget = (n: Notif) => {
+    if (n.type === "new_message" && n.payload?.conversationId) {
+      return { label: t("notifOpenConversation"), go: () => router.push(`/chat/${n.payload!.conversationId}`) };
+    }
+    if (n.type === "offer_received") {
+      return { label: t("notifOpenDashboard"), go: () => router.push("/dashboard") };
+    }
+    if (n.type === "shop_reviewed" && (n.payload as { shopSlug?: string } | null)?.shopSlug) {
+      return {
+        label: t("notifOpenShop"),
+        go: () => router.push(`/shop/${(n.payload as { shopSlug: string }).shopSlug}`),
+      };
+    }
+    if (n.payload?.listingId) {
+      return { label: t("notifOpenListing"), go: () => router.push(`/listing/${n.payload!.listingId}`) };
+    }
+    return null;
   };
 
   const markAllRead = async () => {
@@ -167,6 +224,17 @@ export default function NotificationsScreen() {
                 <Pressable
                   hitSlop={8}
                   style={styles.dismissBtn}
+                  onPress={() => {
+                    setDetail(item);
+                    void markNotificationRead(item.id);
+                    refetch();
+                  }}
+                >
+                  <Ionicons name="eye" size={16} color={colors.primary} />
+                </Pressable>
+                <Pressable
+                  hitSlop={8}
+                  style={styles.dismissBtn}
                   onPress={() => dismiss(item.id)}
                 >
                   <Ionicons name="close" size={15} color={colors.textSoft} />
@@ -176,6 +244,51 @@ export default function NotificationsScreen() {
           }}
         />
       )}
+
+      {/* Details — who, when, and every payload field for the tapped alert. */}
+      <Modal
+        visible={detail !== null}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setDetail(null)}
+      >
+        <SheetOverlay onClose={() => setDetail(null)}>
+          <View style={styles.modalSheet}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>{t("notifShowDetails")}</Text>
+              <Pressable onPress={() => setDetail(null)} hitSlop={8}>
+                <Ionicons name="close" size={20} color={colors.text} />
+              </Pressable>
+            </View>
+            {detail ? (
+              <ScrollView style={{ maxHeight: 380 }}>
+                <Text style={styles.modalWhen}>
+                  {new Date(detail.created_at).toLocaleDateString()} ·{" "}
+                  {new Date(detail.created_at).toLocaleTimeString()}
+                </Text>
+                {detailRows(detail).map((row) => (
+                  <View key={row.label} style={styles.detailRow}>
+                    <Text style={styles.detailLabel}>{row.label}</Text>
+                    <Text style={styles.detailValue}>{row.value}</Text>
+                  </View>
+                ))}
+                {openDetailTarget(detail) ? (
+                  <View style={{ marginTop: spacing.md }}>
+                    <Button
+                      title={openDetailTarget(detail)!.label}
+                      onPress={() => {
+                        const target = openDetailTarget(detail)!;
+                        setDetail(null);
+                        target.go();
+                      }}
+                    />
+                  </View>
+                ) : null}
+              </ScrollView>
+            ) : null}
+          </View>
+        </SheetOverlay>
+      </Modal>
     </View>
   );
 }
@@ -227,4 +340,28 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
+  modalSheet: {
+    backgroundColor: colors.card,
+    borderTopLeftRadius: radius.xl,
+    borderTopRightRadius: radius.xl,
+    padding: spacing.lg,
+    paddingBottom: 40,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: spacing.sm,
+  },
+  modalTitle: { fontSize: 18, fontWeight: "800", color: colors.text },
+  modalWhen: { fontSize: 12, color: colors.textSoft, marginBottom: spacing.md },
+  detailRow: {
+    flexDirection: "row",
+    gap: 12,
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+  },
+  detailLabel: { width: 110, fontSize: 13, color: colors.textSoft },
+  detailValue: { flex: 1, fontSize: 14, color: colors.text, lineHeight: 19 },
 });

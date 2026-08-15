@@ -1,5 +1,6 @@
 import { File } from "expo-file-system";
 import { supabase } from "./supabase";
+import { formatBirr } from "./format";
 import type { Database } from "./db-types";
 
 export type Category = Database["public"]["Tables"]["categories"]["Row"];
@@ -695,14 +696,23 @@ export async function requestCallback(input: {
     note: input.note || null,
   });
   if (error) throw error;
-  // The phone rides in the payload so the seller can call straight back from
-  // the notification (in-app, push and Telegram all render it).
+  // The phone + note ride in the payload so the seller sees who asked and can
+  // call straight back from the notification (in-app, push and Telegram).
   await notifyUser(input.sellerId, "callback_request", {
     title: input.listingTitle,
     listingId: input.listingId,
     phone: input.phone,
     buyerName: input.buyerName ?? null,
+    buyerId: input.buyerId,
+    ...(input.note ? { note: input.note } : {}),
   });
+  // Mirror the request into the chat: the seller gets the number as a regular
+  // message too, so it lives with the conversation instead of only in alerts.
+  const conversationId = await ensureConversation(input.listingId, input.buyerId, input.sellerId);
+  const name = input.buyerName || "A buyer";
+  let body = `📞 Callback request — ${name} (${input.phone}) would like you to call them back about "${input.listingTitle}".`;
+  if (input.note) body += `\nNote: ${input.note}`;
+  await sendMessage(conversationId, input.buyerId, body);
 }
 
 export async function fetchCallbacks(sellerId: string) {
@@ -739,6 +749,8 @@ export async function makeOffer(input: {
   listingTitle: string;
   amount: number;
   message?: string | null;
+  buyerName?: string | null;
+  buyerPhone?: string | null;
 }) {
   const { error } = await supabase.from("offers").insert({
     listing_id: input.listingId,
@@ -748,11 +760,24 @@ export async function makeOffer(input: {
     message: input.message || null,
   });
   if (error) throw error;
+  // Buyer contact + message travel in the payload so the seller's detail view
+  // (and Telegram card) shows who offered what.
   await notifyUser(input.sellerId, "offer_received", {
     title: input.listingTitle,
     listingId: input.listingId,
     amount: input.amount,
+    buyerName: input.buyerName ?? null,
+    buyerId: input.buyerId,
+    ...(input.buyerPhone ? { buyerPhone: input.buyerPhone } : {}),
+    ...(input.message ? { message: input.message } : {}),
   });
+  // Mirror the offer into the chat with the amount and the buyer's contact.
+  const conversationId = await ensureConversation(input.listingId, input.buyerId, input.sellerId);
+  const name = input.buyerName || "A buyer";
+  let body = `💰 Offer — ${name} offers ${formatBirr(input.amount)} for "${input.listingTitle}".`;
+  if (input.message) body += `\nMessage: ${input.message}`;
+  if (input.buyerPhone) body += `\nContact: ${input.buyerPhone}`;
+  await sendMessage(conversationId, input.buyerId, body);
 }
 
 export async function fetchOffersForSeller(sellerId: string) {

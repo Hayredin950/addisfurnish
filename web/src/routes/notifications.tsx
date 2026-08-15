@@ -1,15 +1,22 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bell, CheckCheck, X } from "lucide-react";
+import { Bell, CheckCheck, Eye, X } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { notificationsQuery } from "@/lib/marketplace";
 import { useAuth } from "@/lib/auth";
 import { useLang } from "@/lib/i18n";
-import { timeAgo } from "@/lib/format";
+import { formatBirr, timeAgo } from "@/lib/format";
 import { RequireAuth } from "@/components/RequireAuth";
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 export const Route = createFileRoute("/notifications")({
   head: () => ({
@@ -60,6 +67,34 @@ const TYPE_KEY: Record<
 
 /** Types that should open the inbox rather than the listing page. */
 const MESSAGE_TYPES = new Set(["new_message", "callback_request", "callback_response"]);
+
+/** Notification payload fields (subset of what the apps push through). */
+type NotifPayload = {
+  title?: string | null;
+  listingId?: string | null;
+  conversationId?: string | null;
+  buyerId?: string | null;
+  buyerName?: string | null;
+  buyerPhone?: string | null;
+  senderName?: string | null;
+  messagePreview?: string | null;
+  message?: string | null;
+  note?: string | null;
+  phone?: string | null;
+  amount?: number | null;
+  status?: string | null;
+  shopSlug?: string | null;
+  newPrice?: number | null;
+  query?: string | null;
+};
+
+type Notif = {
+  id: string;
+  type: string;
+  payload: NotifPayload | null;
+  is_read: boolean;
+  created_at: string;
+};
 
 function NotificationsPage() {
   const { user } = useAuth();
@@ -120,6 +155,24 @@ function NotificationsPage() {
   });
 
   const unread = (notifications ?? []).filter((n) => !n.is_read).length;
+  const [detail, setDetail] = useState<Notif | null>(null);
+
+  /** Label/value rows for the detail dialog, driven by the payload. */
+  const detailRows = (n: Notif) => {
+    const p = n.payload ?? {};
+    const from = p.buyerName || p.senderName || "";
+    const rows: { label: string; value: string }[] = [];
+    if (from) rows.push({ label: t("notif.from"), value: from });
+    if (p.amount != null)
+      rows.push({ label: t("notif.amount"), value: formatBirr(Number(p.amount)) });
+    if (p.phone) rows.push({ label: t("notif.phone"), value: p.phone });
+    if (p.buyerPhone) rows.push({ label: t("notif.phone"), value: p.buyerPhone });
+    if (p.message) rows.push({ label: t("notif.message"), value: p.message });
+    if (p.note) rows.push({ label: t("notif.note"), value: p.note });
+    if (p.messagePreview) rows.push({ label: t("notif.message"), value: p.messagePreview });
+    if (p.status) rows.push({ label: t("notif.status"), value: p.status });
+    return rows;
+  };
 
   return (
     <div className="mx-auto max-w-2xl px-4 py-12">
@@ -212,6 +265,18 @@ function NotificationsPage() {
                 )}
                 <button
                   type="button"
+                  onClick={() => {
+                    setDetail(n);
+                    if (!n.is_read) markRead.mutate(n.id);
+                  }}
+                  aria-label={t("notif.showDetails")}
+                  title={t("notif.showDetails")}
+                  className="shrink-0 rounded-full p-1 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+                >
+                  <Eye className="h-4 w-4" />
+                </button>
+                <button
+                  type="button"
                   onClick={() => dismiss.mutate(n.id)}
                   aria-label={t("notif.dismiss")}
                   title={t("notif.dismiss")}
@@ -224,6 +289,58 @@ function NotificationsPage() {
           })
         )}
       </div>
+
+      {/* Details — who, when, and every payload field for the tapped alert. */}
+      <Dialog open={detail !== null} onOpenChange={(open) => !open && setDetail(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {detail ? t(TYPE_KEY[detail.type] ?? "notif.newMessage") : ""}
+            </DialogTitle>
+            <DialogDescription>
+              {detail
+                ? `${new Date(detail.created_at).toLocaleDateString()} · ${new Date(detail.created_at).toLocaleTimeString()}`
+                : ""}
+            </DialogDescription>
+          </DialogHeader>
+          {detail ? (
+            <div className="space-y-3 text-sm">
+              {detailRows(detail).map((row) => (
+                <div key={row.label} className="flex gap-3 border-b pb-2 last:border-0">
+                  <span className="w-28 shrink-0 text-muted-foreground">{row.label}</span>
+                  <span className="min-w-0 break-words">{row.value}</span>
+                </div>
+              ))}
+              {(() => {
+                const p = detail.payload ?? {};
+                const to =
+                  detail.type === "new_message" && p.conversationId
+                    ? ({ to: "/messages", search: { conv: p.conversationId } } as const)
+                    : detail.type === "offer_received"
+                      ? ({ to: "/dashboard" } as const)
+                      : p.shopSlug
+                        ? ({ to: "/shop/$slug", params: { slug: p.shopSlug } } as const)
+                        : p.listingId
+                          ? ({ to: "/listing/$id", params: { id: p.listingId } } as const)
+                          : null;
+                return to ? (
+                  <Button asChild className="mt-2 w-full" onClick={() => setDetail(null)}>
+                    <Link {...to}>
+                      {detail.type === "new_message"
+                        ? t("notif.openConversation")
+                        : detail.type === "offer_received"
+                          ? t("notif.openDashboard")
+                          : p.shopSlug
+                            ? t("notif.openShop")
+                            : t("notif.openListing")}
+                    </Link>
+                  </Button>
+                ) : null;
+              })()}
+            </div>
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

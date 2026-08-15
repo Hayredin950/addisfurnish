@@ -406,6 +406,10 @@ export async function notifyUser(
     messagePreview?: string;
     phone?: string;
     buyerName?: string;
+    buyerId?: string;
+    buyerPhone?: string;
+    note?: string;
+    message?: string;
     amount?: number;
   } = {},
 ) {
