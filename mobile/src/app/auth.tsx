@@ -80,6 +80,13 @@ export default function AuthScreen() {
   // it (verifyOtp) beats a magic-link tap on a phone, and works even when the
   // email lands in spam.
   const [otpCode, setOtpCode] = useState("");
+  // Password recovery. Steps through email → 6-digit code → new password,
+  // mirroring the signup confirmation flow (the recovery email carries the
+  // same {{ .Token }} code, verified with type: "recovery").
+  const [resetStep, setResetStep] = useState<"hidden" | "email" | "otp" | "password">("hidden");
+  const [resetEmail, setResetEmail] = useState("");
+  const [resetOtp, setResetOtp] = useState("");
+  const [newPassword, setNewPassword] = useState("");
   const handledDeepLink = useRef(false);
 
   // Email-confirmation return: the verification page redirects the browser to
@@ -188,6 +195,92 @@ export default function AuthScreen() {
     } finally {
       setBusy(false);
     }
+  };
+
+  const requestReset = async () => {
+    setError(null);
+    setNotice(null);
+    setBusy(true);
+    try {
+      const { error: err } = await supabase.auth.resetPasswordForEmail(resetEmail.trim(), {
+        redirectTo: Linking.createURL("auth"),
+      });
+      if (err) {
+        setError(err.message);
+        return;
+      }
+      setNotice(t("resetSent"));
+      setResetStep("otp");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const verifyResetOtp = async () => {
+    setError(null);
+    setNotice(null);
+    setBusy(true);
+    try {
+      const { data, error: err } = await supabase.auth.verifyOtp({
+        email: resetEmail.trim(),
+        token: resetOtp.trim(),
+        type: "recovery",
+      });
+      if (err) {
+        setError(err.message);
+        return;
+      }
+      if (data.session) {
+        setResetStep("password");
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const saveNewPassword = async () => {
+    setError(null);
+    setNotice(null);
+    if (newPassword.length < 6) {
+      setError(t("passwordMinLength"));
+      return;
+    }
+    setBusy(true);
+    try {
+      const { error: err } = await supabase.auth.updateUser({ password: newPassword });
+      if (err) {
+        setError(err.message);
+        return;
+      }
+      setNotice(t("resetDone"));
+      router.replace("/(tabs)");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const resendReset = async () => {
+    setError(null);
+    setNotice(null);
+    setBusy(true);
+    try {
+      const { error: err } = await supabase.auth.resetPasswordForEmail(resetEmail.trim(), {
+        redirectTo: Linking.createURL("auth"),
+      });
+      if (err) setError(err.message);
+      else setNotice(t("resetSent"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const closeReset = () => {
+    setResetStep("hidden");
+    setResetEmail("");
+    setResetOtp("");
+    setNewPassword("");
+    setError(null);
+    setNotice(null);
   };
 
   /**
@@ -308,6 +401,95 @@ export default function AuthScreen() {
             {error ? <Text style={styles.error}>{error}</Text> : null}
             {notice ? <Text style={styles.notice}>{notice}</Text> : null}
           </View>
+        ) : resetStep !== "hidden" ? (
+          /* Forgot password — email → 6-digit code → new password. */
+          <View style={styles.confirmCard}>
+            <Ionicons name="key-outline" size={22} color={colors.primary} />
+            <Text style={styles.confirmTitle}>{t("resetTitle")}</Text>
+
+            {resetStep === "email" ? (
+              <>
+                <Text style={styles.confirmHint}>{t("resetHint")}</Text>
+                <TextInput
+                  value={resetEmail}
+                  onChangeText={setResetEmail}
+                  placeholder={t("email")}
+                  placeholderTextColor={colors.textSoft}
+                  keyboardType="email-address"
+                  autoCapitalize="none"
+                  autoComplete="email"
+                  style={styles.input}
+                />
+                <Button
+                  title={t("resetSend")}
+                  onPress={requestReset}
+                  loading={busy}
+                  disabled={busy || !resetEmail.trim()}
+                  size="md"
+                />
+              </>
+            ) : null}
+
+            {resetStep === "otp" ? (
+              <>
+                <Text style={styles.confirmSentTo}>
+                  {t("resetSentTo")}{" "}
+                  <Text style={styles.confirmSentToEmail}>{resetEmail}</Text>
+                </Text>
+                <TextInput
+                  value={resetOtp}
+                  onChangeText={(v) => setResetOtp(v.replace(/[^0-9]/g, ""))}
+                  placeholder="123456"
+                  placeholderTextColor={colors.textSoft}
+                  keyboardType="number-pad"
+                  maxLength={6}
+                  style={[styles.input, styles.otpInput]}
+                />
+                <Button
+                  title={t("resetVerify")}
+                  onPress={verifyResetOtp}
+                  loading={busy}
+                  disabled={busy || resetOtp.trim().length < 6}
+                  size="md"
+                />
+                <Text style={styles.otpNoEmail}>{t("emailOtpNoEmail")}</Text>
+                <Button
+                  title={t("resetResend")}
+                  onPress={resendReset}
+                  loading={busy}
+                  disabled={busy}
+                  variant="outline"
+                  size="md"
+                />
+              </>
+            ) : null}
+
+            {resetStep === "password" ? (
+              <>
+                <TextInput
+                  value={newPassword}
+                  onChangeText={setNewPassword}
+                  placeholder={t("resetNewPassword")}
+                  placeholderTextColor={colors.textSoft}
+                  secureTextEntry
+                  autoComplete="new-password"
+                  style={styles.input}
+                />
+                <Text style={styles.hint}>{t("passwordMinLength")}</Text>
+                <Button
+                  title={t("resetSave")}
+                  onPress={saveNewPassword}
+                  loading={busy}
+                  disabled={busy || newPassword.length < 6}
+                  size="md"
+                />
+              </>
+            ) : null}
+
+            <Button title={t("backToSignIn")} onPress={closeReset} variant="ghost" size="md" />
+            {error ? <Text style={styles.error}>{error}</Text> : null}
+            {notice ? <Text style={styles.notice}>{notice}</Text> : null}
+          </View>
         ) : (
           <>
             <View style={styles.tabs}>
@@ -369,7 +551,19 @@ export default function AuthScreen() {
               />
               {mode === "signup" ? (
                 <Text style={styles.hint}>{t("passwordMinLength")}</Text>
-              ) : null}
+              ) : (
+                <Pressable
+                  onPress={() => {
+                    setResetEmail(email);
+                    setError(null);
+                    setNotice(null);
+                    setResetStep("email");
+                  }}
+                  hitSlop={8}
+                >
+                  <Text style={styles.forgot}>{t("forgotPassword")}</Text>
+                </Pressable>
+              )}
               <Button
                 title={mode === "signin" ? t("loginEmail") : t("createAccount")}
                 onPress={mode === "signin" ? loginEmail : signUp}
@@ -445,6 +639,13 @@ const styles = StyleSheet.create({
     color: colors.text,
   },
   hint: { fontSize: 12, color: colors.textSoft, marginTop: -6 },
+  forgot: {
+    fontSize: 13,
+    color: colors.primary,
+    fontWeight: "600",
+    textAlign: "right",
+    marginTop: -2,
+  },
   confirmCard: {
     backgroundColor: colors.card,
     borderRadius: radius.md,

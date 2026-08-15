@@ -41,6 +41,13 @@ function AuthPage() {
   // it (verifyOtp) is far more reliable than a magic-link tap, especially on
   // phones where the link often lands in spam.
   const [otpCode, setOtpCode] = useState("");
+  // Password recovery. Steps through email → 6-digit code → new password,
+  // mirroring the signup confirmation flow (the recovery email carries the
+  // same {{ .Token }} code, verified with type: "recovery").
+  const [resetStep, setResetStep] = useState<"hidden" | "email" | "otp" | "password">("hidden");
+  const [resetEmail, setResetEmail] = useState("");
+  const [resetOtp, setResetOtp] = useState("");
+  const [newPassword, setNewPassword] = useState("");
 
   if (user) {
     navigate({ to: "/dashboard", replace: true });
@@ -114,6 +121,65 @@ function AuthPage() {
     toast.success(t("auth.confirmResent"));
   };
 
+  const requestReset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    const { error } = await supabase.auth.resetPasswordForEmail(resetEmail.trim(), {
+      redirectTo: window.location.origin,
+    });
+    setBusy(false);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    setResetStep("otp");
+    toast.success(t("auth.resetSent"));
+  };
+
+  const verifyResetOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    const { data, error } = await supabase.auth.verifyOtp({
+      email: resetEmail.trim(),
+      token: resetOtp.trim(),
+      type: "recovery",
+    });
+    setBusy(false);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    if (data.session) {
+      setResetStep("password");
+    }
+  };
+
+  const saveNewPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    setBusy(false);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    toast.success(t("auth.resetDone"));
+    navigate({ to: "/dashboard" });
+  };
+
+  const resendReset = async () => {
+    setBusy(true);
+    const { error } = await supabase.auth.resetPasswordForEmail(resetEmail.trim(), {
+      redirectTo: window.location.origin,
+    });
+    setBusy(false);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    toast.success(t("auth.resetSent"));
+  };
+
   const google = async () => {
     const { error } = await supabase.auth.signInWithOAuth({
       provider: "google",
@@ -165,6 +231,98 @@ function AuthPage() {
             {t("auth.confirmResend")}
           </Button>
         </div>
+      ) : resetStep !== "hidden" ? (
+        <div className="mt-8 rounded-xl border bg-card p-5 shadow-soft">
+          <p className="text-sm font-semibold">{t("auth.resetTitle")}</p>
+
+          {resetStep === "email" && (
+            <form className="mt-4 space-y-3" onSubmit={requestReset}>
+              <p className="text-xs text-muted-foreground">{t("auth.resetHint")}</p>
+              <div className="space-y-2">
+                <Label htmlFor="reset-email">{t("auth.email")}</Label>
+                <Input
+                  id="reset-email"
+                  type="email"
+                  required
+                  value={resetEmail}
+                  onChange={(e) => setResetEmail(e.target.value)}
+                />
+              </div>
+              <Button type="submit" className="w-full" disabled={busy || !resetEmail.trim()}>
+                {t("auth.resetSend")}
+              </Button>
+            </form>
+          )}
+
+          {resetStep === "otp" && (
+            <div className="mt-4 space-y-3">
+              <p className="text-xs font-medium text-muted-foreground">
+                {t("auth.resetSentTo", { email: resetEmail })}
+              </p>
+              <form className="space-y-3" onSubmit={verifyResetOtp}>
+                <Input
+                  value={resetOtp}
+                  onChange={(e) => setResetOtp(e.target.value.replace(/\D/g, ""))}
+                  placeholder="123456"
+                  inputMode="numeric"
+                  maxLength={6}
+                  autoFocus
+                  required
+                />
+                <Button
+                  type="submit"
+                  className="w-full"
+                  disabled={busy || resetOtp.trim().length < 6}
+                >
+                  {t("auth.resetVerify")}
+                </Button>
+              </form>
+              <p className="text-center text-xs text-muted-foreground">{t("auth.otpNoEmail")}</p>
+              <Button
+                variant="outline"
+                size="sm"
+                className="w-full"
+                disabled={busy}
+                onClick={resendReset}
+              >
+                {t("auth.resetResend")}
+              </Button>
+            </div>
+          )}
+
+          {resetStep === "password" && (
+            <form className="mt-4 space-y-3" onSubmit={saveNewPassword}>
+              <div className="space-y-2">
+                <Label htmlFor="new-password">{t("auth.resetNewPassword")}</Label>
+                <Input
+                  id="new-password"
+                  type="password"
+                  required
+                  minLength={6}
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                />
+              </div>
+              <Button type="submit" className="w-full" disabled={busy || newPassword.length < 6}>
+                {t("auth.resetSave")}
+              </Button>
+            </form>
+          )}
+
+          <Button
+            variant="ghost"
+            size="sm"
+            className="mt-3 w-full"
+            onClick={() => {
+              setResetStep("hidden");
+              setResetEmail("");
+              setResetOtp("");
+              setNewPassword("");
+            }}
+          >
+            {t("auth.backToSignIn")}
+          </Button>
+        </div>
       ) : (
         <>
           <div className="mt-8">
@@ -205,6 +363,18 @@ function AuthPage() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                   />
+                </div>
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    className="text-xs font-medium text-primary hover:underline"
+                    onClick={() => {
+                      setResetEmail(email);
+                      setResetStep("email");
+                    }}
+                  >
+                    {t("auth.forgotPassword")}
+                  </button>
                 </div>
                 <Button type="submit" className="w-full" disabled={busy}>
                   {t("auth.signIn")}
