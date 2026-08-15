@@ -187,6 +187,9 @@ function ListingDetail() {
         title: listing!.title,
         listingId: listing!.id,
         conversationId,
+        senderName:
+          String((user!.user_metadata as Record<string, unknown>)?.["full_name"] ?? "") || "",
+        messagePreview: message,
       });
     },
     onSuccess: () => {

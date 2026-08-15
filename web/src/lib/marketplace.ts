@@ -398,6 +398,8 @@ export async function notifyUser(
     status?: string;
     oldPrice?: number;
     newPrice?: number;
+    senderName?: string;
+    messagePreview?: string;
   } = {},
 ) {
   if (!userId) return;

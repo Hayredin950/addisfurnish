@@ -607,6 +607,35 @@ export type Database = {
         };
         Relationships: [];
       };
+      listing_view_milestones: {
+        Row: {
+          id: number;
+          listing_id: string;
+          reached_at: string;
+          threshold: number;
+        };
+        Insert: {
+          id?: number;
+          listing_id: string;
+          reached_at?: string;
+          threshold: number;
+        };
+        Update: {
+          id?: number;
+          listing_id?: string;
+          reached_at?: string;
+          threshold?: number;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "listing_view_milestones_listing_id_fkey";
+            columns: ["listing_id"];
+            isOneToOne: false;
+            referencedRelation: "listings";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       listing_views: {
         Row: {
           created_at: string;

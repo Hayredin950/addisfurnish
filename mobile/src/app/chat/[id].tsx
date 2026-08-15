@@ -96,10 +96,13 @@ export default function ChatScreen() {
       // push and Telegram via the notifications triggers.
       if (conv) {
         const recipientId = conv.buyer_id === user.id ? conv.seller_id : conv.buyer_id;
+        const me = conv.buyer_id === user.id ? conv.buyer : conv.seller;
         void notifyUser(recipientId, "new_message", {
           title: listing?.title ?? "",
           listingId: listing?.id ?? "",
           conversationId: id,
+          senderName: me?.shop_name || me?.full_name || "",
+          messagePreview: text,
         });
       }
       messages.refetch();

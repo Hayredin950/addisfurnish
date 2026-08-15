@@ -12,7 +12,9 @@
 //      notifications insert. Covers seller alerts (new_message,
 //      callback_request), buyer alerts (price_drop, saved_search_match) and
 //      verification decisions — one notify_user call now fans out to in-app,
-//      push and Telegram.
+//      push and Telegram. Notification types that point at a listing render
+//      as a rich photo card with a "View full listing" button; everything
+//      else falls back to a plain text line.
 //
 //   B. { kind: "listing", listing_id }
 //      Called by both apps right after a listing's images finish uploading.
@@ -23,8 +25,8 @@
 //
 //   C. { kind: "view", listing_id }
 //      "Your item is getting views" seller ping. Has no notifications row
-//      behind it, so it can't ride shape A. Throttled to one per listing per
-//      10 minutes.
+//      behind it, so it can't ride shape A. Fires ONCE per view-count
+//      milestone (10 / 50 / 100 / 500) via the listing_view_milestones table.
 //
 // Deploy:
 //   supabase functions deploy telegram-notify
@@ -44,6 +46,9 @@ const SITE_URL = Deno.env.get("SITE_URL") ?? "";
 const MAX_PREFS_SCANNED = 500;
 const MAX_BROADCAST_SENDS = 50;
 
+/** One-time view-count thresholds for the seller ping. */
+const VIEW_MILESTONES = [10, 50, 100, 500];
+
 type Lang = "en" | "am";
 
 type NotifPayload = {
@@ -58,15 +63,98 @@ type NotifPayload = {
   shopSlug?: string;
   price?: number | string;
   negotiable?: boolean;
+  conversationId?: string;
+  messagePreview?: string;
+  senderName?: string;
 };
 
-function formatPrice(value: number): string {
-  return new Intl.NumberFormat("en-ET", { maximumFractionDigits: 0 }).format(value) + " ETB";
+function esc(value: string | number | null | undefined): string {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
+function formatPrice(value: number | string | null | undefined): string {
+  if (value == null) return "";
+  const n = Number(value);
+  if (Number.isNaN(n)) return String(value);
+  return new Intl.NumberFormat("en-ET", { maximumFractionDigits: 0 }).format(n) + " ETB";
+}
+
+function listingUrl(listingId: string | undefined): string {
+  if (!listingId || !SITE_URL) return "";
+  return `${SITE_URL}/listing/${listingId}`;
 }
 
 function listingLink(listingId: string | undefined): string {
-  if (!listingId || !SITE_URL) return "";
-  return `\n\n${SITE_URL}/listing/${listingId}`;
+  const url = listingUrl(listingId);
+  return url ? `\n\n${url}` : "";
+}
+
+/** One tappable "View full listing" button under a listing card. */
+function viewButton(listingId: string | undefined): Record<string, unknown>[] | undefined {
+  const url = listingUrl(listingId);
+  if (!url) return undefined;
+  return [{ text: "View full listing", url }];
+}
+
+/** One tappable "Reply now" button under a new-message DM. */
+function replyButton(): Record<string, unknown>[] | undefined {
+  if (!SITE_URL) return undefined;
+  return [{ text: "Reply now", url: `${SITE_URL}/messages` }];
+}
+
+/**
+ * The shared HTML listing card. One visual identity across the channel post,
+ * the preference-match DM and every listing-related notification: 🛋️ title,
+ * 💰 price (with strikethrough original + red −% tag when discounted),
+ * 🚚 delivery, 📍 room · condition · city, 🏪 shop, 🔗 button.
+ */
+function listingCardHtml(row: {
+  title: string;
+  price: number | string;
+  original_price?: number | string | null;
+  negotiable?: boolean;
+  delivery_offered?: boolean;
+  delivery_fee?: number | string | null;
+  room_type?: string | null;
+  condition?: string | null;
+  city?: string | null;
+  material?: string | null;
+  color?: string | null;
+  shop_name?: string | null;
+  category?: string | null;
+  discount_percent?: number | string | null;
+}): string {
+  const title = esc(row.title);
+  const price = formatPrice(row.price);
+  const hasDiscount =
+    row.original_price != null && Number(row.original_price) > Number(row.price) &&
+    row.discount_percent != null && Number(row.discount_percent) > 0;
+
+  const priceLine = [
+    `<b>${esc(price)}</b>`,
+    hasDiscount ? `<s>${esc(formatPrice(row.original_price))}</s> <span class="tg-spoiler">−${esc(Number(row.discount_percent))}%</span>` : "",
+    row.negotiable ? "<i>(negotiable)</i>" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  const detailLine = [row.room_type, row.condition, row.city].filter(Boolean).join(" · ");
+  const extras = [row.material, row.color].filter(Boolean).join(" · ");
+
+  const lines: string[] = [`🛋️ <b>${title}</b>`, "", `💰 ${priceLine}`];
+  if (detailLine) lines.push(`📍 ${esc(detailLine)}`);
+  if (extras) lines.push(`🧵 ${esc(extras)}`);
+  if (row.shop_name) lines.push(`🏪 ${esc(row.shop_name)}`);
+  if (row.delivery_offered) {
+    const fee = Number(row.delivery_fee);
+    lines.push(fee > 0 ? `🚚 Delivery available · ${esc(formatPrice(fee))}` : "🚚 Free delivery");
+  }
+  if (row.category) lines.push(`🗂 ${esc(row.category)}`);
+  return lines.join("\n");
 }
 
 async function sendMessage(chatId: string, text: string): Promise<boolean> {
@@ -76,7 +164,11 @@ async function sendMessage(chatId: string, text: string): Promise<boolean> {
       method: "POST",
       headers: { "content-type": "application/json" },
       // 4096 is Telegram's hard limit for a message body.
-      body: JSON.stringify({ chat_id: chatId, text: text.slice(0, 4096) }),
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: text.slice(0, 4096),
+        parse_mode: "HTML",
+      }),
     });
     return res.ok;
   } catch {
@@ -85,8 +177,47 @@ async function sendMessage(chatId: string, text: string): Promise<boolean> {
 }
 
 /**
+ * Send a photo message (listing card) with an optional inline button.
+ * Falls back to a plain text message when the photo URL is unusable, so a
+ * broken image can never swallow the alert.
+ */
+async function sendCard(
+  chatId: string,
+  html: string,
+  photoUrl: string | null,
+  button?: Record<string, unknown>[] | undefined,
+): Promise<boolean> {
+  if (!BOT_TOKEN) return false;
+  const reply_markup = button ? { inline_keyboard: [button] } : undefined;
+  if (photoUrl) {
+    try {
+      const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        // 1024 is Telegram's cap for a photo caption (vs 4096 for a message).
+        body: JSON.stringify({
+          chat_id: chatId,
+          photo: photoUrl,
+          caption: html.slice(0, 1024),
+          parse_mode: "HTML",
+          reply_markup,
+        }),
+      });
+      if (res.ok) return true;
+    } catch {
+      // fall through to the text message
+    }
+  }
+  const url = button?.[0]?.url as string | undefined;
+  const text = url ? `${html}\n\n🔗 ${url}` : html;
+  return sendMessage(chatId, text);
+}
+
+/**
  * Telegram copy per notification type, in the recipient's language.
  * Mirrors send-push's copyFor() so the three channels stay consistent.
+ * Used only for text-only notifications (no listing attached) — listing
+ * notifications are rendered as cards by handleNotification instead.
  */
 function copyFor(type: string, payload: NotifPayload, lang: Lang): string {
   const listing = payload.title ?? (lang === "am" ? "አንድ ዕቃ" : "a listing");
@@ -143,6 +274,57 @@ function copyFor(type: string, payload: NotifPayload, lang: Lang): string {
 // deno-lint-ignore no-explicit-any
 type SupabaseClient = any;
 
+/** Fields every listing-card consumer needs. */
+type ListingRow = {
+  id: string;
+  title: string;
+  price: number | string;
+  original_price: number | string | null;
+  discount_percent: number | string | null;
+  negotiable: boolean;
+  condition: string | null;
+  city: string;
+  category_id: string | null;
+  room_type: string | null;
+  material: string | null;
+  color: string | null;
+  delivery_offered: boolean;
+  delivery_fee: number | string | null;
+  seller_id: string;
+  telegram_posted_at: string | null;
+  listing_images?: { url: string; position: number }[];
+  profiles?: { shop_name: string | null } | null;
+  categories?: { name: string | null } | null;
+};
+
+const LISTING_SELECT =
+  "id,title,price,original_price,discount_percent,negotiable,condition,city,category_id," +
+  "room_type,material,color,delivery_offered,delivery_fee,seller_id,status,telegram_posted_at," +
+  "listing_images(url,position),profiles(shop_name),categories(name)";
+
+/** Best available cover-photo URL for a listing (storage passthrough). */
+function coverUrl(listing: ListingRow, supabaseUrl?: string | null): string | null {
+  const cover = [...(listing.listing_images ?? [])].sort((a, b) => a.position - b.position)[0];
+  if (!cover?.url) return null;
+  if (cover.url.startsWith("http")) return cover.url;
+  return supabaseUrl
+    ? `${supabaseUrl}/storage/v1/object/public/listing-images/${cover.url}`
+    : null;
+}
+
+/** Fetch a listing and its card fields for the notification DM. */
+async function fetchListingCard(
+  supabase: SupabaseClient,
+  listingId: string,
+): Promise<ListingRow | null> {
+  const { data } = await supabase
+    .from("listings")
+    .select(LISTING_SELECT)
+    .eq("id", listingId)
+    .maybeSingle();
+  return (data as ListingRow | null) ?? null;
+}
+
 /** Shape A — fan a notifications row out to the recipient's Telegram. */
 async function handleNotification(
   supabase: SupabaseClient,
@@ -182,77 +364,94 @@ async function handleNotification(
   const lang: Lang = profile?.preferred_language === "am" ? "am" : "en";
   const type = (notif.type as string | null) ?? "";
   const payload = (notif.payload as NotifPayload | null) ?? {};
+
+  // Listing-anchored notifications render as a photo card with a button.
+  const listingId = payload.listingId;
+  if (listingId) {
+    const listing = await fetchListingCard(supabase, listingId);
+    if (listing) {
+      const html = listingCardHtml({
+        title: listing.title,
+        price: listing.price,
+        original_price: listing.original_price,
+        negotiable: listing.negotiable,
+        delivery_offered: listing.delivery_offered,
+        delivery_fee: listing.delivery_fee,
+        room_type: listing.room_type,
+        condition: listing.condition,
+        city: listing.city,
+        material: listing.material,
+        color: listing.color,
+        shop_name: listing.profiles?.shop_name ?? null,
+        category: listing.categories?.name ?? null,
+        discount_percent: listing.discount_percent,
+      });
+
+      let header = "";
+      if (type === "new_message") {
+        const preview = payload.messagePreview
+          ? esc(payload.messagePreview).slice(0, 80) + (payload.messagePreview.length > 80 ? "…" : "")
+          : "";
+        const sender = payload.senderName ? esc(payload.senderName) : "Someone";
+        header = `💬 <b>New message from ${sender}</b>${preview ? `\n\n“${preview}”` : ""}\n\n`;
+      } else if (type === "callback_request") {
+        header = `📞 <b>A buyer requested a callback</b>\n\n`;
+      } else if (type === "price_drop") {
+        const oldP = payload.oldPrice != null ? esc(formatPrice(payload.oldPrice)) : "";
+        const newP = payload.newPrice != null ? esc(formatPrice(payload.newPrice)) : "";
+        header = `🔻 <b>Price drop on a listing you saved</b>\n\n💰 ${oldP ? `<s>${oldP}</s> → ` : ""}<b>${newP}</b>\n\n`;
+      } else if (type === "saved_search_match") {
+        header = `🔔 <b>New match for your saved search</b>\n\n`;
+      } else if (type === "shop_reviewed") {
+        const stars = payload.rating != null ? "⭐".repeat(Math.max(1, Math.min(5, Number(payload.rating)))) : "⭐";
+        header = `⭐ <b>New review on your shop</b> ${stars}${payload.rating != null ? ` (${esc(payload.rating)}/5)` : ""}\n\n`;
+      }
+
+      const photo = coverUrl(listing, SUPABASE_URL);
+      await sendCard(chatId, header + html, photo, viewButton(listing.id));
+      return new Response("ok", { status: 200 });
+    }
+  }
+
+  // new_message without a listing still gets a "Reply now" button.
+  if (type === "new_message" && payload.conversationId) {
+    const preview = payload.messagePreview
+      ? esc(payload.messagePreview).slice(0, 80) + (payload.messagePreview.length > 80 ? "…" : "")
+      : "";
+    const sender = payload.senderName ? esc(payload.senderName) : "Someone";
+    const text = `💬 <b>New message from ${sender}</b>${preview ? `\n\n“${preview}”` : ""}`;
+    await sendCard(chatId, text, null, replyButton());
+    return new Response("ok", { status: 200 });
+  }
+
   await sendMessage(chatId, copyFor(type, payload, lang));
   return new Response("ok", { status: 200 });
 }
 
-type ListingRow = {
-  id: string;
-  title: string;
-  price: number | string;
-  category_id: string | null;
-  city: string;
-  negotiable: boolean;
-  condition: string | null;
-  seller_id: string;
-  telegram_posted_at: string | null;
-  listing_images?: { url: string; position: number }[];
-  profiles?: { shop_name: string | null } | null;
-  categories?: { name: string | null } | null;
-};
-
-/** Post a new listing to the public marketing channel. */
+/** Post a new listing to the public marketing channel (rich card). */
 async function postToChannel(supabase: SupabaseClient, listing: ListingRow): Promise<boolean> {
   if (!CHANNEL_ID || !BOT_TOKEN) return false;
   if (listing.telegram_posted_at) return false; // already announced
 
-  const link = SITE_URL ? `${SITE_URL}/listing/${listing.id}` : "";
-  const extras = [listing.categories?.name, listing.condition, listing.city]
-    .filter(Boolean)
-    .join(" · ");
-  const shop = listing.profiles?.shop_name ?? "AddisFurnish";
-  // Build the body first, then rejoin — a literal "" blank-line separator would
-  // be stripped by filter(Boolean), which is why the title used to run straight
-  // into the price.
-  const caption = [
-    listing.title,
-    [
-      `${formatPrice(Number(listing.price))}${listing.negotiable ? " (negotiable)" : ""}`,
-      extras ? `${extras} — ${shop}` : shop,
-    ].join("\n"),
-    link,
-  ]
-    .filter(Boolean)
-    .join("\n\n");
+  const html = listingCardHtml({
+    title: listing.title,
+    price: listing.price,
+    original_price: listing.original_price,
+    negotiable: listing.negotiable,
+    delivery_offered: listing.delivery_offered,
+    delivery_fee: listing.delivery_fee,
+    room_type: listing.room_type,
+    condition: listing.condition,
+    city: listing.city,
+    material: listing.material,
+    color: listing.color,
+    shop_name: listing.profiles?.shop_name ?? null,
+    category: listing.categories?.name ?? null,
+    discount_percent: listing.discount_percent,
+  });
 
-  const cover = [...(listing.listing_images ?? [])].sort((a, b) => a.position - b.position)[0];
-  const photoUrl = cover?.url?.startsWith("http")
-    ? cover.url
-    : cover?.url && SUPABASE_URL
-      ? `${SUPABASE_URL}/storage/v1/object/public/listing-images/${cover.url}`
-      : null;
-
-  let sent = false;
-  if (photoUrl) {
-    try {
-      const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        // 1024 is Telegram's cap for a photo caption (vs 4096 for a message).
-        body: JSON.stringify({
-          chat_id: CHANNEL_ID,
-          photo: photoUrl,
-          caption: caption.slice(0, 1024),
-        }),
-      });
-      sent = res.ok;
-    } catch {
-      sent = false;
-    }
-  }
-  // No photo, or Telegram rejected it (bad URL, too large) — still announce.
-  if (!sent) sent = await sendMessage(CHANNEL_ID, caption);
-
+  const photo = coverUrl(listing, SUPABASE_URL);
+  const sent = await sendCard(CHANNEL_ID, html, photo, viewButton(listing.id));
   if (sent) {
     await supabase
       .from("listings")
@@ -342,10 +541,7 @@ async function handleListing(
 ): Promise<Response> {
   const { data: listing } = await supabase
     .from("listings")
-    .select(
-      "id,title,price,category_id,negotiable,condition,city,seller_id,status,telegram_posted_at," +
-        "listing_images(url,position),profiles(shop_name),categories(name)",
-    )
+    .select(LISTING_SELECT)
     .eq("id", listingId)
     .maybeSingle();
   if (!listing) return new Response("listing not found", { status: 404 });
@@ -370,7 +566,7 @@ async function handleListing(
   return Response.json({ ok: true, posted, dmed });
 }
 
-/** Shape C — throttled "your item is getting views" ping. */
+/** Shape C — one-time view-milestone "your item is getting views" ping. */
 async function handleView(
   supabase: SupabaseClient,
   listingId: string,
@@ -397,28 +593,33 @@ async function handleView(
     return new Response("channel join pending", { status: 200 });
   }
 
-  // Throttle to at most one alert per listing per 10 minutes, so a listing on
-  // the front page doesn't buzz the seller's phone continuously.
-  //
-  // The window must contain EXACTLY one recorded view: >1 means we already
-  // alerted for this window, and 0 means the caller never recorded a view at
-  // all — which an authenticated user could otherwise repeat indefinitely to
-  // spam the seller, since `count > 1` alone treats 0 as "not throttled".
-  // Callers must therefore await recordListingView() before pinging.
-  const since = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+  // Milestones, not a rolling throttle: a listing pings the seller at most
+  // once per threshold (10/50/100/500 views), forever. The UNIQUE
+  // (listing_id, threshold) constraint makes this race-safe across requests.
   const { count } = await supabase
     .from("listing_views")
     .select("id", { count: "exact", head: true })
-    .eq("listing_id", listingId)
-    .gte("created_at", since);
-  if (count !== 1) return new Response("throttled", { status: 200 });
+    .eq("listing_id", listingId);
 
-  const text =
-    seller.preferred_language === "am"
-      ? `👀 “${listing.title}” እየታየ ነው።${listingLink(listing.id as string)}`
-      : `👀 Your item “${listing.title}” is getting views.${listingLink(listing.id as string)}`;
-  await sendMessage(seller.telegram_chat_id, text);
-  return new Response("ok", { status: 200 });
+  let sent = 0;
+  const total = count ?? 0;
+  for (const threshold of VIEW_MILESTONES) {
+    if (total < threshold) break; // thresholds are ascending
+    const { error } = await supabase.from("listing_view_milestones").insert({
+      listing_id: listingId,
+      threshold,
+    });
+    // Unique-violation on an existing row is the normal "already fired" case.
+    if (error) continue;
+
+    const text =
+      seller.preferred_language === "am"
+        ? `📈 <b>“${esc(listing.title)}” ${esc(String(total))} እይታዎች ደርሷል!</b>${listingLink(listing.id as string)}`
+        : `📈 <b>Your item is getting attention!</b>\n\n“${esc(listing.title)}” has reached <b>${esc(String(total))} views</b>.${listingLink(listing.id as string)}`;
+    await sendMessage(seller.telegram_chat_id, text);
+    sent += 1;
+  }
+  return Response.json({ ok: true, sent });
 }
 
 Deno.serve(async (req) => {

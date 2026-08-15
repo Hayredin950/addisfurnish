@@ -248,10 +248,16 @@ function Messages() {
           activeConversation.buyer_id === user!.id
             ? activeConversation.seller_id
             : activeConversation.buyer_id;
+        const me =
+          activeConversation.buyer_id === user!.id
+            ? activeConversation.buyer
+            : activeConversation.seller;
         await notifyUser(recipientId, "new_message", {
           title: activeConversation.listings?.title ?? "",
           listingId: activeConversation.listings?.id ?? "",
           conversationId: current!,
+          senderName: me?.full_name || "",
+          messagePreview: body,
         });
       }
     },
