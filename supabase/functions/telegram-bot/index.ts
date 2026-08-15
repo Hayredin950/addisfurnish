@@ -276,7 +276,29 @@ async function downloadTelegramFile(fileId: string): Promise<Uint8Array | null> 
 
 // The single acceptable fallback image — used only when no shop logo, listing
 // photo or avatar exists for the message being sent.
-const ADDISFURNISH_LOGO_URL = `${SITE_URL}/logo-mark.png`;
+const SITE_BASE = SITE_URL || "https://addisfurnish.vercel.app";
+const ADDISFURNISH_LOGO_URL = `${SITE_BASE}/logo-mark.png`;
+
+/**
+ * Resolve a stored image reference to a URL Telegram can fetch.
+ *
+ * Shop logos and older media are stored as Supabase storage *paths*
+ * (`<user-id>/logos/x.jpg`) rather than absolute URLs. Passing a bare path to
+ * sendPhoto makes Telegram reject it ("wrong HTTP URL specified") and the card
+ * silently dies — exactly what broke the reconnect flow. Cloudinary URLs and
+ * anything already absolute pass through untouched.
+ */
+function absolutizePhotoUrl(photoUrl: string | null): string | null {
+  if (!photoUrl) return null;
+  if (/^https?:\/\//i.test(photoUrl)) return photoUrl;
+  // Bare storage path → public object URL. Both apps resolve shop logos and
+  // old-era media under the `listing-images` bucket (e.g. `<user>/logos/x.jpg`),
+  // so the same prefix applies here — same convention as telegram-notify.
+  if (SUPABASE_URL && !photoUrl.startsWith("/")) {
+    return `${SUPABASE_URL}/storage/v1/object/public/listing-images/${photoUrl}`;
+  }
+  return null;
+}
 
 // ReplyMarkup carries the request_contact keyboard during phone verification,
 // and { remove_keyboard: true } to clear it again afterwards.
@@ -324,7 +346,7 @@ async function sendPhoto(
   replyMarkup?: unknown,
 ): Promise<number | null> {
   if (!BOT_TOKEN) return null;
-  const photo = photoUrl || ADDISFURNISH_LOGO_URL;
+  const photo = absolutizePhotoUrl(photoUrl) || ADDISFURNISH_LOGO_URL;
   try {
     const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
       method: "POST",
@@ -346,7 +368,10 @@ async function sendPhoto(
     if (!res.ok || !body?.ok) {
       await logSend("webhook", String(chatId), false, body?.description ?? `HTTP ${res.status}`);
       if (body?.error_code === 403) await markBlocked(String(chatId));
-      return null;
+      // Never let a rejected photo swallow the message: inline keyboards work
+      // on plain messages too, so resend as text and still return the id.
+      const textRes = await sendMessage(chatId, caption, replyMarkup);
+      return textRes ? -1 : null;
     }
     await logSend("webhook", String(chatId), true, null);
     return body.result?.message_id ?? null;
@@ -357,7 +382,8 @@ async function sendPhoto(
 
 /** Delete a bot message (used to clear the onboarding card after verify). */
 async function deleteMessage(chatId: number, messageId: number | null | undefined) {
-  if (!BOT_TOKEN || !messageId) return;
+  // Negative ids are the text-fallback sentinel from sendPhoto — nothing to delete.
+  if (!BOT_TOKEN || !messageId || messageId <= 0) return;
   try {
     await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/deleteMessage`, {
       method: "POST",

@@ -898,22 +898,18 @@ export async function submitReport(input: {
 // ── Sell ─────────────────────────────────────────────────────────────────
 
 /**
- * Reads a local file's bytes with expo-file-system and returns a Blob.
- *
- * Cloudinary uploads need multipart FormData. React Native's FormData accepts
- * a Blob, but the old `{ uri, name, type }` descriptor stopped working in
- * Expo SDK 54 (the WinterCG fetch's encoder throws "Unsupported FormDataPart
- * implementation"). Building the Blob from the file's bytes sidesteps that.
- */
-async function fileToBlob(file: { uri: string; mimeType?: string }): Promise<Blob> {
-  const bytes = await new File(file.uri).bytes();
-  return new Blob([bytes], { type: file.mimeType ?? "application/octet-stream" });
-}
-
-/**
  * Asks cloudinary-sign for signed upload params (folder pinned to the current
  * user) and POSTs the file to Cloudinary. Returns the stored secure_url. The
  * API secret never leaves the server.
+ *
+ * The file is appended to FormData as the expo-file-system `File` object, not
+ * a `new Blob([bytes])` — React Native's Blob constructor only accepts strings
+ * and other Blobs, so building one from a Uint8Array throws "Creating blobs
+ * from 'ArrayBuffer' and 'ArrayBufferView' are not supported". Expo SDK 57's
+ * FormData encoder serializes any part with a `.bytes()` method (exactly what
+ * `File` implements) into the multipart body, so the File object is the
+ * supported shape. The old `{ uri, name, type }` descriptor stopped working in
+ * SDK 54 ("Unsupported FormDataPart implementation").
  */
 async function uploadViaCloudinary(
   file: { uri: string; name?: string; mimeType?: string },
@@ -927,7 +923,7 @@ async function uploadViaCloudinary(
   }
 
   const form = new FormData();
-  form.append("file", await fileToBlob(file));
+  form.append("file", new File(file.uri));
   form.append("api_key", data.api_key);
   form.append("timestamp", data.timestamp);
   form.append("signature", data.signature);
