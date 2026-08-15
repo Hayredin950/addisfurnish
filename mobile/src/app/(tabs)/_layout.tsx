@@ -1,10 +1,18 @@
 import { Tabs } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors } from "../../lib/theme";
 
 const ICON_SIZE = 22;
 
 export default function TabsLayout() {
+  // Android renders edge-to-edge by default, so the app draws under the
+  // system navigation bar. Its height differs per device and per nav mode
+  // (gesture ≈ small inset, 3-button ≈ 48dp), so the tab bar must read the
+  // real inset at runtime — a hardcoded height makes the system bar overlap
+  // the tabs in 3-button mode. The hook re-renders live if the user switches
+  // modes without restarting the app.
+  const insets = useSafeAreaInsets();
   return (
     <Tabs
       screenOptions={{
@@ -13,7 +21,7 @@ export default function TabsLayout() {
         tabBarStyle: {
           backgroundColor: colors.tabBar,
           borderTopColor: colors.tabBarBorder,
-          height: 60,
+          height: 60 + insets.bottom,
           paddingBottom: 8,
           paddingTop: 6,
         },
