@@ -130,13 +130,20 @@ function NotificationsPage() {
                 <p className="mt-0.5 text-xs text-muted-foreground">{timeAgo(n.created_at)}</p>
               </>
             );
-            // Conversation-related alerts belong in the inbox; everything else
-            // points at the listing it concerns.
-            const target = MESSAGE_TYPES.has(n.type)
-              ? ({ to: "/messages" } as const)
-              : n.payload?.listingId
-                ? ({ to: "/listing/$id", params: { id: n.payload.listingId } } as const)
-                : null;
+            // Conversation-related alerts go straight to the conversation
+            // (or the inbox when no conversation id travelled with it);
+            // everything else points at the listing it concerns.
+            const target =
+              n.type === "new_message" && n.payload?.conversationId
+                ? ({
+                    to: "/messages",
+                    search: { conv: n.payload.conversationId },
+                  } as const)
+                : MESSAGE_TYPES.has(n.type)
+                  ? ({ to: "/messages" } as const)
+                  : n.payload?.listingId
+                    ? ({ to: "/listing/$id", params: { id: n.payload.listingId } } as const)
+                    : null;
 
             return (
               <div

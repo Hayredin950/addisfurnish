@@ -10,6 +10,7 @@ import {
   fetchCallbacks,
   fetchConversationCount,
   fetchMyListings,
+  fetchViewsPerDay,
   markListingSold,
   updateCallbackStatus,
   updateListingStatus,
@@ -41,6 +42,7 @@ export default function DashboardScreen() {
   const myListings = useAsync(() => fetchMyListings(user?.id ?? ""), [user?.id], !!user);
   const callbacks = useAsync(() => fetchCallbacks(user?.id ?? ""), [user?.id], !!user?.id);
   const convCount = useAsync(() => fetchConversationCount(user?.id ?? ""), [user?.id], !!user?.id);
+  const views = useAsync(() => fetchViewsPerDay(user?.id ?? ""), [user?.id], !!user?.id);
 
   if (!user) {
     return (
@@ -66,6 +68,8 @@ export default function DashboardScreen() {
 
   const listings = myListings.data ?? [];
   const totalViews = listings.reduce((s, l) => s + (l.view_count ?? 0), 0);
+  const viewsPerDay = views.data ?? [];
+  const maxDay = Math.max(1, ...viewsPerDay.map((v) => v.count));
 
   return (
     <ScrollView style={styles.screen} contentContainerStyle={{ paddingBottom: 48 }}>
@@ -97,6 +101,34 @@ export default function DashboardScreen() {
         />
       </View>
 
+      {/* Views chart — the web dashboard draws this; keep mobile at parity. */}
+      {viewsPerDay.length > 0 ? (
+        <View style={styles.card}>
+          <Text style={styles.cardTitle}>{t("dashViewsChart")}</Text>
+          <Text style={styles.chartHint}>{t("dashViewsChartHint")}</Text>
+          <View style={styles.chartRow}>
+            {viewsPerDay.map((v, i) => (
+              <View key={v.date} style={styles.chartCol}>
+                <View style={styles.chartBarTrack}>
+                  <View
+                    style={[
+                      styles.chartBar,
+                      { height: `${Math.max(4, Math.round((v.count / maxDay) * 100))}%` },
+                    ]}
+                  />
+                </View>
+                <Text style={styles.chartDay}>
+                  {i % 2 === 0 ? v.date.slice(8) : ""}
+                </Text>
+              </View>
+            ))}
+          </View>
+          <Text style={styles.chartTotal}>
+            {t("dashStatsViews")}: {viewsPerDay.reduce((s, v) => s + v.count, 0)} / {t("dashLast14Days")}
+          </Text>
+        </View>
+      ) : null}
+
       {/* My listings (manage) */}
       <View style={styles.card}>
         <Text style={styles.cardTitle}>{t("myListings")}</Text>
@@ -104,7 +136,7 @@ export default function DashboardScreen() {
           <Text style={styles.muted}>{t("dashNoListings")}</Text>
         ) : (
           listings.map((l) => (
-            <View key={l.id} style={styles.manageRow}>
+            <Pressable key={l.id} style={styles.manageRow} onPress={() => router.push(`/listing/${l.id}`)}>
               {l.listing_images?.[0]?.url ? (
                 <Image source={imageSource(l.listing_images[0].url)} style={styles.manageImg} />
               ) : (
@@ -176,7 +208,7 @@ export default function DashboardScreen() {
                   <Ionicons name="trash-outline" size={18} color={colors.danger} />
                 </Pressable>
               </View>
-            </View>
+            </Pressable>
           ))
         )}
       </View>
@@ -290,6 +322,20 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
+  chartHint: { fontSize: 12, color: colors.textMuted, marginBottom: 12 },
+  chartRow: { flexDirection: "row", alignItems: "flex-end", gap: 3, height: 120 },
+  chartCol: { flex: 1, alignItems: "center" },
+  chartBarTrack: {
+    width: "100%",
+    height: 90,
+    backgroundColor: colors.secondary,
+    borderRadius: 4,
+    justifyContent: "flex-end",
+    overflow: "hidden",
+  },
+  chartBar: { backgroundColor: colors.primary, borderRadius: 4, minHeight: 3 },
+  chartDay: { fontSize: 9, color: colors.textSoft, marginTop: 4 },
+  chartTotal: { fontSize: 12, color: colors.textMuted, marginTop: 10, textAlign: "center" },
   manageImg: { width: 44, height: 44, borderRadius: radius.md },
   manageImgEmpty: {
     backgroundColor: colors.secondary,

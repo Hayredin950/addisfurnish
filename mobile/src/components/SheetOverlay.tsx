@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { KeyboardAvoidingView, Platform, StyleSheet } from "react-native";
+import { KeyboardAvoidingView, Platform, Pressable, StyleSheet } from "react-native";
 import { colors } from "../lib/theme";
 
 /**
@@ -16,12 +16,24 @@ import { colors } from "../lib/theme";
  * sheet stays exactly where it is and the keyboard still hides it. "height"
  * suits Android (it shrinks the container), "padding" suits iOS.
  */
-export function SheetOverlay({ children }: { children: ReactNode }) {
+export function SheetOverlay({
+  children,
+  onClose,
+}: {
+  children: ReactNode;
+  /** When set, tapping the dimmed backdrop dismisses the sheet. */
+  onClose?: () => void;
+}) {
   return (
     <KeyboardAvoidingView
       style={styles.overlay}
       behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
+      {/* Dimmed backdrop — presses above the sheet dismiss it (the sheet is
+          rendered on top, so taps inside it never reach this). */}
+      {onClose ? (
+        <Pressable style={StyleSheet.absoluteFill} onPress={onClose} accessibilityLabel="Close" />
+      ) : null}
       {children}
     </KeyboardAvoidingView>
   );

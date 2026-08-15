@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { Eye, MapPin } from "lucide-react";
+import { Eye, MapPin, Send } from "lucide-react";
 import { ListingImage } from "@/components/ListingImage";
 import { FavoriteButton } from "@/components/FavoriteButton";
 import { Badge } from "@/components/ui/badge";
@@ -96,7 +96,10 @@ export function QuickViewDialog({
             </Link>
           </Button>
           <Button asChild variant="outline" className="flex-1" onClick={() => onOpenChange(false)}>
-            <Link to="/listing/$id" params={{ id: listing.id }}>
+            {/* The two actions must differ: "Browse" opens the listing, "Send
+                a message" jumps straight to the message box. */}
+            <Link to="/listing/$id" params={{ id: listing.id }} search={{ focus: "message" }}>
+              <Send className="mr-2 h-4 w-4" />
               {t("listing.sendMessage")}
             </Link>
           </Button>

@@ -1,7 +1,19 @@
 import { useEffect, useRef, useState } from "react";
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { BadgeCheck, MapPin, Eye, Phone, ArrowLeft, Send, Truck, Timer } from "lucide-react";
+import {
+  BadgeCheck,
+  MapPin,
+  Eye,
+  Phone,
+  ArrowLeft,
+  Send,
+  Truck,
+  Timer,
+  Star,
+  Pencil,
+  Trash2,
+} from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
@@ -9,12 +21,16 @@ import { useLang } from "@/lib/i18n";
 import { formatBirr, timeAgo, categoryName, isOnlineNow, formatEthiopianDate } from "@/lib/format";
 import { pingListingView } from "@/lib/telegram";
 import {
+  deleteReview,
   listingQuery,
   listingsQuery,
   notifyUser,
   priceHistoryQuery,
   recordListingView,
+  reviewsQuery,
+  submitReview,
 } from "@/lib/marketplace";
+import { Stars, StarPicker } from "@/components/ReviewStars";
 import { ListingGallery } from "@/components/ListingGallery";
 import { UserAvatar } from "@/components/UserAvatar";
 import { LocationCard } from "@/components/LocationCard";
@@ -52,6 +68,10 @@ function ListingDetail() {
   const { t, lang } = useLang();
   const { data: listing, isLoading } = useQuery(listingQuery(id));
   const { data: history } = useQuery(priceHistoryQuery(id));
+  const { data: reviews } = useQuery(reviewsQuery(listing?.seller_id ?? ""));
+  const [rating, setRating] = useState(0);
+  const [comment, setComment] = useState("");
+  const messageBoxRef = useRef<HTMLTextAreaElement>(null);
   const { data: similar } = useQuery(
     listingsQuery(
       listing?.categories?.slug ? { category: listing.categories.slug, limit: 4 } : { limit: 4 },
@@ -92,6 +112,49 @@ function ListingDetail() {
     };
   }, [id, queryClient]);
 
+  // Quick-view "Send a message" (?focus=message) → scroll to and focus the
+  // message box once the listing (and the contact card) have rendered.
+  const focus =
+    typeof window !== "undefined" ? new URLSearchParams(window.location.search).get("focus") : null;
+  useEffect(() => {
+    if (focus !== "message" || !listing) return;
+    const t = window.setTimeout(() => {
+      messageBoxRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+      messageBoxRef.current?.focus();
+    }, 250);
+    return () => window.clearTimeout(t);
+  }, [focus, listing]);
+
+  const postReview = useMutation({
+    mutationFn: async () => {
+      if (!user) throw new Error("auth");
+      await submitReview(listing!.seller_id, user.id, rating, comment.trim());
+    },
+    onSuccess: () => {
+      setRating(0);
+      setComment("");
+      toast.success(t("toast.reviewPosted"));
+      queryClient.invalidateQueries({ queryKey: ["reviews", listing?.seller_id] });
+    },
+    onError: (error: Error) =>
+      error.message === "auth"
+        ? void navigate({ to: "/auth" })
+        : toast.error(t("toast.requestFailed")),
+  });
+
+  const removeReview = useMutation({
+    mutationFn: async (reviewId: string) => {
+      await deleteReview(reviewId);
+    },
+    onSuccess: () => {
+      setRating(0);
+      setComment("");
+      toast.success(t("toast.reviewDeleted"));
+      queryClient.invalidateQueries({ queryKey: ["reviews", listing?.seller_id] });
+    },
+    onError: (error: Error) => toast.error(t("toast.requestFailed")),
+  });
+
   const isOwnListing = !!user && !!listing && user.id === listing.seller_id;
 
   const contact = useMutation({
@@ -123,6 +186,7 @@ function ListingDetail() {
       await notifyUser(listing!.seller_id, "new_message", {
         title: listing!.title,
         listingId: listing!.id,
+        conversationId,
       });
     },
     onSuccess: () => {
@@ -419,7 +483,9 @@ function ListingDetail() {
               <h2 className="font-display text-lg font-semibold">{t("listing.contact")}</h2>
               <div className="mt-4 space-y-3">
                 <Textarea
+                  ref={messageBoxRef}
                   rows={3}
+                  id="contact-message"
                   placeholder={t("listing.messagePlaceholder")}
                   value={message}
                   onChange={(e) => setMessage(e.target.value)}
@@ -463,6 +529,110 @@ function ListingDetail() {
           )}
         </aside>
       </div>
+
+      {/* Reviews — buyers can read and leave feedback right here, mirroring
+          the shop page (the seller profile alone was too well hidden). */}
+      <section className="mt-16 grid gap-8 lg:grid-cols-[1fr_360px]">
+        <div className="rounded-xl border bg-card p-6">
+          <h2 className="flex items-center gap-2 font-display text-xl font-semibold">
+            <Star className="h-5 w-5 text-primary" /> {t("shop.reviews")}
+          </h2>
+          {reviews && reviews.length > 0 ? (
+            <ul className="mt-5 space-y-5">
+              {reviews.map((r) => {
+                const mine = !!user && r.author_id === user.id;
+                return (
+                  <li key={r.id} className="border-b pb-5 last:border-0">
+                    <div className="flex items-center justify-between">
+                      <Stars value={r.rating} />
+                      <span className="text-xs text-muted-foreground">
+                        {new Date(r.created_at).toLocaleDateString()}
+                      </span>
+                    </div>
+                    {r.comment ? (
+                      <p className="mt-2 text-sm text-muted-foreground">{r.comment}</p>
+                    ) : null}
+                    <div className="mt-1.5 flex items-center justify-between gap-2">
+                      <span className="truncate text-xs font-medium">
+                        {r.profiles?.full_name ?? t("nav.profile")}
+                      </span>
+                      {mine ? (
+                        <span className="flex shrink-0 gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-xs"
+                            onClick={() => {
+                              setRating(r.rating);
+                              setComment(r.comment ?? "");
+                            }}
+                          >
+                            <Pencil className="mr-1 h-3 w-3" />
+                            {t("action.edit")}
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-7 px-2 text-xs text-destructive hover:text-destructive"
+                            disabled={removeReview.isPending}
+                            onClick={() => removeReview.mutate(r.id)}
+                          >
+                            <Trash2 className="mr-1 h-3 w-3" />
+                            {t("action.delete")}
+                          </Button>
+                        </span>
+                      ) : null}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p className="mt-5 text-sm text-muted-foreground">{t("shop.noReviews")}</p>
+          )}
+        </div>
+
+        {!isOwnListing ? (
+          <div className="h-fit rounded-xl border bg-card p-6">
+            <h3 className="font-display text-lg font-semibold">{t("shop.writeReview")}</h3>
+            {user ? (
+              <form
+                className="mt-4 space-y-4"
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  if (rating > 0 && comment.trim()) postReview.mutate();
+                }}
+              >
+                <div className="space-y-2">
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">
+                    {t("shop.yourRating")}
+                  </p>
+                  <StarPicker value={rating} onChange={setRating} />
+                </div>
+                <Textarea
+                  rows={3}
+                  placeholder={t("shop.commentPlaceholder")}
+                  value={comment}
+                  onChange={(e) => setComment(e.target.value)}
+                />
+                <Button
+                  type="submit"
+                  disabled={rating === 0 || !comment.trim() || postReview.isPending}
+                >
+                  {t("shop.submit")}
+                </Button>
+              </form>
+            ) : (
+              <p className="mt-4 text-sm text-muted-foreground">
+                <Link to="/auth" className="text-primary">
+                  {t("req.cta")}
+                </Link>{" "}
+                {t("req.body")}
+              </p>
+            )}
+          </div>
+        ) : null}
+      </section>
 
       {similar && similar.length > 1 ? (
         <section className="mt-16">

@@ -73,6 +73,7 @@ export type NotificationRow = {
   payload: {
     title?: string;
     listingId?: string;
+    conversationId?: string;
     query?: string | null;
     status?: string;
     oldPrice?: number;
@@ -296,7 +297,9 @@ export function adminListingsQuery() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("listings")
-        .select("id,title,price,status,view_count,featured,created_at")
+        .select(
+          "id,title,price,status,view_count,featured,created_at,listing_images(id,url,position)",
+        )
         .order("created_at", { ascending: false })
         .limit(50);
       if (error) throw error;
@@ -388,6 +391,7 @@ export async function notifyUser(
   payload: {
     title?: string;
     listingId?: string;
+    conversationId?: string;
     query?: string | null;
     status?: string;
     oldPrice?: number;

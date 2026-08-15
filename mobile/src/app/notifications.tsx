@@ -22,6 +22,7 @@ type Notif = {
   payload: {
     title?: string;
     listingId?: string;
+    conversationId?: string;
     query?: string | null;
     status?: string;
     newPrice?: number;
@@ -83,7 +84,11 @@ export default function NotificationsScreen() {
 
   const openNotif = (n: Notif) => {
     void markNotificationRead(n.id);
-    if (n.payload?.listingId) {
+    // Message notifications go straight to the conversation; everything else
+    // with a listing link opens the listing. (Web parity: /messages?conv=id.)
+    if (n.type === "new_message" && n.payload?.conversationId) {
+      router.push(`/chat/${n.payload.conversationId}`);
+    } else if (n.payload?.listingId) {
       router.push(`/listing/${n.payload.listingId}`);
     } else {
       refetch();

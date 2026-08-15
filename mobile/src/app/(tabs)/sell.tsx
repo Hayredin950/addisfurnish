@@ -13,7 +13,6 @@ import {
 } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import * as ImagePicker from "expo-image-picker";
-import * as Location from "expo-location";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../../lib/auth";
 import { useLang } from "../../lib/lang";
@@ -28,15 +27,34 @@ import {
   uploadListingImage,
 } from "../../lib/api";
 import { Button } from "../../components/Button";
+import { CalendarPicker } from "../../components/CalendarPicker";
+import { DraggablePinMap } from "../../components/DraggablePinMap";
 import { useToast } from "../../components/Toast";
 import { EmptyState } from "../../components/EmptyState";
 import { colors, radius, spacing, shadows } from "../../lib/theme";
 import { coordsForSubCity } from "../../lib/format";
 import { imageSource } from "../../lib/storage";
+import { uniqueShopSlug } from "../../lib/slug";
 
 const CONDITIONS = ["New", "Used - Like New", "Used - Good", "Used - Fair"];
 const ROOM_TYPES = ["Living Room", "Bedroom", "Dining", "Office", "Outdoor", "Kitchen"];
 const CITIES = ["Addis Ababa", "Dire Dawa", "Hawassa", "Bahir Dar", "Mekelle", "Adama", "Gondar"];
+const MATERIALS = [
+  "Wood",
+  "Oak",
+  "Mahogany",
+  "Pine",
+  "MDF",
+  "Metal",
+  "Iron",
+  "Steel",
+  "Leather",
+  "Fabric",
+  "Rattan",
+  "Bamboo",
+  "Glass",
+  "Plastic",
+];
 
 type Photo = { uri: string; name: string; isExisting?: boolean };
 
@@ -67,23 +85,39 @@ export default function SellScreen() {
   const [brand, setBrand] = useState("");
   const [deliveryOffered, setDeliveryOffered] = useState(false);
   const [deliveryFee, setDeliveryFee] = useState("");
-  const [discountDays, setDiscountDays] = useState("");
+  // Discount expiry — picked from a calendar, not typed.
+  const [discountDate, setDiscountDate] = useState<string | null>(null);
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [publishing, setPublishing] = useState(false);
+  // Listing location — defaults to the shop location; the seller can move the
+  // pin or use their current location (web parity).
+  const [lat, setLat] = useState<number | null>(profile?.latitude ?? null);
+  const [lon, setLon] = useState<number | null>(profile?.longitude ?? null);
+  // Category picker: a root category, then an optional child of it.
+  const [rootCategoryId, setRootCategoryId] = useState<string | null>(null);
+  // Material: pick from the list, or choose "Custom…" to type one.
+  const [materialCustom, setMaterialCustom] = useState(false);
 
   const isSeller = !!profile?.is_seller;
 
   // Gate: "become a seller" needs shop fields; allow creating them inline here.
   const [shopName, setShopName] = useState(profile?.shop_name ?? "");
-  const [shopSlug, setShopSlug] = useState(profile?.shop_slug ?? "");
   const [creatingShop, setCreatingShop] = useState(false);
 
   useEffect(() => {
     if (profile?.is_seller) {
       setShopName(profile.shop_name ?? "");
-      setShopSlug(profile.shop_slug ?? "");
     }
   }, [profile]);
+
+  // Default the listing location to the shop's saved location.
+  useEffect(() => {
+    if (profile?.latitude != null && profile?.longitude != null) {
+      setLat(profile.latitude);
+      setLon(profile.longitude);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile?.id]);
 
   // Edit mode: seed the form once the listing (and categories) load.
   const item = editing.data;
@@ -104,17 +138,24 @@ export default function SellScreen() {
     setBrand(item.brand ?? "");
     setDeliveryOffered(item.delivery_offered);
     setDeliveryFee(item.delivery_fee != null ? String(item.delivery_fee) : "");
-    const expires = item.discount_expires_at ? new Date(item.discount_expires_at).getTime() : null;
-    setDiscountDays(
-      expires && expires > Date.now()
-        ? String(Math.max(1, Math.round((expires - Date.now()) / 86_400_000)))
-        : "",
-    );
+    setDiscountDate(item.discount_expires_at ?? null);
+    setLat(item.latitude ?? null);
+    setLon(item.longitude ?? null);
+    if (item.material) setMaterialCustom(!MATERIALS.includes(item.material));
     const existing = [...(item.listing_images ?? [])]
       .sort((a, b) => a.position - b.position)
       .map((img) => ({ uri: img.url, name: `existing-${img.id}.jpg`, isExisting: true }));
     setPhotos(existing);
-  }, [item, editId]);
+    // Seed the root/subcategory pickers from the listing's category.
+    const catId = item.category_id;
+    if (catId) {
+      const cat = (cats.data ?? []).find((c) => c.id === catId);
+      if (cat) {
+        setRootCategoryId(cat.parent_id ?? cat.id);
+        setCategoryId(cat.parent_id ? cat.id : null);
+      }
+    }
+  }, [item, editId, cats.data]);
 
   const pickPhotos = async () => {
     const res = await ImagePicker.launchImageLibraryAsync({
@@ -143,7 +184,7 @@ export default function SellScreen() {
 
   const createShop = async () => {
     if (!user) return;
-    if (!shopName.trim() || !shopSlug.trim()) {
+    if (!shopName.trim()) {
       toast.error(null, t("titleRequired"));
       return;
     }
@@ -152,10 +193,9 @@ export default function SellScreen() {
       await updateProfile(user.id, {
         is_seller: true,
         shop_name: shopName.trim(),
-        shop_slug: shopSlug
-          .trim()
-          .toLowerCase()
-          .replace(/[^a-z0-9-]/g, "-"),
+        // The slug is derived from the name so the seller never has to think
+        // about it (it only feeds shop URLs).
+        shop_slug: await uniqueShopSlug(shopName),
       });
       await refreshProfile();
     } catch (err) {
@@ -186,28 +226,7 @@ export default function SellScreen() {
       );
       const finalUrls = photos.map((p) => (p.isExisting ? p.uri : newPaths.shift()!));
 
-      let lat: number | null = null;
-      let lon: number | null = null;
-      const coords = coordsForSubCity(subCity.trim() || null);
-      if (city === "Addis Ababa" && coords) {
-        [lat, lon] = coords;
-      } else {
-        try {
-          const { status } = await Location.requestForegroundPermissionsAsync();
-          if (status === "granted") {
-            const pos = await Location.getCurrentPositionAsync({
-              accuracy: Location.Accuracy.Balanced,
-            });
-            lat = pos.coords.latitude;
-            lon = pos.coords.longitude;
-          }
-        } catch {
-          // location unavailable — leave coordinates null
-        }
-      }
-      const discountExpiresAt = discountDays
-        ? new Date(Date.now() + Number(discountDays) * 86_400_000).toISOString()
-        : null;
+      const discountExpiresAt = discountDate;
 
       const patch = {
         title: title.trim(),
@@ -222,13 +241,24 @@ export default function SellScreen() {
         brand: brand.trim() || null,
         city,
         sub_city: subCity.trim() || null,
-        category_id: categoryId,
+        // A root-only pick is the category itself; when a child is chosen it
+        // wins. Never null if the seller picked anything.
+        category_id: categoryId ?? rootCategoryId,
         delivery_offered: deliveryOffered,
         delivery_fee: deliveryOffered && deliveryFee ? Number(deliveryFee) : null,
         discount_expires_at: discountExpiresAt,
         latitude: lat,
         longitude: lon,
       };
+      // If the seller never touched the pin and the shop has no location,
+      // fall back to the sub-city centre (Addis Ababa) so listings still map.
+      if (lat == null && lon == null && subCity.trim()) {
+        const c = coordsForSubCity(subCity.trim());
+        if (c) {
+          patch.latitude = c[0];
+          patch.longitude = c[1];
+        }
+      }
 
       let id: string;
       if (editId && item) {
@@ -319,12 +349,6 @@ export default function SellScreen() {
           <Text style={styles.gateTitle}>{t("sellGateTitle")}</Text>
           <Text style={styles.gateHint}>{t("sellGateHint")}</Text>
           <Field label={t("shopName")} value={shopName} onChange={setShopName} />
-          <Field
-            label={t("shopSlug")}
-            value={shopSlug}
-            onChange={setShopSlug}
-            autoCapitalize="none"
-          />
           <Button
             title={t("createShop")}
             onPress={createShop}
@@ -382,39 +406,52 @@ export default function SellScreen() {
           </View>
         </View>
 
-        {/* Title / category */}
+        {/* Title / category / condition — dropdowns keep the form compact. */}
         <View style={styles.card}>
           <Field label={t("title")} value={title} onChange={setTitle} />
+
           <Text style={styles.label}>{t("category")}</Text>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={{ gap: 8 }}
-          >
-            {(cats.data ?? []).map((c) => (
-              <Pressable
-                key={c.id}
-                style={[styles.chip, categoryId === c.id && styles.chipActive]}
-                onPress={() => setCategoryId(categoryId === c.id ? null : c.id)}
-              >
-                <Text style={[styles.chipText, categoryId === c.id && styles.chipTextActive]}>
-                  {lang === "am" ? (c.name_am ?? c.name) : c.name}
-                </Text>
-              </Pressable>
-            ))}
-          </ScrollView>
-          <Text style={styles.label}>{t("condition")}</Text>
-          <View style={styles.chipWrap}>
-            {CONDITIONS.map((c) => (
-              <Pressable
-                key={c}
-                style={[styles.chip, condition === c && styles.chipActive]}
-                onPress={() => setCondition(c)}
-              >
-                <Text style={[styles.chipText, condition === c && styles.chipTextActive]}>{c}</Text>
-              </Pressable>
-            ))}
-          </View>
+          {(() => {
+            const all = cats.data ?? [];
+            const roots = all.filter((c) => !c.parent_id);
+            const children = all.filter((c) => c.parent_id === rootCategoryId);
+            const catName = (c: { id: string; name: string; name_am: string | null }) =>
+              lang === "am" ? (c.name_am ?? c.name) : c.name;
+            return (
+              <>
+                <SelectField
+                  label=""
+                  value={
+                    rootCategoryId ? catName(roots.find((c) => c.id === rootCategoryId)!) : ""
+                  }
+                  placeholder={t("selectRootCategory")}
+                  options={roots.map((c) => ({ value: c.id, label: catName(c) }))}
+                  onChange={(id) => {
+                    setRootCategoryId(id);
+                    // A child was selected under the old root — reset it.
+                    setCategoryId(null);
+                  }}
+                />
+                {children.length > 0 ? (
+                  <SelectField
+                    label=""
+                    value={categoryId ? catName(children.find((c) => c.id === categoryId)!) : ""}
+                    placeholder={t("selectSubCategory")}
+                    options={children.map((c) => ({ value: c.id, label: catName(c) }))}
+                    onChange={setCategoryId}
+                  />
+                ) : null}
+              </>
+            );
+          })()}
+
+          <SelectField
+            label={t("condition")}
+            value={condition}
+            placeholder={t("condition")}
+            options={CONDITIONS.map((c) => ({ value: c, label: c }))}
+            onChange={setCondition}
+          />
         </View>
 
         {/* Price */}
@@ -447,15 +484,15 @@ export default function SellScreen() {
             />
           </View>
           {originalPrice ? (
-            <Field
-              label={t("discountEnds") + " (" + t("discount") + ")"}
-              value={discountDays}
-              onChange={setDiscountDays}
-            />
+            <>
+              <Text style={styles.label}>{t("discountEnds")}</Text>
+              {/* Past dates are disabled by the picker itself. */}
+              <CalendarPicker value={discountDate} onChange={setDiscountDate} />
+            </>
           ) : null}
         </View>
 
-        {/* Location */}
+        {/* Location — defaults to the shop's location; pin it or use GPS. */}
         <View style={styles.card}>
           <Text style={styles.label}>{t("city")}</Text>
           <View style={styles.chipWrap}>
@@ -470,25 +507,47 @@ export default function SellScreen() {
             ))}
           </View>
           <Field label={t("subCity")} value={subCity} onChange={setSubCity} />
+          <Text style={styles.label}>{t("setLocation")}</Text>
+          <DraggablePinMap
+            value={lat != null && lon != null ? { latitude: lat, longitude: lon } : null}
+            onChange={(c) => {
+              setLat(c?.latitude ?? null);
+              setLon(c?.longitude ?? null);
+            }}
+          />
         </View>
 
         {/* Attributes */}
         <View style={styles.card}>
-          <Field label={t("material")} value={material} onChange={setMaterial} />
+          <SelectField
+            label={t("material")}
+            value={!materialCustom && MATERIALS.includes(material) ? material : ""}
+            placeholder={t("selectMaterial")}
+            options={[
+              ...MATERIALS.map((m) => ({ value: m, label: m })),
+              { value: "__custom__", label: t("materialCustom") },
+            ]}
+            onChange={(v) => {
+              if (v === "__custom__") {
+                setMaterialCustom(true);
+              } else {
+                setMaterialCustom(false);
+                setMaterial(v);
+              }
+            }}
+          />
+          {materialCustom ? (
+            <Field label={t("materialCustom")} value={material} onChange={setMaterial} />
+          ) : null}
           <Field label={t("color")} value={color} onChange={setColor} />
           <Field label={t("brand")} value={brand} onChange={setBrand} />
-          <Text style={styles.label}>{t("roomType")}</Text>
-          <View style={styles.chipWrap}>
-            {ROOM_TYPES.map((r) => (
-              <Pressable
-                key={r}
-                style={[styles.chip, roomType === r && styles.chipActive]}
-                onPress={() => setRoomType(r)}
-              >
-                <Text style={[styles.chipText, roomType === r && styles.chipTextActive]}>{r}</Text>
-              </Pressable>
-            ))}
-          </View>
+          <SelectField
+            label={t("roomType")}
+            value={roomType}
+            placeholder={t("roomType")}
+            options={ROOM_TYPES.map((r) => ({ value: r, label: r }))}
+            onChange={setRoomType}
+          />
         </View>
 
         {/* Delivery */}
@@ -560,6 +619,64 @@ function Field({
   );
 }
 
+/**
+ * Compact dropdown selector — one row showing the current value; tapping it
+ * expands the options inline. Saves vertical space vs. always-on chip grids.
+ */
+function SelectField<T extends string>({
+  label,
+  value,
+  placeholder,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  placeholder: string;
+  options: { value: T; label: string }[];
+  onChange: (v: T) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <View style={styles.field}>
+      {label ? <Text style={styles.fieldLabel}>{label}</Text> : null}
+      <Pressable style={styles.select} onPress={() => setOpen((o) => !o)}>
+        <Text style={[styles.selectText, !value && { color: colors.textSoft }]} numberOfLines={1}>
+          {value || placeholder}
+        </Text>
+        <Ionicons
+          name={open ? "chevron-up" : "chevron-down"}
+          size={16}
+          color={colors.textMuted}
+        />
+      </Pressable>
+      {open ? (
+        <View style={styles.selectOptions}>
+          {options.map((o) => (
+            <Pressable
+              key={o.value}
+              style={[styles.selectOption, value === o.value && styles.selectOptionActive]}
+              onPress={() => {
+                onChange(o.value);
+                setOpen(false);
+              }}
+            >
+              <Text
+                style={[
+                  styles.selectOptionText,
+                  value === o.value && styles.selectOptionTextActive,
+                ]}
+              >
+                {o.label}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
   screen: { flex: 1, backgroundColor: colors.background },
   center: {
@@ -619,6 +736,31 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: colors.text,
   },
+  select: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+    backgroundColor: colors.secondary,
+    borderRadius: radius.md,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  selectText: { fontSize: 14, color: colors.text, flex: 1 },
+  selectOptions: {
+    marginTop: 6,
+    backgroundColor: colors.card,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    overflow: "hidden",
+  },
+  selectOption: { paddingHorizontal: 12, paddingVertical: 11 },
+  selectOptionActive: { backgroundColor: colors.primaryLight },
+  selectOptionText: { fontSize: 13.5, color: colors.text },
+  selectOptionTextActive: { color: colors.primary, fontWeight: "700" },
   photoRow: { flexDirection: "row", flexWrap: "wrap", gap: 10 },
   photoThumb: { width: 92, height: 92, borderRadius: radius.md, overflow: "hidden" },
   photoThumbImg: { width: 92, height: 92 },

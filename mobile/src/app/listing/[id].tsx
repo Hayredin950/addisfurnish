@@ -137,6 +137,7 @@ export default function ListingDetailScreen() {
         void notifyUser(item.seller_id, "new_message", {
           title: item.title,
           listingId: item.id,
+          conversationId,
         });
       }
       setMsgOpen(false);
@@ -323,7 +324,9 @@ export default function ListingDetailScreen() {
             <Ionicons name="bicycle-outline" size={16} color={colors.success} />
             <Text style={styles.deliveryText}>
               {t("deliveryOffered")}
-              {item.delivery_fee != null ? ` · ${formatBirr(item.delivery_fee)}` : ""}
+              {item.delivery_fee != null && item.delivery_fee > 0
+                ? ` · ${formatBirr(item.delivery_fee)}`
+                : ` · ${t("deliveryFree")}`}
             </Text>
           </View>
         ) : null}
@@ -549,7 +552,7 @@ export default function ListingDetailScreen() {
         animationType="slide"
         onRequestClose={() => setMsgOpen(false)}
       >
-        <SheetOverlay>
+        <SheetOverlay onClose={() => setMsgOpen(false)}>
           <View style={styles.modalSheet}>
             <Text style={styles.modalTitle}>{t("messageSeller")}</Text>
             <TextInput
@@ -576,7 +579,7 @@ export default function ListingDetailScreen() {
         animationType="slide"
         onRequestClose={() => setCallbackOpen(false)}
       >
-        <SheetOverlay>
+        <SheetOverlay onClose={() => setCallbackOpen(false)}>
           <View style={styles.modalSheet}>
             <Text style={styles.modalTitle}>{t("requestCallback")}</Text>
             <TextInput
@@ -620,7 +623,7 @@ export default function ListingDetailScreen() {
         animationType="slide"
         onRequestClose={() => setReviewOpen(false)}
       >
-        <SheetOverlay>
+        <SheetOverlay onClose={() => setReviewOpen(false)}>
           <View style={styles.modalSheet}>
             <Text style={styles.modalTitle}>{t("yourReview")}</Text>
             <View style={{ flexDirection: "row", gap: 8, marginVertical: 12 }}>
@@ -653,7 +656,7 @@ export default function ListingDetailScreen() {
         animationType="slide"
         onRequestClose={() => setReportOpen(false)}
       >
-        <SheetOverlay>
+        <SheetOverlay onClose={() => setReportOpen(false)}>
           <View style={styles.modalSheet}>
             {reportSent ? (
               <>

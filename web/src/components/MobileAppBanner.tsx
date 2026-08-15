@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { AppWindow, Download, X } from "lucide-react";
+import { Download, X } from "lucide-react";
 import { useLang } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
 
@@ -25,9 +25,12 @@ export function MobileAppBanner() {
   return (
     <div className="border-b bg-gradient-to-r from-primary/10 via-secondary/50 to-primary/10">
       <div className="mx-auto flex max-w-6xl flex-wrap items-center gap-4 px-4 py-3.5">
-        <div className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-primary text-primary-foreground">
-          <AppWindow className="h-5 w-5" />
-        </div>
+        {/* The real app logo — not a generic placeholder icon. */}
+        <img
+          src="/logo-mark.png"
+          alt="AddisFurnish logo"
+          className="h-10 w-10 shrink-0 rounded-lg object-contain"
+        />
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold">AddisFurnish App</p>
           <p className="truncate text-xs text-muted-foreground">{t("footer.tagline")}</p>

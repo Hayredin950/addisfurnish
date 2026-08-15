@@ -252,6 +252,8 @@ const en = {
   "msg.write": "Write a message",
   "msg.send": "Send",
   "msg.listing": "Listing",
+  "msg.deleteConversation": "Delete conversation",
+  "msg.conversationDeleted": "Conversation deleted from your inbox.",
 
   // ── Favorites ────────────────────────────────────────────────────
   "fav.emptyTitle": "Nothing saved yet",
@@ -739,6 +741,8 @@ const am: Record<keyof Dict, string> = {
   "msg.write": "መልዕክት ይጻፉ",
   "msg.send": "ላክ",
   "msg.listing": "ማስታወቂያ",
+  "msg.deleteConversation": "ውይይት ሰርዝ",
+  "msg.conversationDeleted": "ውይይቱ ከመልዕክት ሳጥንዎ ተሰርዟል።",
 
   "fav.emptyTitle": "እስካሁን ምንም አልተቀመጠም",
   "fav.findSomething": "የሆነ ነገር ይፈልጉ",

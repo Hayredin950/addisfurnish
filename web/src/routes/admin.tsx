@@ -41,6 +41,7 @@ import { useAuth } from "@/lib/auth";
 import { useLang } from "@/lib/i18n";
 import { RequireAuth } from "@/components/RequireAuth";
 import { UserAvatar } from "@/components/UserAvatar";
+import { ListingImage } from "@/components/ListingImage";
 import { BanDialog } from "@/components/admin/BanDialog";
 import { DocumentViewer } from "@/components/admin/DocumentViewer";
 import { useImageUrl } from "@/lib/storage";
@@ -328,21 +329,26 @@ function UsersTab() {
                   <Button size="sm" variant="outline" onClick={() => revoke(u.id)}>
                     <LogOut className="mr-1.5 h-3.5 w-3.5" /> {t("admin.revokeSessions")}
                   </Button>
-                  {/* Both actions are always available: the profiles mirror can lag
-                      GoTrue, so "Lift suspension" must never depend on it. */}
-                  <Button size="sm" variant="outline" onClick={() => unban(u.id)}>
-                    <ShieldCheck className="mr-1.5 h-3.5 w-3.5" /> {t("admin.unban")}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="text-destructive"
-                    // An admin banning themselves would lock them out.
-                    disabled={u.id === user?.id}
-                    onClick={() => setBanTarget({ id: u.id, name })}
-                  >
-                    <Ban className="mr-1.5 h-3.5 w-3.5" /> {t("admin.ban")}
-                  </Button>
+                  {/* Only ONE of suspend / lift-suspend per user — a suspended
+                      account shows "Lift suspension", an active one shows
+                      "Suspend". (The profiles mirror is written by the same
+                      admin action, so it cannot lag behind.) */}
+                  {suspended ? (
+                    <Button size="sm" variant="outline" onClick={() => unban(u.id)}>
+                      <ShieldCheck className="mr-1.5 h-3.5 w-3.5" /> {t("admin.unban")}
+                    </Button>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="text-destructive"
+                      // An admin banning themselves would lock them out.
+                      disabled={u.id === user?.id}
+                      onClick={() => setBanTarget({ id: u.id, name })}
+                    >
+                      <Ban className="mr-1.5 h-3.5 w-3.5" /> {t("admin.ban")}
+                    </Button>
+                  )}
                 </div>
               </li>
             );
@@ -853,11 +859,23 @@ function ListingsTab() {
             key={l.id}
             className="flex flex-wrap items-center gap-3 rounded-lg border bg-card p-3"
           >
-            <Link to="/listing/$id" params={{ id: l.id }} className="min-w-0 flex-1">
-              <span className="block truncate text-sm font-medium">{l.title}</span>
-              <span className="text-xs text-muted-foreground">
-                {formatBirr(l.price)} · {t("dash.statsViews")}: {l.view_count} ·{" "}
-                {timeAgo(l.created_at)}
+            <Link
+              to="/listing/$id"
+              params={{ id: l.id }}
+              className="flex min-w-0 flex-1 items-center gap-3"
+            >
+              {/* The listing's cover image — the list used to be text-only. */}
+              <ListingThumb
+                images={
+                  (l as { listing_images?: { url: string; position: number }[] }).listing_images
+                }
+              />
+              <span className="min-w-0">
+                <span className="block truncate text-sm font-medium">{l.title}</span>
+                <span className="text-xs text-muted-foreground">
+                  {formatBirr(l.price)} · {t("dash.statsViews")}: {l.view_count} ·{" "}
+                  {timeAgo(l.created_at)}
+                </span>
               </span>
             </Link>
             <span className="rounded-full bg-secondary px-2.5 py-0.5 text-xs capitalize">
@@ -904,6 +922,22 @@ function ListingsTab() {
         }}
       />
     </>
+  );
+}
+
+/** Small cover thumbnail for the admin listings list. */
+function ListingThumb({ images }: { images: { url: string; position: number }[] | undefined }) {
+  const cover = [...(images ?? [])].sort((a, b) => a.position - b.position)[0];
+  return cover?.url ? (
+    <ListingImage
+      path={cover.url}
+      alt="Listing"
+      className="h-11 w-11 shrink-0 rounded-md object-cover"
+    />
+  ) : (
+    <span className="grid h-11 w-11 shrink-0 place-items-center rounded-md bg-muted text-lg">
+      🛋️
+    </span>
   );
 }
 

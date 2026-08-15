@@ -19,10 +19,11 @@ import { useAuth } from "../../lib/auth";
 import {
   fetchCategories,
   fetchListings,
+  fetchSavedSearches,
+  fetchTrendingSearches,
   logSearch,
   saveSearch,
   deleteSavedSearch,
-  fetchSavedSearches,
 } from "../../lib/api";
 import { ListingCard } from "../../components/ListingCard";
 import { SheetOverlay } from "../../components/SheetOverlay";
@@ -44,6 +45,7 @@ export default function BrowseScreen() {
   const [q, setQ] = useState(params.q ?? "");
   const [appliedQ, setAppliedQ] = useState(params.q ?? "");
   const [category, setCategory] = useState(params.category ?? "");
+  const [focused, setFocused] = useState(false);
   const [min, setMin] = useState("");
   const [max, setMax] = useState("");
   const [condition, setCondition] = useState("");
@@ -56,6 +58,36 @@ export default function BrowseScreen() {
   const [savedCurrent, setSavedCurrent] = useState(false);
 
   const cats = useAsync(fetchCategories, []);
+  const trending = useAsync(fetchTrendingSearches, []);
+  const mySaved = useAsync(
+    () => (user ? fetchSavedSearches(user.id) : Promise.resolve([])),
+    [user?.id],
+    !!user,
+  );
+
+  // Home screen navigates here with ?q= / ?category= — sync them into the form
+  // even when this screen is already mounted (params only seed state on mount).
+  useEffect(() => {
+    if (params.q !== undefined) {
+      setQ(params.q);
+      setAppliedQ(params.q);
+    }
+    if (params.category !== undefined) setCategory(params.category);
+  }, [params.q, params.category]);
+
+  // Instant search: typing filters the grid live (debounced) instead of
+  // waiting for the keyboard's search key. Clearing the box clears the filter.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      const next = q.trim();
+      if (next !== appliedQ) {
+        setAppliedQ(next);
+        if (next) void logSearch(next);
+      }
+    }, 350);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q]);
 
   const { data, error, loading, refetch } = useAsync(
     () =>
@@ -112,6 +144,15 @@ export default function BrowseScreen() {
     setAppliedQ(q.trim());
     setShowFilters(false);
     if (q.trim()) void logSearch(q.trim());
+  };
+
+  /** Tap a suggestion (category / trending / saved search) → filter now. */
+  const applySuggestion = (nextQ: string, nextCat?: string) => {
+    setQ(nextQ);
+    setAppliedQ(nextQ);
+    setCategory(nextCat ?? category);
+    setFocused(false);
+    if (nextQ) void logSearch(nextQ);
   };
 
   const clearFilters = () => {
@@ -198,12 +239,19 @@ export default function BrowseScreen() {
           <TextInput
             value={q}
             onChangeText={setQ}
+            onFocus={() => setFocused(true)}
+            onBlur={() => setTimeout(() => setFocused(false), 150)}
             placeholder={t("searchPlaceholder")}
             placeholderTextColor={colors.textSoft}
             style={styles.searchInput}
             returnKeyType="search"
             onSubmitEditing={applyFilters}
           />
+          {q ? (
+            <Pressable onPress={() => setQ("")} hitSlop={8}>
+              <Ionicons name="close-circle" size={17} color={colors.textSoft} />
+            </Pressable>
+          ) : null}
         </View>
         <Pressable style={styles.filterBtn} onPress={() => setShowFilters(true)}>
           <Ionicons name="options-outline" size={20} color={colors.primary} />
@@ -221,6 +269,78 @@ export default function BrowseScreen() {
           />
         </Pressable>
       </View>
+
+      {/* Suggestions — categories, most-searched and saved searches. Tapping
+          one applies it immediately (this was the bug: chips set state but
+          never triggered the search). */}
+      {focused && !q.trim() ? (
+        <View style={styles.suggestions}>
+          {(cats.data ?? []).some((c) => !c.parent_id) ? (
+            <>
+              <Text style={styles.suggestTitle}>{t("categories")}</Text>
+              <View style={styles.chipWrap}>
+                {(cats.data ?? [])
+                  .filter((c) => !c.parent_id)
+                  .slice(0, 6)
+                  .map((c) => (
+                    <Pressable
+                      key={c.id}
+                      style={styles.suggestChip}
+                      onPress={() => applySuggestion("", c.slug)}
+                    >
+                      <Text style={styles.suggestChipText}>
+                        {lang === "am" ? (c.name_am ?? c.name) : c.name}
+                      </Text>
+                    </Pressable>
+                  ))}
+              </View>
+            </>
+          ) : null}
+
+          {(trending.data ?? []).length > 0 ? (
+            <>
+              <Text style={styles.suggestTitle}>{t("trending")}</Text>
+              <View style={styles.chipWrap}>
+                {(trending.data ?? []).slice(0, 6).map((term, i) => (
+                  <Pressable
+                    key={`${term}-${i}`}
+                    style={styles.suggestChip}
+                    onPress={() => applySuggestion(term)}
+                  >
+                    <Ionicons name="trending-up" size={12} color={colors.primary} />
+                    <Text style={styles.suggestChipText}>{term}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            </>
+          ) : null}
+
+          {(mySaved.data ?? []).length > 0 ? (
+            <>
+              <Text style={styles.suggestTitle}>{t("savedSearches")}</Text>
+              <View style={styles.chipWrap}>
+                {(mySaved.data ?? []).slice(0, 6).map((s) => (
+                  <Pressable
+                    key={s.id}
+                    style={styles.suggestChip}
+                    onPress={() =>
+                      applySuggestion(
+                        s.query ?? "",
+                        (s.filters as { category?: string } | null)?.category,
+                      )
+                    }
+                  >
+                    <Ionicons name="bookmark" size={12} color={colors.primary} />
+                    <Text style={styles.suggestChipText}>
+                      {s.query ?? (s.filters as { category?: string } | null)?.category}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            </>
+          ) : null}
+        </View>
+      ) : null}
 
       {/* Sort chips */}
       <ScrollableChips>
@@ -280,14 +400,15 @@ export default function BrowseScreen() {
         refreshing={loading && !!data}
       />
 
-      {/* Filters modal */}
+      {/* Filters modal — scrollable, with collapsible groups so the long list
+          of options doesn't fill the screen at once. */}
       <Modal
         visible={showFilters}
         animationType="slide"
         transparent
         onRequestClose={() => setShowFilters(false)}
       >
-        <SheetOverlay>
+        <SheetOverlay onClose={() => setShowFilters(false)}>
           <View style={styles.modalSheet}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>{t("filters")}</Text>
@@ -296,88 +417,101 @@ export default function BrowseScreen() {
               </Pressable>
             </View>
 
-            <Text style={styles.label}>{t("category")}</Text>
-            <View style={styles.chipWrap}>
-              <Pressable
-                style={[styles.chip, !category && styles.chipActive]}
-                onPress={() => setCategory("")}
+            <ScrollView style={styles.filterScroll} keyboardShouldPersistTaps="handled">
+              <FilterGroup
+                title={t("category")}
+                active={category ? 1 : 0}
+                defaultOpen={!!category || !condition && !city && !room}
               >
-                <Text style={[styles.chipText, !category && styles.chipTextActive]}>All</Text>
-              </Pressable>
-              {(cats.data ?? []).map((c) => (
-                <Pressable
-                  key={c.id}
-                  style={[styles.chip, category === c.slug && styles.chipActive]}
-                  onPress={() => setCategory(category === c.slug ? "" : c.slug)}
-                >
-                  <Text style={[styles.chipText, category === c.slug && styles.chipTextActive]}>
-                    {lang === "am" ? (c.name_am ?? c.name) : c.name}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
+                <View style={styles.chipWrap}>
+                  <Pressable
+                    style={[styles.chip, !category && styles.chipActive]}
+                    onPress={() => setCategory("")}
+                  >
+                    <Text style={[styles.chipText, !category && styles.chipTextActive]}>All</Text>
+                  </Pressable>
+                  {(cats.data ?? []).map((c) => (
+                    <Pressable
+                      key={c.id}
+                      style={[styles.chip, category === c.slug && styles.chipActive]}
+                      onPress={() => setCategory(category === c.slug ? "" : c.slug)}
+                    >
+                      <Text
+                        style={[styles.chipText, category === c.slug && styles.chipTextActive]}
+                      >
+                        {lang === "am" ? (c.name_am ?? c.name) : c.name}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </FilterGroup>
 
-            <Text style={styles.label}>{t("condition")}</Text>
-            <View style={styles.chipWrap}>
-              {["New", "Used - Like New", "Used - Good", "Used - Fair"].map((c) => (
-                <Pressable
-                  key={c}
-                  style={[styles.chip, condition === c && styles.chipActive]}
-                  onPress={() => setCondition(condition === c ? "" : c)}
-                >
-                  <Text style={[styles.chipText, condition === c && styles.chipTextActive]}>
-                    {c}
-                  </Text>
-                </Pressable>
-              ))}
-            </View>
+              <FilterGroup title={t("condition")} active={condition ? 1 : 0} defaultOpen={!!condition}>
+                <View style={styles.chipWrap}>
+                  {["New", "Used - Like New", "Used - Good", "Used - Fair"].map((c) => (
+                    <Pressable
+                      key={c}
+                      style={[styles.chip, condition === c && styles.chipActive]}
+                      onPress={() => setCondition(condition === c ? "" : c)}
+                    >
+                      <Text style={[styles.chipText, condition === c && styles.chipTextActive]}>
+                        {c}
+                      </Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </FilterGroup>
 
-            <Text style={styles.label}>{t("city")}</Text>
-            <View style={styles.chipWrap}>
-              {CITIES.map((c) => (
-                <Pressable
-                  key={c}
-                  style={[styles.chip, city === c && styles.chipActive]}
-                  onPress={() => setCity(city === c ? "" : c)}
-                >
-                  <Text style={[styles.chipText, city === c && styles.chipTextActive]}>{c}</Text>
-                </Pressable>
-              ))}
-            </View>
+              <FilterGroup title={t("city")} active={city ? 1 : 0} defaultOpen={!!city}>
+                <View style={styles.chipWrap}>
+                  {CITIES.map((c) => (
+                    <Pressable
+                      key={c}
+                      style={[styles.chip, city === c && styles.chipActive]}
+                      onPress={() => setCity(city === c ? "" : c)}
+                    >
+                      <Text style={[styles.chipText, city === c && styles.chipTextActive]}>{c}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </FilterGroup>
 
-            <Text style={styles.label}>{t("roomType")}</Text>
-            <View style={styles.chipWrap}>
-              {ROOM_TYPES.map((r) => (
-                <Pressable
-                  key={r}
-                  style={[styles.chip, room === r && styles.chipActive]}
-                  onPress={() => setRoom(room === r ? "" : r)}
-                >
-                  <Text style={[styles.chipText, room === r && styles.chipTextActive]}>{r}</Text>
-                </Pressable>
-              ))}
-            </View>
+              <FilterGroup title={t("roomType")} active={room ? 1 : 0} defaultOpen={!!room}>
+                <View style={styles.chipWrap}>
+                  {ROOM_TYPES.map((r) => (
+                    <Pressable
+                      key={r}
+                      style={[styles.chip, room === r && styles.chipActive]}
+                      onPress={() => setRoom(room === r ? "" : r)}
+                    >
+                      <Text style={[styles.chipText, room === r && styles.chipTextActive]}>{r}</Text>
+                    </Pressable>
+                  ))}
+                </View>
+              </FilterGroup>
 
-            <Text style={styles.label}>{t("priceRange")}</Text>
-            <View style={styles.priceRow}>
-              <TextInput
-                value={min}
-                onChangeText={setMin}
-                placeholder={t("min")}
-                keyboardType="number-pad"
-                placeholderTextColor={colors.textSoft}
-                style={styles.priceInput}
-              />
-              <Text style={styles.priceSep}>{t("to")}</Text>
-              <TextInput
-                value={max}
-                onChangeText={setMax}
-                placeholder={t("max")}
-                keyboardType="number-pad"
-                placeholderTextColor={colors.textSoft}
-                style={styles.priceInput}
-              />
-            </View>
+              <FilterGroup title={t("priceRange")} active={min || max ? 1 : 0} defaultOpen={!!(min || max)}>
+                <View style={styles.priceRow}>
+                  <TextInput
+                    value={min}
+                    onChangeText={setMin}
+                    placeholder={t("min")}
+                    keyboardType="number-pad"
+                    placeholderTextColor={colors.textSoft}
+                    style={styles.priceInput}
+                  />
+                  <Text style={styles.priceSep}>{t("to")}</Text>
+                  <TextInput
+                    value={max}
+                    onChangeText={setMax}
+                    placeholder={t("max")}
+                    keyboardType="number-pad"
+                    placeholderTextColor={colors.textSoft}
+                    style={styles.priceInput}
+                  />
+                </View>
+              </FilterGroup>
+            </ScrollView>
 
             <View style={styles.modalActions}>
               <Button title={t("reset")} variant="ghost" onPress={clearFilters} />
@@ -400,6 +534,37 @@ function ScrollableChips({ children }: { children: React.ReactNode }) {
     >
       {children}
     </ScrollView>
+  );
+}
+
+/** Collapsible filter section — saves space when the sheet is long. */
+function FilterGroup({
+  title,
+  active,
+  defaultOpen,
+  children,
+}: {
+  title: string;
+  active: number;
+  defaultOpen: boolean;
+  children: React.ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <View style={styles.filterGroup}>
+      <Pressable style={styles.filterGroupHeader} onPress={() => setOpen((o) => !o)}>
+        <Text style={styles.filterGroupTitle}>
+          {title}
+          {active > 0 ? <Text style={styles.filterGroupActive}> · {active}</Text> : null}
+        </Text>
+        <Ionicons
+          name={open ? "chevron-up" : "chevron-down"}
+          size={16}
+          color={colors.textMuted}
+        />
+      </Pressable>
+      {open ? <View style={styles.filterGroupBody}>{children}</View> : null}
+    </View>
   );
 }
 
@@ -460,7 +625,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: radius.xl,
     padding: spacing.lg,
     paddingBottom: 40,
-    maxHeight: "85%",
+    maxHeight: "88%",
   },
   modalHeader: {
     flexDirection: "row",
@@ -469,8 +634,50 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   modalTitle: { fontSize: 18, fontWeight: "700", color: colors.text },
+  filterScroll: { flexGrow: 0 },
+  filterGroup: {
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+    paddingVertical: 4,
+  },
+  filterGroupHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 12,
+  },
+  filterGroupTitle: { fontSize: 14, fontWeight: "700", color: colors.text },
+  filterGroupActive: { color: colors.primary },
+  filterGroupBody: { paddingBottom: 14 },
   label: { fontSize: 13, fontWeight: "600", color: colors.text, marginTop: 14, marginBottom: 8 },
   chipWrap: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
+  suggestions: {
+    backgroundColor: colors.card,
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  suggestTitle: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: colors.textMuted,
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
+    marginBottom: 8,
+    marginTop: 6,
+  },
+  suggestChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: colors.secondary,
+    borderRadius: radius.full,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+  },
+  suggestChipText: { fontSize: 12.5, color: colors.text, fontWeight: "600" },
   priceRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   priceInput: {
     flex: 1,
@@ -482,5 +689,5 @@ const styles = StyleSheet.create({
     color: colors.text,
   },
   priceSep: { color: colors.textMuted },
-  modalActions: { flexDirection: "row", gap: 12, marginTop: 24 },
+  modalActions: { flexDirection: "row", gap: 12, marginTop: 16 },
 });

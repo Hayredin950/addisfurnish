@@ -41,10 +41,12 @@ import { EmptyState } from "../../components/EmptyState";
 import { colors, radius, spacing, shadows } from "../../lib/theme";
 import { imageSource } from "../../lib/storage";
 import { isAdmin } from "../../lib/admin";
+import { uniqueShopSlug } from "../../lib/slug";
 import type { BuyerPreferences } from "../../lib/api";
 
 const DOC_TYPES = ["National ID", "Business License", "TIN Certificate", "Other"];
 const CITIES = ["Addis Ababa", "Dire Dawa", "Hawassa", "Bahir Dar", "Mekelle", "Adama", "Gondar"];
+const WEB_APP_URL = "https://addisfurnish.vercel.app";
 
 export default function ProfileScreen() {
   const { user, profile, loading, signOut, refreshProfile } = useAuth();
@@ -64,9 +66,9 @@ export default function ProfileScreen() {
   const [bio, setBio] = useState(profile?.bio ?? "");
   const [savingAccount, setSavingAccount] = useState(false);
 
-  // Shop fields (sellers)
+  // Shop fields (sellers) — the slug is derived from the shop name, never
+  // shown to the user (it only exists so shop URLs stay stable).
   const [shopName, setShopName] = useState(profile?.shop_name ?? "");
-  const [shopSlug, setShopSlug] = useState(profile?.shop_slug ?? "");
   const [shopDesc, setShopDesc] = useState(profile?.shop_description ?? "");
   const [shopAddress, setShopAddress] = useState(profile?.shop_address ?? "");
   const [regNumber, setRegNumber] = useState(profile?.registration_number ?? "");
@@ -108,7 +110,6 @@ export default function ProfileScreen() {
       setCity(profile.city ?? "");
       setBio(profile.bio ?? "");
       setShopName(profile.shop_name ?? "");
-      setShopSlug(profile.shop_slug ?? "");
       setShopDesc(profile.shop_description ?? "");
       setShopAddress(profile.shop_address ?? "");
       setRegNumber(profile.registration_number ?? "");
@@ -155,10 +156,19 @@ export default function ProfileScreen() {
     if (!user) return;
     setSaving(true);
     try {
+      const name = shopName.trim();
+      // Keep the existing slug when the name didn't change; otherwise derive a
+      // fresh unique one so shop URLs keep working.
+      const slug =
+        name && profile?.shop_name?.trim() === name && profile?.shop_slug
+          ? profile.shop_slug
+          : name
+            ? await uniqueShopSlug(name)
+            : null;
       await updateProfile(user.id, {
         full_name: fullName.trim() || undefined,
-        shop_name: shopName.trim() || null,
-        shop_slug: shopSlug.trim() || null,
+        shop_name: name || null,
+        shop_slug: slug,
         shop_description: shopDesc.trim() || null,
         shop_address: shopAddress.trim() || null,
         registration_number: regNumber.trim() || null,
@@ -481,12 +491,6 @@ export default function ProfileScreen() {
               </Pressable>
             </View>
             <Field label={t("shopName")} value={shopName} onChange={setShopName} />
-            <Field
-              label={t("shopSlug")}
-              value={shopSlug}
-              onChange={setShopSlug}
-              autoCapitalize="none"
-            />
             <Field label={t("shopDescription")} value={shopDesc} onChange={setShopDesc} multiline />
             <Field label={t("shopAddress")} value={shopAddress} onChange={setShopAddress} />
             <Field label={t("registrationNumber")} value={regNumber} onChange={setRegNumber} />
@@ -707,6 +711,21 @@ export default function ProfileScreen() {
             </View>
           </Pressable>
         ) : null}
+
+        {/* Web app — same account, same marketplace, in the browser. */}
+        <Pressable
+          style={styles.card}
+          onPress={() => Linking.openURL(WEB_APP_URL).catch(() => {})}
+        >
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+            <Ionicons name="globe-outline" size={20} color={colors.primary} />
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.cardTitle, { marginBottom: 2 }]}>{t("openWebApp")}</Text>
+              <Text style={styles.cardHint}>{t("openWebAppHint")}</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={colors.textSoft} />
+          </View>
+        </Pressable>
 
         {/* App update — manual check. Automatic checks happen on launch. */}
         <View style={styles.card}>

@@ -203,10 +203,14 @@ export async function fetchFavorites(userId: string): Promise<Listing[]> {
 // ── Conversations & messages ─────────────────────────────────────────────
 
 export async function fetchConversations(userId: string) {
+  // Hide conversations the current user deleted for themselves (per-side soft
+  // delete — see 20260815000000_conversation_delete.sql).
   const { data, error } = await supabase
     .from("conversations")
     .select("id,last_message_at,buyer_id,seller_id,listings(id,title,price,listing_images(url))")
-    .or(`buyer_id.eq.${userId},seller_id.eq.${userId}`)
+    .or(
+      `and(buyer_id.eq.${userId},buyer_deleted_at.is.null),and(seller_id.eq.${userId},seller_deleted_at.is.null)`,
+    )
     .order("last_message_at", { ascending: false });
   if (error) throw error;
   const rows = (data ?? []) as {
@@ -239,12 +243,48 @@ export async function fetchConversations(userId: string) {
     profiles = (p ?? []) as typeof profiles;
   }
   const byId = new Map(profiles.map((p) => [p.id, p]));
+
+  // Unread per conversation: messages from the other side with no read_at.
+  let unreadCounts = new Map<string, number>();
+  if (rows.length > 0) {
+    const { data: unread } = await supabase
+      .from("messages")
+      .select("conversation_id,id")
+      .in(
+        "conversation_id",
+        rows.map((r) => r.id),
+      )
+      .neq("sender_id", userId)
+      .is("read_at", null);
+    unreadCounts = new Map<string, number>();
+    for (const row of unread ?? []) {
+      unreadCounts.set(row.conversation_id, (unreadCounts.get(row.conversation_id) ?? 0) + 1);
+    }
+  }
+
   return rows.map((r) => ({
     id: r.id,
     last_message_at: r.last_message_at,
     listings: r.listings,
     profiles: byId.get(r.buyer_id === userId ? r.seller_id : r.buyer_id) ?? null,
+    unread: unreadCounts.get(r.id) ?? 0,
   }));
+}
+
+/** Hide a conversation from the caller's own inbox (the other side keeps it). */
+export async function deleteConversation(conversationId: string, myUserId: string) {
+  const { data: conv } = await supabase
+    .from("conversations")
+    .select("buyer_id,seller_id")
+    .eq("id", conversationId)
+    .maybeSingle();
+  if (!conv) return;
+  const patch =
+    conv.buyer_id === myUserId
+      ? { buyer_deleted_at: new Date().toISOString() }
+      : { seller_deleted_at: new Date().toISOString() };
+  const { error } = await supabase.from("conversations").update(patch).eq("id", conversationId);
+  if (error) throw error;
 }
 
 export async function fetchMessages(conversationId: string): Promise<Message[]> {
@@ -679,6 +719,33 @@ export async function fetchConversationCount(sellerId: string): Promise<number> 
     .eq("seller_id", sellerId);
   if (error) throw error;
   return count ?? 0;
+}
+
+/** Views per day for the seller's listings over the last 14 days (web parity). */
+export async function fetchViewsPerDay(sellerId: string): Promise<{ date: string; count: number }[]> {
+  const { data: ids } = await supabase.from("listings").select("id").eq("seller_id", sellerId);
+  if (!ids || ids.length === 0) return [];
+  const since = new Date(Date.now() - 1000 * 60 * 60 * 24 * 14).toISOString();
+  const { data, error } = await supabase
+    .from("listing_views")
+    .select("created_at")
+    .in(
+      "listing_id",
+      ids.map((r) => r.id),
+    )
+    .gte("created_at", since);
+  if (error) throw error;
+  const byDay = new Map<string, number>();
+  for (const row of data ?? []) {
+    const day = row.created_at.slice(0, 10);
+    byDay.set(day, (byDay.get(day) ?? 0) + 1);
+  }
+  const out: { date: string; count: number }[] = [];
+  for (let i = 13; i >= 0; i--) {
+    const d = new Date(Date.now() - i * 1000 * 60 * 60 * 24).toISOString().slice(0, 10);
+    out.push({ date: d, count: byDay.get(d) ?? 0 });
+  }
+  return out;
 }
 
 // ── Reports ──────────────────────────────────────────────────────────────

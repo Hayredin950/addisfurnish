@@ -99,6 +99,7 @@ export default function ChatScreen() {
         void notifyUser(recipientId, "new_message", {
           title: listing?.title ?? "",
           listingId: listing?.id ?? "",
+          conversationId: id,
         });
       }
       messages.refetch();

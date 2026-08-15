@@ -89,27 +89,33 @@ export type Database = {
       };
       conversations: {
         Row: {
+          buyer_deleted_at: string | null;
           buyer_id: string;
           created_at: string;
           id: string;
           last_message_at: string;
           listing_id: string;
+          seller_deleted_at: string | null;
           seller_id: string;
         };
         Insert: {
+          buyer_deleted_at?: string | null;
           buyer_id: string;
           created_at?: string;
           id?: string;
           last_message_at?: string;
           listing_id: string;
+          seller_deleted_at?: string | null;
           seller_id: string;
         };
         Update: {
+          buyer_deleted_at?: string | null;
           buyer_id?: string;
           created_at?: string;
           id?: string;
           last_message_at?: string;
           listing_id?: string;
+          seller_deleted_at?: string | null;
           seller_id?: string;
         };
         Relationships: [

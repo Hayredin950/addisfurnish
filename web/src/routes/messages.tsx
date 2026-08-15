@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, CheckCheck, ExternalLink } from "lucide-react";
+import { Check, CheckCheck, ExternalLink, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import { notifyUser } from "@/lib/marketplace";
 import { useAuth } from "@/lib/auth";
 import { useLang } from "@/lib/i18n";
 import { RequireAuth } from "@/components/RequireAuth";
@@ -83,6 +84,7 @@ function Messages() {
     queryFn: async () => {
       // Both participant FKs point at profiles, so each embed names its
       // constraint — an unqualified `profiles(...)` would be ambiguous.
+      // Rows deleted for *this* user are hidden (per-side soft delete).
       const { data, error } = await supabase
         .from("conversations")
         .select(
@@ -91,11 +93,46 @@ function Messages() {
             "buyer:profiles!conversations_buyer_id_fkey(id,full_name,avatar_url)," +
             "seller:profiles!conversations_seller_id_fkey(id,full_name,avatar_url)",
         )
+        .or(
+          `and(buyer_id.eq.${user!.id},buyer_deleted_at.is.null),and(seller_id.eq.${user!.id},seller_deleted_at.is.null)`,
+        )
         .order("last_message_at", { ascending: false });
       if (error) throw error;
       return (data ?? []) as unknown as Conversation[];
     },
   });
+
+  // Unread per conversation: messages from the other side with no read_at.
+  const { data: unreadRows } = useQuery({
+    queryKey: ["conversation-unread", user?.id],
+    enabled: !!user && !!conversations?.length,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("messages")
+        .select("conversation_id,id")
+        .in(
+          "conversation_id",
+          (conversations ?? []).map((c) => c.id),
+        )
+        .neq("sender_id", user!.id)
+        .is("read_at", null);
+      if (error) throw error;
+      const counts = new Map<string, number>();
+      for (const row of data ?? []) {
+        counts.set(row.conversation_id, (counts.get(row.conversation_id) ?? 0) + 1);
+      }
+      return counts;
+    },
+  });
+
+  // Deep link: opening /messages?conv=<id> selects that conversation.
+  useEffect(() => {
+    const convParam =
+      typeof window !== "undefined"
+        ? new URLSearchParams(window.location.search).get("conv")
+        : null;
+    if (convParam && conversations?.some((c) => c.id === convParam)) setActiveId(convParam);
+  }, [conversations]);
 
   const current = activeId ?? conversations?.[0]?.id ?? null;
 
@@ -168,6 +205,7 @@ function Messages() {
       .in("id", unread)
       .then(() => {
         queryClient.invalidateQueries({ queryKey: ["messages", current] });
+        queryClient.invalidateQueries({ queryKey: ["conversation-unread"] });
       });
   }, [current, user, messages, queryClient]);
 
@@ -203,12 +241,52 @@ function Messages() {
         .from("messages")
         .insert({ conversation_id: current!, sender_id: user!.id, body });
       if (error) throw error;
+      // Notify the other party (mobile parity): this inserts the in-app
+      // notification row, which also fans out to push + Telegram.
+      if (activeConversation) {
+        const recipientId =
+          activeConversation.buyer_id === user!.id
+            ? activeConversation.seller_id
+            : activeConversation.buyer_id;
+        await notifyUser(recipientId, "new_message", {
+          title: activeConversation.listings?.title ?? "",
+          listingId: activeConversation.listings?.id ?? "",
+          conversationId: current!,
+        });
+      }
     },
     onSuccess: () => {
       setBody("");
       queryClient.invalidateQueries({ queryKey: ["messages", current] });
       queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      queryClient.invalidateQueries({ queryKey: ["conversation-unread"] });
     },
+  });
+
+  /** Hide the conversation from the caller's own inbox. */
+  const removeConversation = useMutation({
+    mutationFn: async (conversationId: string) => {
+      if (!user) throw new Error("auth");
+      const { data: row } = await supabase
+        .from("conversations")
+        .select("buyer_id,seller_id")
+        .eq("id", conversationId)
+        .maybeSingle();
+      if (!row) return;
+      const patch =
+        row.buyer_id === user.id
+          ? { buyer_deleted_at: new Date().toISOString() }
+          : { seller_deleted_at: new Date().toISOString() };
+      const { error } = await supabase.from("conversations").update(patch).eq("id", conversationId);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      setActiveId(null);
+      queryClient.invalidateQueries({ queryKey: ["conversations"] });
+      queryClient.invalidateQueries({ queryKey: ["conversation-unread"] });
+      toast.success(t("msg.conversationDeleted"));
+    },
+    onError: (error: Error) => toast.error(error.message),
   });
 
   return (
@@ -216,35 +294,65 @@ function Messages() {
       <h1 className="font-display text-3xl font-semibold">{t("nav.messages")}</h1>
       <div className="mt-8 grid gap-6 md:grid-cols-[260px_1fr]">
         <aside className="space-y-2">
-          {(conversations ?? []).map((c) => (
-            <button
-              key={c.id}
-              type="button"
-              onClick={() => setActiveId(c.id)}
-              className={`w-full rounded-md border p-3 text-left text-sm ${
-                c.id === current ? "border-primary bg-secondary/50" : ""
-              }`}
-            >
-              <span className="flex items-center gap-2">
-                {(() => {
-                  // Show who you're talking to, not your own side.
-                  const other = c.buyer_id === user?.id ? c.seller : c.buyer;
-                  return (
-                    <UserAvatar name={other?.full_name} avatarUrl={other?.avatar_url} size={28} />
-                  );
-                })()}
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate font-medium">
-                    {(c.listings as { title: string } | null)?.title ?? t("msg.listing")}
+          {(conversations ?? []).map((c) => {
+            const unread = unreadRows?.get(c.id) ?? 0;
+            return (
+              <div
+                key={c.id}
+                className={`group relative w-full rounded-md border p-3 text-left text-sm ${
+                  c.id === current ? "border-primary bg-secondary/50" : ""
+                } ${unread > 0 ? "border-primary/50" : ""}`}
+              >
+                <button
+                  type="button"
+                  onClick={() => setActiveId(c.id)}
+                  className="w-full text-left"
+                >
+                  <span className="flex items-center gap-2">
+                    {(() => {
+                      // Show who you're talking to, not your own side.
+                      const other = c.buyer_id === user?.id ? c.seller : c.buyer;
+                      return (
+                        <UserAvatar
+                          name={other?.full_name}
+                          avatarUrl={other?.avatar_url}
+                          size={28}
+                        />
+                      );
+                    })()}
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center gap-1.5">
+                        <span
+                          className={`block truncate ${
+                            unread > 0 ? "font-semibold" : "font-medium"
+                          }`}
+                        >
+                          {(c.listings as { title: string } | null)?.title ?? t("msg.listing")}
+                        </span>
+                        {unread > 0 ? (
+                          <span className="grid h-4 min-w-4 place-items-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground">
+                            {unread > 99 ? "99+" : unread}
+                          </span>
+                        ) : null}
+                      </span>
+                      <span className="block truncate text-xs text-muted-foreground">
+                        {(c.buyer_id === user?.id ? c.seller : c.buyer)?.full_name ?? ""} ·{" "}
+                        {timeAgo(c.last_message_at)}
+                      </span>
+                    </span>
                   </span>
-                  <span className="block truncate text-xs text-muted-foreground">
-                    {(c.buyer_id === user?.id ? c.seller : c.buyer)?.full_name ?? ""} ·{" "}
-                    {timeAgo(c.last_message_at)}
-                  </span>
-                </span>
-              </span>
-            </button>
-          ))}
+                </button>
+                <button
+                  type="button"
+                  title={t("msg.deleteConversation")}
+                  onClick={() => removeConversation.mutate(c.id)}
+                  className="absolute right-1.5 top-1.5 rounded-full p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-secondary hover:text-destructive group-hover:opacity-100"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            );
+          })}
           {conversations?.length === 0 ? (
             <p className="text-sm text-muted-foreground">{t("msg.noConversations")}</p>
           ) : null}
