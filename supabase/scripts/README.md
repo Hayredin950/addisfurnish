@@ -91,6 +91,36 @@ Everything the script does is also reachable from the Supabase dashboard:
 3. Sign up with a fresh email → the code-entry screen appears → the code email
    arrives → entering it signs the user in.
 
+## Why emails can still land in spam (and the durable fix)
+
+The sender address today is `sadim9812@gmail.com` (a Brevo-verified address on
+a friend's account). Mail claiming to be from `gmail.com` is only trusted by
+Gmail when it comes from Google's own servers, so relaying it through Brevo
+fails SPF, DKIM and DMARC — and Gmail increasingly routes such mail to spam.
+Manual SMTP tests may land in the inbox at first (new-sender grace period)
+and then start landing in spam once Gmail has learned the pattern.
+
+**The durable fix is a domain you control.** Buy one (e.g. `addisfurnish.com`,
+~$10/yr), authenticate it in Brevo (Brevo shows the SPF/DKIM DNS records to
+add at your registrar), then set the sender to `noreply@addisfurnish.com`:
+
+```bash
+SUPABASE_ACCESS_TOKEN=sbp_... SUPABASE_PROJECT_REF=<ref> \
+BREVO_SMTP_USER=xxxxx@smtp-brevo.com BREVO_SMTP_KEY=xsmtpsib-... \
+BREVO_SENDER=noreply@addisfurnish.com BREVO_SENDER_NAME=AddisFurnish \
+./setup-email.sh
+```
+
+Once the domain is authenticated in Brevo, Brevo DKIM-signs with
+`d=addisfurnish.com` and SPF aligns — SPF/DKIM/DMARC all pass and delivery to
+the inbox is reliable. Until then, recipients should mark the first email as
+"Not spam" in Gmail to train their inbox.
+
+The `send-mail` function also follows basic deliverability hygiene: it sends
+multipart text+HTML (HTML-only is a spam signal), sets a clean Message-ID and
+Reply-To. Those help at the margins but do not override the missing-domain
+problem above.
+
 ## Operational notes
 
 - **Rotating the Brevo key**: Brevo → SMTP & API → regenerate the key, then

@@ -12,6 +12,16 @@ import nodemailer from "npm:nodemailer@6.9.16";
  *   { metadata, user, email_data: { token, email_action_type, ... } }
  *
  * Returning { message: "success" } tells GoTrue the mail was handled.
+ *
+ * Deliverability notes (why these messages can still land in spam):
+ * - The sender address comes from BREVO_SENDER and, until AddisFurnish owns a
+ *   real domain, it is a gmail.com address relayed through Brevo. Gmail only
+ *   trusts gmail.com mail sent from Google's own servers, so SPF/DKIM/DMARC
+ *   fail and Gmail may route these to spam. The durable fix is a domain you
+ *   control (e.g. noreply@addisfurnish.com) authenticated in Brevo — then
+ *   SPF/DKIM pass and delivery is reliable.
+ * - What we CAN control here: multipart text+HTML (HTML-only is a spam
+ *   signal), a clean Message-ID, and a Reply-To so replies go to the sender.
  */
 
 const HOST = Deno.env.get("BREVO_SMTP_HOST") ?? "smtp-relay.brevo.com";
@@ -28,6 +38,24 @@ function json(status: number, body: Record<string, unknown>) {
   });
 }
 
+/** Crude but safe HTML → text: drop tags, decode entities, collapse blanks. */
+function htmlToText(html: string): string {
+  return html
+    .replace(/<style[\s\S]*?<\/style>/gi, "")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(p|div|h1|h2|h3|li)>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/[ \t]+\n/g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 function renderCodeEmail(mailerType: string, token: string): string {
   const isRecovery = mailerType === "recovery";
   const title = isRecovery ? "Password Reset" : "Verify Your Email";
@@ -38,7 +66,8 @@ function renderCodeEmail(mailerType: string, token: string): string {
     `<h2>${title}</h2>` +
     `<p>Use the verification code below ${purpose}:</p>` +
     `<h1 style="letter-spacing: 8px; font-size: 36px;">${token}</h1>` +
-    `<p>This code expires in 15 minutes.</p>`
+    `<p>This code expires in 15 minutes.</p>` +
+    `<p style="color:#666;font-size:12px;">AddisFurnish — Ethiopia's marketplace for quality second-hand furniture.</p>`
   );
 }
 
@@ -99,9 +128,12 @@ Deno.serve(async (req) => {
 
     await transporter.sendMail({
       from: `"${SENDER_NAME}" <${SENDER}>`,
+      replyTo: SENDER,
       to,
       subject,
       html,
+      text: htmlToText(html),
+      messageId: `<${Date.now()}.${Math.random().toString(36).slice(2, 10)}@addisfurnish.vercel.app>`,
     });
 
     console.log(JSON.stringify({ event: "send-mail-ok", mailerType, to, subject }));
