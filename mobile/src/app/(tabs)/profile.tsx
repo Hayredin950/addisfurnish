@@ -409,6 +409,29 @@ export default function ProfileScreen() {
   const docStatus = latestDoc?.status ?? null;
   const phoneVerified = !!profile?.phone_verified_at;
 
+  // What the setup wizard still needs — shown as the card's hint so users
+  // always see exactly what's left instead of hunting through the page.
+  const missingSetup: string[] = [];
+  if (!profile?.full_name) missingSetup.push(t("setupCompleteName"));
+  if (!profile?.city) missingSetup.push(t("setupCompleteCity"));
+  if (!profile?.phone) missingSetup.push(t("setupCompletePhone"));
+  if (profile?.is_seller && !profile?.shop_name) missingSetup.push(t("setupCompleteShop"));
+  if (profile?.is_seller && !profile?.latitude && !profile?.longitude) {
+    missingSetup.push(t("setupCompleteLocation"));
+  }
+  if (
+    prefsLoaded &&
+    prefs.category_ids.length === 0 &&
+    prefs.preferred_cities.length === 0 &&
+    !prefs.telegram_alerts_enabled
+  ) {
+    missingSetup.push(t("setupCompletePrefs"));
+  }
+  const setupHint =
+    missingSetup.length > 0
+      ? `${t("setupMissingPrefix")} ${missingSetup.join(" · ")}`
+      : t("setupAllSet");
+
   return (
     <KeyboardAvoidingView
       style={styles.screen}
@@ -462,6 +485,20 @@ export default function ProfileScreen() {
             onPress={() => router.push("/favorites")}
           />
         </View>
+
+        {/* Set up your profile — one clear entry to the guided wizard. */}
+        <Pressable style={styles.card} onPress={() => router.push("/setup-profile")}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+            <View style={styles.setupIcon}>
+              <Ionicons name="rocket-outline" size={20} color={colors.onPrimary} />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.cardTitle, { marginBottom: 2 }]}>{t("setupTitle")}</Text>
+              <Text style={styles.cardHint}>{setupHint}</Text>
+            </View>
+            <Ionicons name="chevron-forward" size={16} color={colors.textSoft} />
+          </View>
+        </Pressable>
 
         {/* Become a seller */}
         {!profile?.is_seller ? (
@@ -970,6 +1007,14 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   quickLabel: { fontSize: 11.5, color: colors.text, fontWeight: "600", textAlign: "center" },
+  setupIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.full,
+    backgroundColor: colors.primary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   card: {
     backgroundColor: colors.card,
     borderRadius: radius.lg,

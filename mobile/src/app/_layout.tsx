@@ -136,6 +136,7 @@ function RootNavigator() {
       <Stack.Screen name="safety" options={{ title: "", headerBackTitle: "Back" }} />
       <Stack.Screen name="dashboard" options={{ title: "", headerBackTitle: "Back" }} />
       <Stack.Screen name="admin" options={{ title: "", headerBackTitle: "Back" }} />
+      <Stack.Screen name="setup-profile" options={{ title: "", headerBackTitle: "Back" }} />
     </Stack>
   );
 }
