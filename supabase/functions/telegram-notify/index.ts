@@ -800,7 +800,9 @@ async function handleView(
 ): Promise<Response> {
   const { data: listing } = await supabase
     .from("listings")
-    .select("id,title,seller_id,profiles(telegram_chat_id,preferred_language,telegram_channel_joined_at)")
+    .select(
+      "id,title,seller_id,listing_images(url,position),profiles(telegram_chat_id,preferred_language,telegram_channel_joined_at)",
+    )
     .eq("id", listingId)
     .maybeSingle();
   if (!listing) return new Response("listing not found", { status: 404 });
@@ -838,11 +840,15 @@ async function handleView(
     // Unique-violation on an existing row is the normal "already fired" case.
     if (error) continue;
 
-    const text =
+    // Same photo-card treatment as every other listing notification: the
+    // actual listing photo as the card, a formatted caption, and a proper
+    // button — never a bare URL that Telegram unfurls into a generic preview.
+    const html =
       seller.preferred_language === "am"
-        ? `📈 <b>“${esc(listing.title)}” ${esc(String(total))} እይታዎች ደርሷል!</b>${listingLink(listing.id as string)}`
-        : `📈 <b>Your item is getting attention!</b>\n\n“${esc(listing.title)}” has reached <b>${esc(String(total))} views</b>.${listingLink(listing.id as string)}`;
-    await sendMessage(seller.telegram_chat_id, text);
+        ? `📈 <b>“${esc(listing.title)}” ${esc(String(total))} እይታዎች ደርሷል!</b>`
+        : `📈 <b>Your item is getting attention!</b>\n\n“${esc(listing.title)}” has reached <b>${esc(String(total))} views</b>.`;
+    const photo = coverUrl(listing as ListingRow, SUPABASE_URL);
+    await sendCard(seller.telegram_chat_id, html, photo, viewButton(listing.id as string), "notify");
     sent += 1;
   }
   return Response.json({ ok: true, sent });

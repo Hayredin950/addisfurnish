@@ -22,6 +22,7 @@ import { useAuth } from "../../lib/auth";
 import { useLang } from "../../lib/lang";
 import { useAsync } from "../../hooks/use-async";
 import {
+  deleteCloudinaryAssets,
   disconnectTelegram,
   fetchBuyerPreferences,
   fetchCategories,
@@ -205,8 +206,12 @@ export default function ProfileScreen() {
     });
     if (res.canceled || !res.assets?.[0]) return;
     try {
+      const oldLogo = profile?.shop_logo_url ?? null;
       const path = await uploadShopLogo(user.id, res.assets[0]);
       await updateProfile(user.id, { shop_logo_url: path });
+      // The old logo leaves with the swap — it would otherwise stay on
+      // Cloudinary forever.
+      if (oldLogo && oldLogo !== path) void deleteCloudinaryAssets([oldLogo]);
       await refreshProfile();
     } catch (err) {
       toast.error(err, t("oops"));

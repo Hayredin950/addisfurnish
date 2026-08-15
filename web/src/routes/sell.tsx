@@ -128,6 +128,10 @@ function Sell() {
       } else if (editId && editing?.video_url && !videoRemove) {
         videoUrl = editing.video_url;
       }
+      // A removed or replaced video leaves its Cloudinary asset behind.
+      if (editId && editing?.video_url && (videoRemove || videoFile)) {
+        void deleteCloudinaryAssets([editing.video_url]);
+      }
       const values = {
         title: String(form.get("title")),
         description: String(form.get("description")),

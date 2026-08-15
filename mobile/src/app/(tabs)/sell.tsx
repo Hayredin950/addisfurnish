@@ -19,6 +19,7 @@ import { useLang } from "../../lib/lang";
 import { useAsync } from "../../hooks/use-async";
 import {
   createListing,
+  deleteCloudinaryAssets,
   fetchCategories,
   fetchListingForEdit,
   replaceListingImages,
@@ -298,8 +299,17 @@ export default function SellScreen() {
       let id: string;
       if (editId && item) {
         id = editId;
+        // Photos removed in edit mode leave their Cloudinary assets behind —
+        // replaceListingImages only touches the DB rows. Delete them here.
+        const removedPhotos = (item.listing_images ?? [])
+          .map((img) => img.url)
+          .filter((url) => !finalUrls.includes(url));
+        // A replaced or removed video orphans its Cloudinary asset too.
+        const removedVideo = item.video_url && !video?.isExisting ? item.video_url : null;
         await updateListing(id, patch);
         await replaceListingImages(id, finalUrls);
+        if (removedPhotos.length) void deleteCloudinaryAssets(removedPhotos);
+        if (removedVideo) void deleteCloudinaryAssets([removedVideo]);
       } else {
         id = await createListing({
           sellerId: user.id,

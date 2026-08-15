@@ -18,7 +18,12 @@ import {
   submitVerificationDocument,
   type BuyerPreferences,
 } from "@/lib/marketplace";
-import { useImageUrl, uploadShopLogo, uploadVerificationDocument } from "@/lib/storage";
+import {
+  deleteCloudinaryAssets,
+  useImageUrl,
+  uploadShopLogo,
+  uploadVerificationDocument,
+} from "@/lib/storage";
 import { CITIES } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -170,6 +175,9 @@ function ProfilePage() {
       toast.error(updateError.message);
       return;
     }
+    // The old logo leaves with the swap — it would otherwise stay on
+    // Cloudinary forever.
+    if (profile?.shop_logo_url) void deleteCloudinaryAssets([profile.shop_logo_url]);
     toast.success(t("toast.profileUpdated"));
     queryClient.invalidateQueries({ queryKey: ["profile"] });
   };

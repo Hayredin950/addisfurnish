@@ -71,7 +71,7 @@ const COPY = {
       "🔕 Disconnected. You won't get any more alerts here.\n\nReconnect any time from your AddisFurnish profile.",
     notLinked: "This chat isn't connected to an AddisFurnish account.",
     help: (site: string) =>
-      `I deliver AddisFurnish alerts — new messages, callback requests, and listings matching your saved preferences.\n\n/start — connect your account\n/join — join our channel (required before alerts start)\n/sell — create a draft listing from here\n/lang — switch language (English / አማርኛ)\n/stop — stop alerts\n/help — this message${
+      `I deliver AddisFurnish alerts — new messages, callback requests, and listings matching your saved preferences.\n\n/start — connect your account\n/join — join our channel (required before alerts start)\n/find — browse the marketplace\n/saved — your saved items\n/mylistings — your active listings\n/inquiries — your messages\n/alerts — manage saved-search alerts\n/account — account summary\n/sell — create a draft listing from here\n/lang — switch language (English / አማርኛ)\n/stop — stop alerts\n/help — this message${
         site ? `\n\n${site}` : ""
       }`,
     fallback: "I only send alerts. Use /help to see what I can do.",
@@ -90,6 +90,25 @@ const COPY = {
     // ── Language ──
     langAsk: "Choose the language for this bot:\n\nቋንቋ ይምረጡ:",
     langSet: (l: string) => `✅ Language set to <b>${l}</b>.`,
+    // ── Shortcut commands ──
+    findIntro:
+      "🔎 <b>Browse AddisFurnish</b> — sofas, beds, desks and more from shops across Ethiopia.",
+    findButton: "🛒 Browse items",
+    savedIntro:
+      "❤️ <b>Your saved items</b> — tap below to open the items you've favorited.",
+    savedButton: "Open saved items",
+    myListingsIntro:
+      "📦 <b>Your listings</b> — view and manage the items you've posted.",
+    myListingsButton: "Open my dashboard",
+    inquiriesIntro:
+      "💬 <b>Your messages</b> — replies and inquiries about your items.",
+    inquiriesButton: "Open messages",
+    alertsIntro:
+      "🔔 <b>Manage your alerts</b> — saved-search preferences and Telegram notification settings.",
+    alertsButton: "Open alert settings",
+    accountSummary: (name: string, city: string | null, isSeller: boolean, verified: boolean) =>
+      `👤 <b>${name || "Your account"}</b>\n\n📍 ${city ?? "—"}\n${isSeller ? `🏪 Seller${verified ? " · ✅ verified" : ""}` : "🛍️ Buyer"}\n\nTap below to open your profile.`,
+    accountButton: "👤 Open my profile",
     // ── Sell via Bot ──
     sellIntro:
       "🛍️ <b>Let's create a draft listing!</b>\n\nSend me up to 4 photos of the item (one per message), then tap Done.",
@@ -133,7 +152,7 @@ const COPY = {
     stopped: "🔕 ተቋርጧል። ከዚህ በኋላ ማሳወቂያ አይደርስዎትም።\n\nበማንኛውም ጊዜ ከመገለጫዎ እንደገና ማገናኘት ይችላሉ።",
     notLinked: "ይህ ውይይት ከAddisFurnish መለያ ጋር አልተገናኘም።",
     help: (site: string) =>
-      `የAddisFurnish ማሳወቂያዎችን አደርሳለሁ — አዲስ መልእክቶች፣ የጥሪ ጥያቄዎች እና ከምርጫዎ ጋር የሚስማሙ ዕቃዎች።\n\n/start — መለያዎን ያገናኙ\n/join — ቻናላችንን ይቀላቀሉ (ማሳወቂያ ከመጀመሩ በፊት ያስፈልጋል)\n/sell — ከዚህ የረቂቅ ማስታወቂያ ይፍጠሩ\n/lang — ቋንቋ ይቀይሩ (English / አማርኛ)\n/stop — ማሳወቂያ ያቁሙ\n/help — ይህ መልእክት${
+      `የAddisFurnish ማሳወቂያዎችን አደርሳለሁ — አዲስ መልእክቶች፣ የጥሪ ጥያቄዎች እና ከምርጫዎ ጋር የሚስማሙ ዕቃዎች።\n\n/start — መለያዎን ያገናኙ\n/join — ቻናላችንን ይቀላቀሉ (ማሳወቂያ ከመጀመሩ በፊት ያስፈልጋል)\n/find — ገበያውን ያስሱ\n/saved — የተቀመጡ እቃዎችዎ\n/mylistings — ንቁ ማስታወቂያዎችዎ\n/inquiries — መልእክቶችዎ\n/alerts — የተቀመጡ ፍለጋዎችን ያስተዳድሩ\n/account — የመለያ ማጠቃለያ\n/sell — ከዚህ የረቂቅ ማስታወቂያ ይፍጠሩ\n/lang — ቋንቋ ይቀይሩ (English / አማርኛ)\n/stop — ማሳወቂያ ያቁሙ\n/help — ይህ መልእክት${
         site ? `\n\n${site}` : ""
       }`,
     fallback: "ማሳወቂያ ብቻ ነው የምልከው። /help ይጠቀሙ።",
@@ -151,6 +170,25 @@ const COPY = {
     // ── Language ──
     langAsk: "ለዚህ ቦት ቋንቋ ይምረጡ:\n\nChoose the language for this bot:",
     langSet: (l: string) => `✅ ቋንቋ ወደ <b>${l}</b> ተቀይሯል።`,
+    // ── Shortcut commands ──
+    findIntro:
+      "🔎 <b>AddisFurnishን ያስሱ</b> — ከኢትዮጵያ ሱቆች ሶፋ፣ አልጋ፣ ጠረጴዛ እና ሌሎችም።",
+    findButton: "🛒 እቃዎችን ይመልከቱ",
+    savedIntro:
+      "❤️ <b>ያስቀመጧቸው እቃዎች</b> — የወደዷቸውን እቃዎች ለመክፈት ከታች ይጫኑ።",
+    savedButton: "የተቀመጡ እቃዎችን ይክፈቱ",
+    myListingsIntro:
+      "📦 <b>የእርስዎ ማስታወቂያዎች</b> — የለጠፏቸውን እቃዎች ይመልከቱ እና ያስተዳድሩ።",
+    myListingsButton: "ዳሽቦርዴን ይክፈቱ",
+    inquiriesIntro:
+      "💬 <b>መልእክቶችዎ</b> — ስለ እቃዎችዎ ምላሾች እና ጥያቄዎች።",
+    inquiriesButton: "መልእክቶችን ይክፈቱ",
+    alertsIntro:
+      "🔔 <b>ማሳወቂያዎችዎን ያስተዳድሩ</b> — የተቀመጡ ፍለጋዎች እና የቴሌግራም ማሳወቂያ ቅንብሮች።",
+    alertsButton: "የማሳወቂያ ቅንብሮችን ይክፈቱ",
+    accountSummary: (name: string, city: string | null, isSeller: boolean, verified: boolean) =>
+      `👤 <b>${name || "መለያዎ"}</b>\n\n📍 ${city ?? "—"}\n${isSeller ? `🏪 ሻጭ${verified ? " · ✅ የተረጋገጠ" : ""}` : "🛍️ ገዢ"}\n\nመገለጫዎን ለመክፈት ከታች ይጫኑ።`,
+    accountButton: "👤 መገለጫዬን ይክፈቱ",
     // ── Sell via Bot ──
     sellIntro:
       "🛍️ <b>የረቂቅ ማስታወቂያ እንፍጠር!</b>\n\nእስከ 4 ፎቶዎች ይላኩ (በአንድ መልእክት አንድ)፣ ከዚያ የተጠናቀቀ ይጫኑ።",
@@ -912,6 +950,90 @@ Deno.serve(async (req) => {
         ],
       ],
     });
+    return new Response("ok", { status: 200 });
+  }
+
+  // ── Marketplace shortcut commands (deep links into the web app) ────────
+  // /find is public; the rest need a linked account and open the matching
+  // page via an inline button. The guard mirrors /sell: unlinked chats get
+  // the same "connect first" message instead of an error.
+  if (text.startsWith("/find")) {
+    if (!SITE_URL) {
+      await sendMessage(chatId, copy.invalid);
+      return new Response("ok", { status: 200 });
+    }
+    await sendMessage(chatId, copy.findIntro, {
+      inline_keyboard: [[{ text: copy.findButton, url: SITE_URL }]],
+    });
+    return new Response("ok", { status: 200 });
+  }
+
+  if (text.startsWith("/saved")) {
+    if (!current) {
+      await sendMessage(chatId, copy.notLinked);
+      return new Response("ok", { status: 200 });
+    }
+    await sendMessage(chatId, copy.savedIntro, {
+      inline_keyboard: [[{ text: copy.savedButton, url: `${SITE_URL}/favorites` }]],
+    });
+    return new Response("ok", { status: 200 });
+  }
+
+  if (text.startsWith("/mylistings")) {
+    if (!current) {
+      await sendMessage(chatId, copy.notLinked);
+      return new Response("ok", { status: 200 });
+    }
+    await sendMessage(chatId, copy.myListingsIntro, {
+      inline_keyboard: [[{ text: copy.myListingsButton, url: `${SITE_URL}/dashboard` }]],
+    });
+    return new Response("ok", { status: 200 });
+  }
+
+  if (text.startsWith("/inquiries")) {
+    if (!current) {
+      await sendMessage(chatId, copy.notLinked);
+      return new Response("ok", { status: 200 });
+    }
+    await sendMessage(chatId, copy.inquiriesIntro, {
+      inline_keyboard: [[{ text: copy.inquiriesButton, url: `${SITE_URL}/messages` }]],
+    });
+    return new Response("ok", { status: 200 });
+  }
+
+  if (text.startsWith("/alerts")) {
+    if (!current) {
+      await sendMessage(chatId, copy.notLinked);
+      return new Response("ok", { status: 200 });
+    }
+    await sendMessage(chatId, copy.alertsIntro, {
+      inline_keyboard: [[{ text: copy.alertsButton, url: `${SITE_URL}/profile` }]],
+    });
+    return new Response("ok", { status: 200 });
+  }
+
+  if (text.startsWith("/account")) {
+    if (!current) {
+      await sendMessage(chatId, copy.notLinked);
+      return new Response("ok", { status: 200 });
+    }
+    const { data: acct } = await supabase
+      .from("profiles")
+      .select("full_name, shop_name, city, is_seller, verified")
+      .eq("id", current.id)
+      .maybeSingle();
+    const name =
+      (acct?.shop_name as string | null) ?? (acct?.full_name as string | null) ?? "";
+    await sendMessage(
+      chatId,
+      copy.accountSummary(
+        name,
+        (acct?.city as string | null) ?? null,
+        !!acct?.is_seller,
+        !!acct?.verified,
+      ),
+      { inline_keyboard: [[{ text: copy.accountButton, url: `${SITE_URL}/profile` }]] },
+    );
     return new Response("ok", { status: 200 });
   }
 
