@@ -150,11 +150,16 @@ export const adminBanUser = createServerFn({ method: "POST" })
     if (error) return { ok: false, error: error.message };
     // Mirror onto profiles so the admin list can show who is suspended;
     // auth.users.banned_until isn't reachable through PostgREST.
-    await supabaseAdmin.rpc("admin_set_ban", {
+    const { error: mirrorErr } = await supabaseAdmin.rpc("admin_set_ban", {
       _user_id: data.userId,
       _until: new Date(Date.now() + hours * 3600_000).toISOString(),
       _reason: data.reason ?? null,
     });
+    if (mirrorErr) {
+      // The ban itself is enforced (auth.users), but the display mirror failed
+      // — surface it so a stale "Suspend" button isn't silently left behind.
+      console.error("admin_set_ban mirror failed", mirrorErr);
+    }
     return { ok: true };
   });
 
@@ -166,11 +171,12 @@ export const adminUnbanUser = createServerFn({ method: "POST" })
     if (!reviewerId) return { ok: false, error: "admin" };
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     // Clear the profiles mirror too, so the admin list stops showing a ban.
-    await supabaseAdmin.rpc("admin_set_ban", {
+    const { error: mirrorErr } = await supabaseAdmin.rpc("admin_set_ban", {
       _user_id: data.userId,
       _until: null,
       _reason: null,
     });
+    if (mirrorErr) console.error("admin_set_ban mirror clear failed", mirrorErr);
     const { error } = await supabaseAdmin.auth.admin.updateUserById(data.userId, {
       ban_duration: "0s",
     });
