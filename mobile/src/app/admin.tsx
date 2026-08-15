@@ -917,7 +917,7 @@ function ListingsTab() {
         <View key={l.id} style={styles.card}>
           <View style={{ flexDirection: "row", gap: 10, alignItems: "center" }}>
             {l.listing_images?.[0]?.url ? (
-              <Image source={imageSource(l.listing_images[0].url)} style={styles.listingImg} />
+              <Image source={imageSource(l.listing_images[0].url, undefined, 300)} style={styles.listingImg} />
             ) : (
               <View style={[styles.listingImg, styles.listingImgEmpty]}>
                 <Ionicons name="image-outline" size={18} color={colors.textSoft} />

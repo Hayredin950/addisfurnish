@@ -73,7 +73,7 @@ export default function ShopScreen() {
       <View style={styles.header}>
         <View style={styles.logo}>
           {profile.shop_logo_url ? (
-            <Image source={imageSource(profile.shop_logo_url)} style={styles.logoImg} />
+            <Image source={imageSource(profile.shop_logo_url, undefined, 300)} style={styles.logoImg} />
           ) : (
             <Ionicons name="storefront" size={34} color={colors.primary} />
           )}

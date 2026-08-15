@@ -119,6 +119,8 @@ export function notificationText(
     shopSlug?: string;
     senderName?: string;
     messagePreview?: string;
+    phone?: string;
+    amount?: number;
   } | null,
 ): { title: string; body: string } {
   const p = payload ?? {};
@@ -130,9 +132,21 @@ export function notificationText(
         body: p.messagePreview || (listing ? `Re: ${listing}` : ""),
       };
     case "callback_request":
-      return { title: translate(lang, "requestCallback"), body: listing };
+      return {
+        title: translate(lang, "requestCallback"),
+        body: [listing, p.phone ? `📱 ${p.phone}` : ""].filter(Boolean).join(" — "),
+      };
     case "callback_response":
       return { title: translate(lang, "callbackSent"), body: p.status ?? "" };
+    case "offer_received":
+      return {
+        title: translate(lang, "newOffer"),
+        body: [listing, p.amount != null ? `ETB ${Number(p.amount).toLocaleString()}` : ""]
+          .filter(Boolean)
+          .join(" — "),
+      };
+    case "offer_response":
+      return { title: translate(lang, "offerUpdate"), body: listing };
     case "listing_sold":
       return { title: translate(lang, "soldOut"), body: listing };
     case "price_drop":

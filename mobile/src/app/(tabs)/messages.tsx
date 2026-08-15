@@ -76,7 +76,7 @@ export default function MessagesScreen() {
       >
         <View style={styles.avatar}>
           {img ? (
-            <Image source={imageSource(img)} style={styles.avatarImg} />
+            <Image source={imageSource(img, undefined, 200)} style={styles.avatarImg} />
           ) : (
             <Text style={styles.avatarEmoji}>🛋️</Text>
           )}

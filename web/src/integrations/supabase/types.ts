@@ -758,6 +758,64 @@ export type Database = {
         };
         Relationships: [];
       };
+      offers: {
+        Row: {
+          amount: number;
+          buyer_id: string;
+          created_at: string;
+          id: string;
+          listing_id: string;
+          message: string | null;
+          seller_id: string;
+          status: string;
+          updated_at: string;
+        };
+        Insert: {
+          amount: number;
+          buyer_id: string;
+          created_at?: string;
+          id?: string;
+          listing_id: string;
+          message?: string | null;
+          seller_id: string;
+          status?: string;
+          updated_at?: string;
+        };
+        Update: {
+          amount?: number;
+          buyer_id?: string;
+          created_at?: string;
+          id?: string;
+          listing_id?: string;
+          message?: string | null;
+          seller_id?: string;
+          status?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "offers_listing_id_fkey";
+            columns: ["listing_id"];
+            isOneToOne: false;
+            referencedRelation: "listings";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "offers_buyer_id_fkey";
+            columns: ["buyer_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "offers_seller_id_fkey";
+            columns: ["seller_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       recently_viewed: {
         Row: {
           listing_id: string;

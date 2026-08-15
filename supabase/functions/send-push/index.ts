@@ -35,6 +35,9 @@ type NotifPayload = {
   shopSlug?: string;
   price?: number | string;
   negotiable?: boolean;
+  phone?: string;
+  buyerName?: string;
+  amount?: number | string;
 };
 
 /** Human-friendly title/body per notification type (mirrors the app). */
@@ -44,7 +47,24 @@ function copyFor(type: string, payload: NotifPayload): { title: string; body: st
     case "new_message":
       return { title: "New message", body: `New message about “${listing}”` };
     case "callback_request":
-      return { title: "Callback request", body: `A buyer requested a callback about “${listing}”` };
+      return {
+        title: "Callback request",
+        body: `A buyer requested a callback about “${listing}”${
+          payload.phone ? ` — call ${payload.phone}` : ""
+        }`,
+      };
+    case "offer_received":
+      return {
+        title: "New offer",
+        body:
+          `You received an offer on “${listing}”` +
+          (payload.amount != null ? ` — ETB ${Number(payload.amount).toLocaleString()}` : ""),
+      };
+    case "offer_response":
+      return {
+        title: "Offer update",
+        body: `Your offer on “${listing}” was ${payload.status ?? "updated"}`,
+      };
     case "callback_response":
       return { title: "Callback update", body: payload.status ?? "Your callback status changed" };
     case "listing_sold":

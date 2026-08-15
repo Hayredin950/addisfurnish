@@ -448,7 +448,7 @@ export default function ProfileScreen() {
           <View style={styles.avatar}>
             {profile?.shop_logo_url || profile?.avatar_url ? (
               <Image
-                source={imageSource(profile?.shop_logo_url ?? profile?.avatar_url)}
+                source={imageSource(profile?.shop_logo_url ?? profile?.avatar_url, undefined, 300)}
                 style={styles.avatarImg}
               />
             ) : (

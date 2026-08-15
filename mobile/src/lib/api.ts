@@ -685,6 +685,7 @@ export async function requestCallback(input: {
   listingTitle: string;
   phone: string;
   note?: string | null;
+  buyerName?: string | null;
 }) {
   const { error } = await supabase.from("callback_requests").insert({
     listing_id: input.listingId,
@@ -694,9 +695,13 @@ export async function requestCallback(input: {
     note: input.note || null,
   });
   if (error) throw error;
+  // The phone rides in the payload so the seller can call straight back from
+  // the notification (in-app, push and Telegram all render it).
   await notifyUser(input.sellerId, "callback_request", {
     title: input.listingTitle,
     listingId: input.listingId,
+    phone: input.phone,
+    buyerName: input.buyerName ?? null,
   });
 }
 
@@ -716,6 +721,82 @@ export async function fetchCallbacks(sellerId: string) {
     created_at: string;
     listings: { title: string } | null;
   }[];
+}
+
+// ── Offers ────────────────────────────────────────────────────────────────
+
+/**
+ * Buyer proposes an amount on a listing.
+ *
+ * The offer row must be inserted BEFORE notify_user: that RPC only notifies
+ * someone you share a conversation, callback or offer thread with, and the
+ * offer row is what establishes the thread (same pattern as requestCallback).
+ */
+export async function makeOffer(input: {
+  listingId: string;
+  buyerId: string;
+  sellerId: string;
+  listingTitle: string;
+  amount: number;
+  message?: string | null;
+}) {
+  const { error } = await supabase.from("offers").insert({
+    listing_id: input.listingId,
+    buyer_id: input.buyerId,
+    seller_id: input.sellerId,
+    amount: input.amount,
+    message: input.message || null,
+  });
+  if (error) throw error;
+  await notifyUser(input.sellerId, "offer_received", {
+    title: input.listingTitle,
+    listingId: input.listingId,
+    amount: input.amount,
+  });
+}
+
+export async function fetchOffersForSeller(sellerId: string) {
+  const { data, error } = await supabase
+    .from("offers")
+    .select(
+      "id,amount,message,status,created_at,buyer_id," +
+        "listings(id,title),buyer:profiles!offers_buyer_id_fkey(full_name,phone)",
+    )
+    .eq("seller_id", sellerId)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as unknown as {
+    id: string;
+    amount: number;
+    message: string | null;
+    status: string;
+    buyer_id: string;
+    created_at: string;
+    listings: { id: string; title: string } | null;
+    buyer: { full_name: string | null; phone: string | null } | null;
+  }[];
+}
+
+/** Seller accepts or declines; the buyer is notified either way. */
+export async function respondToOffer(input: {
+  id: string;
+  status: "accepted" | "declined";
+  buyerId: string;
+  listingTitle: string | null;
+  listingId: string;
+  amount: number;
+}) {
+  const { error } = await supabase
+    .from("offers")
+    .update({ status: input.status, updated_at: new Date().toISOString() })
+    .eq("id", input.id);
+  if (error) throw error;
+  await notifyUser(input.buyerId, "offer_response", {
+    status: input.status,
+    title: input.listingTitle,
+    listingId: input.listingId,
+    amount: input.amount,
+  });
 }
 
 export async function updateCallbackStatus(

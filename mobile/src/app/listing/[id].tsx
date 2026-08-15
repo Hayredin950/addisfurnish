@@ -26,6 +26,7 @@ import {
   fetchMyProfile,
   fetchReviews,
   fetchFavoriteIds,
+  makeOffer,
   notifyUser,
   pingListingView,
   recordListingView,
@@ -91,6 +92,11 @@ export default function ListingDetailScreen() {
   const [callbackOpen, setCallbackOpen] = useState(false);
   const [callbackBusy, setCallbackBusy] = useState(false);
   const [callbackSent, setCallbackSent] = useState(false);
+  const [offerOpen, setOfferOpen] = useState(false);
+  const [offerAmount, setOfferAmount] = useState("");
+  const [offerMessage, setOfferMessage] = useState("");
+  const [offerBusy, setOfferBusy] = useState(false);
+  const [offerSent, setOfferSent] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
   const [rating, setRating] = useState(5);
   const [comment, setComment] = useState("");
@@ -153,6 +159,35 @@ export default function ListingDetailScreen() {
     }
   }, [user, item, message]);
 
+  // Buyer's display name for the callback notification (falls back to nothing
+  // until the profile loads — the seller still gets the phone number).
+  const myName = myProfile.data?.full_name ?? null;
+
+  const sendOffer = useCallback(async () => {
+    if (!user || !item) return;
+    const amount = Number(offerAmount.trim());
+    if (!amount || amount <= 0) return;
+    setOfferBusy(true);
+    try {
+      await makeOffer({
+        listingId: item.id,
+        buyerId: user.id,
+        sellerId: item.seller_id,
+        listingTitle: item.title,
+        amount,
+        message: offerMessage.trim() || null,
+      });
+      setOfferOpen(false);
+      setOfferAmount("");
+      setOfferMessage("");
+      setOfferSent(true);
+    } catch (err) {
+      toast.error(err, t("oops"));
+    } finally {
+      setOfferBusy(false);
+    }
+  }, [user, item, offerAmount, offerMessage, t, toast]);
+
   const sendCallback = useCallback(async () => {
     if (!user || !item || !callbackPhone.trim()) return;
     setCallbackBusy(true);
@@ -164,6 +199,7 @@ export default function ListingDetailScreen() {
         listingTitle: item.title,
         phone: callbackPhone.trim(),
         note: message.trim() || null,
+        buyerName: myName,
       });
       setCallbackOpen(false);
       setCallbackPhone("");
@@ -173,7 +209,7 @@ export default function ListingDetailScreen() {
     } finally {
       setCallbackBusy(false);
     }
-  }, [user, item, callbackPhone, message, t, toast]);
+  }, [user, item, callbackPhone, message, myName, t, toast]);
 
   const submitReviewNow = useCallback(async () => {
     if (!user || !item) return;
@@ -251,7 +287,7 @@ export default function ListingDetailScreen() {
             {images.map((img) => (
               <Image
                 key={img.id}
-                source={imageSource(img.url)}
+                source={imageSource(img.url, undefined, 1200)}
                 style={[styles.heroImage, { width: screenWidth }]}
                 resizeMode="cover"
               />
@@ -421,7 +457,7 @@ export default function ListingDetailScreen() {
           <View style={styles.sellerRow}>
             <View style={styles.avatar}>
               {seller.shop_logo_url ? (
-                <Image source={imageSource(seller.shop_logo_url)} style={styles.avatarImg} />
+                <Image source={imageSource(seller.shop_logo_url, undefined, 300)} style={styles.avatarImg} />
               ) : (
                 <Ionicons name="storefront" size={20} color={colors.primary} />
               )}
@@ -474,6 +510,19 @@ export default function ListingDetailScreen() {
               }
               setCallbackPhone(myProfile.data?.phone ?? "");
               setCallbackOpen(true);
+            }}
+          />
+          <Button
+            title={t("makeOffer")}
+            size="sm"
+            variant="outline"
+            style={{ marginTop: 8 }}
+            onPress={() => {
+              if (!user) {
+                router.push("/auth");
+                return;
+              }
+              setOfferOpen(true);
             }}
           />
           {seller.whatsapp ? (
@@ -635,6 +684,56 @@ export default function ListingDetailScreen() {
               onPress={sendCallback}
               style={{ marginTop: 12 }}
             />
+          </View>
+        </SheetOverlay>
+      </Modal>
+
+      {/* Make an offer modal */}
+      <Modal
+        visible={offerOpen}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setOfferOpen(false)}
+      >
+        <SheetOverlay onClose={() => setOfferOpen(false)}>
+          <View style={styles.modalSheet}>
+            <Text style={styles.modalTitle}>{t("makeOffer")}</Text>
+            <TextInput
+              value={offerAmount}
+              onChangeText={setOfferAmount}
+              placeholder={t("offerAmount")}
+              keyboardType="number-pad"
+              style={styles.phoneInput}
+            />
+            <TextInput
+              value={offerMessage}
+              onChangeText={setOfferMessage}
+              placeholder={t("offerMessage")}
+              multiline
+              style={styles.messageInput}
+            />
+            <Button
+              title={t("offerSubmit")}
+              loading={offerBusy}
+              disabled={!offerAmount.trim() || Number(offerAmount) <= 0 || offerBusy}
+              onPress={sendOffer}
+            />
+          </View>
+        </SheetOverlay>
+      </Modal>
+
+      {/* Offer confirmation */}
+      <Modal
+        visible={offerSent}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setOfferSent(false)}
+      >
+        <SheetOverlay>
+          <View style={styles.callbackSheet}>
+            <Ionicons name="checkmark-circle" size={44} color={colors.success} />
+            <Text style={styles.modalTitle}>{t("offerSent")}</Text>
+            <Button title={t("back")} variant="outline" onPress={() => setOfferSent(false)} />
           </View>
         </SheetOverlay>
       </Modal>

@@ -81,6 +81,9 @@ export type NotificationRow = {
     newPrice?: number;
     rating?: number;
     shopSlug?: string;
+    phone?: string;
+    buyerName?: string;
+    amount?: number;
   } | null;
   is_read: boolean;
   created_at: string;
@@ -401,6 +404,9 @@ export async function notifyUser(
     newPrice?: number;
     senderName?: string;
     messagePreview?: string;
+    phone?: string;
+    buyerName?: string;
+    amount?: number;
   } = {},
 ) {
   if (!userId) return;

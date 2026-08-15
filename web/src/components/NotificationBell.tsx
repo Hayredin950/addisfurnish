@@ -24,6 +24,8 @@ const TYPE_KEY: Record<
   | "notif.priceDrop"
   | "notif.savedSearchMatch"
   | "notif.callbackResponse"
+  | "notif.offerReceived"
+  | "notif.offerResponse"
   | "notif.sellerVerified"
   | "notif.sellerRejected"
   | "notif.shopReviewed"
@@ -34,6 +36,8 @@ const TYPE_KEY: Record<
   price_drop: "notif.priceDrop",
   saved_search_match: "notif.savedSearchMatch",
   callback_response: "notif.callbackResponse",
+  offer_received: "notif.offerReceived",
+  offer_response: "notif.offerResponse",
   seller_verified: "notif.sellerVerified",
   seller_rejected: "notif.sellerRejected",
   shop_reviewed: "notif.shopReviewed",
@@ -127,21 +131,30 @@ export function NotificationBell() {
                     ? { title, query: n.payload?.query ?? "" }
                     : n.type === "callback_response"
                       ? { status: n.payload?.status ?? "" }
-                      : { title };
+                      : n.type === "offer_received"
+                        ? {
+                            title,
+                            amount: n.payload?.amount ? `ETB ${n.payload.amount}` : "",
+                          }
+                        : n.type === "offer_response"
+                          ? { title, status: n.payload?.status ?? "" }
+                          : { title };
               // Deep-link straight to what the notification is about — the
               // same targets the /notifications page uses.
               const link =
                 n.type === "new_message" && n.payload?.conversationId
                   ? ({ to: "/messages", search: { conv: n.payload.conversationId } } as const)
-                  : n.type === "shop_reviewed" &&
-                      (n.payload as { shopSlug?: string } | null)?.shopSlug
-                    ? ({
-                        to: "/shop/$slug",
-                        params: { slug: (n.payload as { shopSlug: string }).shopSlug },
-                      } as const)
-                    : n.payload?.listingId
-                      ? ({ to: "/listing/$id", params: { id: n.payload.listingId } } as const)
-                      : null;
+                  : n.type === "offer_received"
+                    ? ({ to: "/dashboard" } as const)
+                    : n.type === "shop_reviewed" &&
+                        (n.payload as { shopSlug?: string } | null)?.shopSlug
+                      ? ({
+                          to: "/shop/$slug",
+                          params: { slug: (n.payload as { shopSlug: string }).shopSlug },
+                        } as const)
+                      : n.payload?.listingId
+                        ? ({ to: "/listing/$id", params: { id: n.payload.listingId } } as const)
+                        : null;
               const row = (
                 <div className="border-b px-3 py-2.5 text-sm last:border-0">
                   <p className={`leading-snug ${n.is_read ? "opacity-60" : ""}`}>{t(key, vars)}</p>

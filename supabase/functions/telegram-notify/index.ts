@@ -66,6 +66,9 @@ type NotifPayload = {
   conversationId?: string;
   messagePreview?: string;
   senderName?: string;
+  phone?: string;
+  buyerName?: string;
+  amount?: number | string;
 };
 
 function esc(value: string | number | null | undefined): string {
@@ -379,7 +382,13 @@ function copyFor(type: string, payload: NotifPayload, lang: Lang): string {
   const link = listingLink(payload.listingId);
   const en: Record<string, string> = {
     new_message: `💬 New message about “${listing}”`,
-    callback_request: `📞 A buyer requested a callback about “${listing}”`,
+    callback_request: `📞 A buyer requested a callback about “${listing}”${
+      payload.phone ? ` — call ${payload.phone}` : ""
+    }`,
+    offer_received: `💰 New offer on “${listing}”${
+      payload.amount != null ? ` — ${formatPrice(Number(payload.amount))}` : ""
+    }`,
+    offer_response: `💰 Your offer on “${listing}” was ${payload.status ?? "updated"}`,
     callback_response: `📞 Your callback request was updated: ${payload.status ?? "status changed"}`,
     listing_sold: `✅ “${listing}” has been marked sold`,
     price_drop: `📉 Price drop on “${listing}”${
@@ -400,7 +409,13 @@ function copyFor(type: string, payload: NotifPayload, lang: Lang): string {
   };
   const am: Record<string, string> = {
     new_message: `💬 ስለ “${listing}” አዲስ መልእክት ደርሷል`,
-    callback_request: `📞 ስለ “${listing}” ገዢ ተመልሰው እንዲደውሉ ጠይቋል`,
+    callback_request: `📞 ስለ “${listing}” ገዢ ተመልሰው እንዲደውሉ ጠይቋል${
+      payload.phone ? ` — ይደውሉ፦ ${payload.phone}` : ""
+    }`,
+    offer_received: `💰 በ“${listing}” ላይ አዲስ ቅናሽ${
+      payload.amount != null ? ` — ${formatPrice(Number(payload.amount))}` : ""
+    }`,
+    offer_response: `💰 በ“${listing}” ላይ ያቀረቡት ቅናሽ ${payload.status ?? "ተዘምኗል"}`,
     callback_response: `📞 የጥሪ ጥያቄዎ ተዘምኗል፦ ${payload.status ?? "ሁኔታው ተቀይሯል"}`,
     listing_sold: `✅ “${listing}” ተሽጧል ተብሎ ተመዝግቧል`,
     price_drop: `📉 “${listing}” ዋጋ ቀንሷል${
@@ -548,7 +563,17 @@ async function handleNotification(
         const sender = payload.senderName ? esc(payload.senderName) : "Someone";
         header = `💬 <b>New message from ${sender}</b>${preview ? `\n\n“${preview}”` : ""}\n\n`;
       } else if (type === "callback_request") {
-        header = `📞 <b>A buyer requested a callback</b>\n\n`;
+        const caller = payload.buyerName ? esc(payload.buyerName) : "A buyer";
+        header = `📞 <b>${caller} requested a callback</b>${
+          payload.phone ? `\n\n📱 <b>${esc(payload.phone)}</b> — call them straight back` : ""
+        }\n\n`;
+      } else if (type === "offer_received") {
+        header = `💰 <b>New offer</b>${
+          payload.amount != null ? ` — ${esc(formatPrice(payload.amount))}` : ""
+        }\n\n`;
+      } else if (type === "offer_response") {
+        const verb = payload.status === "accepted" ? "accepted ✅" : "declined";
+        header = `💰 <b>Your offer was ${verb}</b>\n\n`;
       } else if (type === "price_drop") {
         const oldP = payload.oldPrice != null ? esc(formatPrice(payload.oldPrice)) : "";
         const newP = payload.newPrice != null ? esc(formatPrice(payload.newPrice)) : "";

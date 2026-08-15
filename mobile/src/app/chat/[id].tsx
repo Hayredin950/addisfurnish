@@ -229,7 +229,7 @@ export default function ChatScreen() {
               onPress={() => router.push(`/listing/${listing.id}`)}
             >
               {listing.listing_images?.[0]?.url ? (
-                <Image source={imageSource(listing.listing_images[0].url)} style={styles.bannerImg} />
+                <Image source={imageSource(listing.listing_images[0].url, undefined, 600)} style={styles.bannerImg} />
               ) : (
                 <View style={[styles.bannerImg, styles.bannerImgEmpty]}>
                   <Text style={styles.bannerEmoji}>🛋️</Text>

@@ -14,6 +14,7 @@ import {
   Pencil,
   Trash2,
   Video,
+  HandCoins,
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
@@ -46,6 +47,13 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 export const Route = createFileRoute("/listing/$id")({
   head: () => ({
@@ -82,6 +90,9 @@ function ListingDetail() {
   );
   const [message, setMessage] = useState("");
   const [phone, setPhone] = useState("");
+  const [offerOpen, setOfferOpen] = useState(false);
+  const [offerAmount, setOfferAmount] = useState("");
+  const [offerMessage, setOfferMessage] = useState("");
 
   // Refs let the view effect read the latest values without re-running (the
   // effect must run exactly once per page visit to avoid double counts).
@@ -211,6 +222,45 @@ function ListingDetail() {
     },
   });
 
+  const offer = useMutation({
+    mutationFn: async () => {
+      if (!user) throw new Error("auth");
+      if (user.id === listing!.seller_id) throw new Error("self");
+      const amount = Number(offerAmount);
+      if (!amount || amount <= 0) throw new Error("invalid");
+      // Insert BEFORE notify: the offer row doubles as the notify_user thread
+      // (same pattern as callback_requests — see the offers migration).
+      const { error } = await supabase.from("offers").insert({
+        listing_id: listing!.id,
+        buyer_id: user.id,
+        seller_id: listing!.seller_id,
+        amount,
+        message: offerMessage.trim() || null,
+      });
+      if (error) throw error;
+      await notifyUser(listing!.seller_id, "offer_received", {
+        title: listing!.title,
+        listingId: listing!.id,
+        amount,
+      });
+    },
+    onSuccess: () => {
+      setOfferOpen(false);
+      setOfferAmount("");
+      setOfferMessage("");
+      toast.success(t("offer.sent"));
+    },
+    onError: (error: Error) => {
+      if (error.message === "auth") {
+        void navigate({ to: "/auth" });
+      } else if (error.message === "self") {
+        toast.error(t("offer.cantOfferSelf"));
+      } else {
+        toast.error(t("toast.requestFailed"));
+      }
+    },
+  });
+
   const callback = useMutation({
     mutationFn: async () => {
       if (!user) throw new Error("auth");
@@ -222,9 +272,14 @@ function ListingDetail() {
         note: message || null,
       });
       if (error) throw error;
+      const buyerName = String(
+        (user!.user_metadata as Record<string, unknown>)?.["full_name"] ?? "",
+      );
       await notifyUser(listing!.seller_id, "callback_request", {
         title: listing!.title,
         listingId: listing!.id,
+        phone,
+        ...(buyerName ? { buyerName } : {}),
       });
     },
     onSuccess: () => {
@@ -494,6 +549,13 @@ function ListingDetail() {
                     </a>
                   </Button>
                 ) : null}
+                {seller.phone ? (
+                  <Button asChild variant="outline" size="sm">
+                    <a href={`tel:${seller.phone}`}>
+                      <Phone className="mr-1.5 h-3.5 w-3.5" /> {t("listing.call")}
+                    </a>
+                  </Button>
+                ) : null}
               </div>
             </div>
           ) : null}
@@ -554,6 +616,13 @@ function ListingDetail() {
                 </div>
               </div>
 
+              <div className="mt-5 border-t pt-5">
+                <Button variant="outline" className="w-full" onClick={() => setOfferOpen(true)}>
+                  <HandCoins className="mr-2 h-4 w-4" /> {t("listing.makeOffer")}
+                </Button>
+                <p className="mt-2 text-xs text-muted-foreground">{t("listing.offerHint")}</p>
+              </div>
+
               <p className="mt-5 text-xs text-muted-foreground">
                 {t("listing.neverPay")}{" "}
                 <Link to="/safety" className="text-primary">
@@ -562,6 +631,45 @@ function ListingDetail() {
               </p>
             </div>
           )}
+
+          <Dialog open={offerOpen} onOpenChange={setOfferOpen}>
+            <DialogContent>
+              <DialogHeader>
+                <DialogTitle>{t("listing.makeOffer")}</DialogTitle>
+                <DialogDescription>{t("listing.offerHint")}</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="offer-amount">{t("offer.amount")}</Label>
+                  <Input
+                    id="offer-amount"
+                    type="number"
+                    min={1}
+                    inputMode="numeric"
+                    placeholder="e.g. 12000"
+                    value={offerAmount}
+                    onChange={(e) => setOfferAmount(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="offer-message">{t("offer.message")}</Label>
+                  <Textarea
+                    id="offer-message"
+                    rows={2}
+                    value={offerMessage}
+                    onChange={(e) => setOfferMessage(e.target.value)}
+                  />
+                </div>
+                <Button
+                  className="w-full"
+                  disabled={!Number(offerAmount) || Number(offerAmount) <= 0 || offer.isPending}
+                  onClick={() => offer.mutate()}
+                >
+                  <HandCoins className="mr-2 h-4 w-4" /> {t("offer.submit")}
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
         </aside>
       </div>
 

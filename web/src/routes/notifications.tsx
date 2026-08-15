@@ -35,6 +35,8 @@ const TYPE_KEY: Record<
   | "notif.priceDrop"
   | "notif.savedSearchMatch"
   | "notif.callbackResponse"
+  | "notif.offerReceived"
+  | "notif.offerResponse"
   | "notif.sellerVerified"
   | "notif.sellerRejected"
   | "notif.reportResolved"
@@ -47,6 +49,8 @@ const TYPE_KEY: Record<
   price_drop: "notif.priceDrop",
   saved_search_match: "notif.savedSearchMatch",
   callback_response: "notif.callbackResponse",
+  offer_received: "notif.offerReceived",
+  offer_response: "notif.offerResponse",
   seller_verified: "notif.sellerVerified",
   seller_rejected: "notif.sellerRejected",
   report_resolved: "notif.reportResolved",
@@ -148,7 +152,14 @@ function NotificationsPage() {
                   ? { title: n.payload?.title ?? "", query: n.payload?.query ?? "" }
                   : n.type === "callback_response"
                     ? { status: n.payload?.status ?? "" }
-                    : { title: n.payload?.title ?? "" };
+                    : n.type === "offer_received"
+                      ? {
+                          title: n.payload?.title ?? "",
+                          amount: n.payload?.amount ? `ETB ${n.payload.amount}` : "",
+                        }
+                      : n.type === "offer_response"
+                        ? { title: n.payload?.title ?? "", status: n.payload?.status ?? "" }
+                        : { title: n.payload?.title ?? "" };
             const body = t(key, vars);
             const inner = (
               <>
@@ -165,17 +176,19 @@ function NotificationsPage() {
                     to: "/messages",
                     search: { conv: n.payload.conversationId },
                   } as const)
-                : MESSAGE_TYPES.has(n.type)
-                  ? ({ to: "/messages" } as const)
-                  : n.type === "shop_reviewed" &&
-                      (n.payload as { shopSlug?: string } | null)?.shopSlug
-                    ? ({
-                        to: "/shop/$slug",
-                        params: { slug: (n.payload as { shopSlug: string }).shopSlug },
-                      } as const)
-                    : n.payload?.listingId
-                      ? ({ to: "/listing/$id", params: { id: n.payload.listingId } } as const)
-                      : null;
+                : n.type === "offer_received"
+                  ? ({ to: "/dashboard" } as const)
+                  : MESSAGE_TYPES.has(n.type)
+                    ? ({ to: "/messages" } as const)
+                    : n.type === "shop_reviewed" &&
+                        (n.payload as { shopSlug?: string } | null)?.shopSlug
+                      ? ({
+                          to: "/shop/$slug",
+                          params: { slug: (n.payload as { shopSlug: string }).shopSlug },
+                        } as const)
+                      : n.payload?.listingId
+                        ? ({ to: "/listing/$id", params: { id: n.payload.listingId } } as const)
+                        : null;
 
             return (
               <div

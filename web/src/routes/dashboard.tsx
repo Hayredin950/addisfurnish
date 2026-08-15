@@ -91,6 +91,51 @@ function Dashboard() {
       return count ?? 0;
     },
   });
+  const { data: offers } = useQuery({
+    queryKey: ["offers", user?.id],
+    enabled: !!user,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("offers")
+        .select(
+          "id,amount,message,status,created_at,buyer_id," +
+            "listings(id,title),buyer:profiles!offers_buyer_id_fkey(full_name,phone)",
+        )
+        .eq("seller_id", user!.id)
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+
+  const respondToOffer = async (o: {
+    id: string;
+    status: "accepted" | "declined";
+    buyerId: string;
+    listingTitle: string | undefined;
+    listingId: string | undefined;
+    amount: number;
+  }) => {
+    const { error } = await supabase
+      .from("offers")
+      .update({ status: o.status, updated_at: new Date().toISOString() })
+      .eq("id", o.id);
+    if (error) {
+      toast.error(t("toast.updateFailed"));
+      return;
+    }
+    toast.success(o.status === "accepted" ? t("offer.acceptedToast") : t("offer.declinedToast"));
+    queryClient.invalidateQueries({ queryKey: ["offers"] });
+    if (o.buyerId) {
+      const payload: { status: string; title?: string; listingId?: string; amount: number } = {
+        status: o.status,
+        amount: o.amount,
+      };
+      if (o.listingTitle) payload.title = o.listingTitle;
+      if (o.listingId) payload.listingId = o.listingId;
+      await notifyUser(o.buyerId, "offer_response", payload);
+    }
+  };
 
   const updateCallback = async (
     id: string,
@@ -362,6 +407,99 @@ function Dashboard() {
         })}
         {callbacks?.length === 0 ? (
           <p className="text-sm text-muted-foreground">{t("dash.noCallbacks")}</p>
+        ) : null}
+      </div>
+
+      <h2 className="mt-12 font-display text-2xl font-semibold">{t("dash.offers")}</h2>
+      <div className="mt-4 space-y-2">
+        {(offers ?? []).map((o) => {
+          const offer = o as unknown as {
+            id: string;
+            amount: number;
+            message: string | null;
+            status: string;
+            buyer_id: string;
+            created_at: string;
+            listings: { id: string; title: string } | null;
+            buyer: { full_name: string | null; phone: string | null } | null;
+          };
+          return (
+            <div key={offer.id} className="rounded-lg border bg-card p-4 text-sm">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="font-medium">
+                  {offer.listings?.title ?? t("msg.listing")} —{" "}
+                  <span className="text-primary">{formatBirr(offer.amount)}</span>
+                </p>
+                <span
+                  className={`rounded-full px-2.5 py-0.5 text-xs capitalize ${
+                    offer.status === "pending"
+                      ? "bg-amber-500/10 text-amber-600"
+                      : offer.status === "accepted"
+                        ? "bg-success/10 text-success"
+                        : "bg-secondary text-muted-foreground"
+                  }`}
+                >
+                  {offer.status === "pending"
+                    ? t("dash.offerStatusPending")
+                    : offer.status === "accepted"
+                      ? t("dash.offerStatusAccepted")
+                      : offer.status === "declined"
+                        ? t("dash.offerStatusDeclined")
+                        : t("dash.offerStatusCancelled")}
+                </span>
+              </div>
+              {offer.buyer ? (
+                <p className="mt-1 text-muted-foreground">
+                  {offer.buyer.full_name ?? ""}
+                  {offer.buyer.phone ? ` · ${offer.buyer.phone}` : ""}
+                </p>
+              ) : null}
+              {offer.message ? (
+                <p className="mt-1 text-muted-foreground">“{offer.message}”</p>
+              ) : null}
+              <p className="mt-1 text-xs text-muted-foreground">
+                {new Date(offer.created_at).toLocaleString()}
+              </p>
+              {offer.status === "pending" ? (
+                <div className="mt-3 flex gap-2">
+                  <Button
+                    size="sm"
+                    onClick={() =>
+                      respondToOffer({
+                        id: offer.id,
+                        status: "accepted",
+                        buyerId: offer.buyer_id,
+                        listingTitle: offer.listings?.title,
+                        listingId: offer.listings?.id,
+                        amount: offer.amount,
+                      })
+                    }
+                  >
+                    {t("dash.acceptOffer")}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() =>
+                      respondToOffer({
+                        id: offer.id,
+                        status: "declined",
+                        buyerId: offer.buyer_id,
+                        listingTitle: offer.listings?.title,
+                        listingId: offer.listings?.id,
+                        amount: offer.amount,
+                      })
+                    }
+                  >
+                    {t("dash.declineOffer")}
+                  </Button>
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
+        {offers?.length === 0 ? (
+          <p className="text-sm text-muted-foreground">{t("dash.noOffers")}</p>
         ) : null}
       </div>
 

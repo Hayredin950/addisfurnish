@@ -32,7 +32,7 @@ export function ListingCard({
     >
       <View style={styles.imageWrap}>
         {img ? (
-          <Image source={imageSource(img.url)} style={styles.image} resizeMode="cover" />
+          <Image source={imageSource(img.url, undefined, 600)} style={styles.image} resizeMode="cover" />
         ) : (
           <View style={[styles.image, styles.placeholder]}>
             <Text style={styles.placeholderText}>🛋️</Text>

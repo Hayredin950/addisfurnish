@@ -86,10 +86,13 @@ export default function NotificationsScreen() {
 
   const openNotif = (n: Notif) => {
     void markNotificationRead(n.id);
-    // Message notifications go straight to the conversation; everything else
-    // with a listing link opens the listing. (Web parity: /messages?conv=id.)
+    // Message notifications go straight to the conversation; an offer lands on
+    // the seller dashboard where it can be accepted or declined; everything
+    // else with a listing link opens the listing. (Web parity: /messages?conv=id.)
     if (n.type === "new_message" && n.payload?.conversationId) {
       router.push(`/chat/${n.payload.conversationId}`);
+    } else if (n.type === "offer_received") {
+      router.push("/dashboard");
     } else if (n.type === "shop_reviewed" && (n.payload as { shopSlug?: string } | null)?.shopSlug) {
       router.push(`/shop/${(n.payload as { shopSlug: string }).shopSlug}`);
     } else if (n.payload?.listingId) {
@@ -129,7 +132,9 @@ export default function NotificationsScreen() {
                 ? "chatbubble"
                 : item.type === "callback_request" || item.type === "callback_response"
                   ? "call"
-                  : item.type === "listing_sold"
+                  : item.type === "offer_received" || item.type === "offer_response"
+                    ? "pricetag"
+                    : item.type === "listing_sold"
                     ? "checkmark-circle"
                     : item.type === "price_drop"
                       ? "trending-down"

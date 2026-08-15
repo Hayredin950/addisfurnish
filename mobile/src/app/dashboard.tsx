@@ -10,8 +10,10 @@ import {
   fetchCallbacks,
   fetchConversationCount,
   fetchMyListings,
+  fetchOffersForSeller,
   fetchViewsPerDay,
   markListingSold,
+  respondToOffer,
   updateCallbackStatus,
   updateListingStatus,
 } from "../lib/api";
@@ -41,6 +43,7 @@ export default function DashboardScreen() {
 
   const myListings = useAsync(() => fetchMyListings(user?.id ?? ""), [user?.id], !!user);
   const callbacks = useAsync(() => fetchCallbacks(user?.id ?? ""), [user?.id], !!user?.id);
+  const offers = useAsync(() => fetchOffersForSeller(user?.id ?? ""), [user?.id], !!user?.id);
   const convCount = useAsync(() => fetchConversationCount(user?.id ?? ""), [user?.id], !!user?.id);
   const views = useAsync(() => fetchViewsPerDay(user?.id ?? ""), [user?.id], !!user?.id);
 
@@ -138,7 +141,7 @@ export default function DashboardScreen() {
           listings.map((l) => (
             <Pressable key={l.id} style={styles.manageRow} onPress={() => router.push(`/listing/${l.id}`)}>
               {l.listing_images?.[0]?.url ? (
-                <Image source={imageSource(l.listing_images[0].url)} style={styles.manageImg} />
+                <Image source={imageSource(l.listing_images[0].url, undefined, 300)} style={styles.manageImg} />
               ) : (
                 <View style={[styles.manageImg, styles.manageImgEmpty]}>
                   <Text style={styles.manageEmoji}>🛋️</Text>
@@ -209,6 +212,95 @@ export default function DashboardScreen() {
                 </Pressable>
               </View>
             </Pressable>
+          ))
+        )}
+      </View>
+
+      {/* Offers — buyers' price proposals, accept or decline (web parity) */}
+      <View style={styles.card}>
+        <Text style={styles.cardTitle}>{t("dashOffers")}</Text>
+        {!offers.data || offers.data.length === 0 ? (
+          <Text style={styles.muted}>{t("dashNoOffers")}</Text>
+        ) : (
+          offers.data.map((o) => (
+            <View key={o.id} style={styles.cbRow}>
+              <View style={{ flex: 1 }}>
+                <Text numberOfLines={1} style={styles.manageTitle}>
+                  {o.listings?.title ?? t("listing")} — {formatBirr(o.amount)}
+                </Text>
+                {o.buyer ? (
+                  <Text style={styles.cbNote}>
+                    {[o.buyer.full_name, o.buyer.phone].filter(Boolean).join(" · ")}
+                  </Text>
+                ) : null}
+                {o.message ? <Text style={styles.cbNote}>“{o.message}”</Text> : null}
+                <Text style={styles.cbTime}>{timeAgo(o.created_at)}</Text>
+                <Text
+                  style={[
+                    styles.cbStatus,
+                    o.status === "pending"
+                      ? { color: colors.warning }
+                      : o.status === "accepted"
+                        ? { color: colors.success }
+                        : { color: colors.textMuted },
+                  ]}
+                >
+                  {o.status === "pending"
+                    ? t("dashOfferPending")
+                    : o.status === "accepted"
+                      ? t("dashOfferAccepted")
+                      : o.status === "declined"
+                        ? t("dashOfferDeclined")
+                        : t("dashOfferCancelled")}
+                </Text>
+              </View>
+              {o.status === "pending" ? (
+                <View style={styles.cbActions}>
+                  <Pressable
+                    style={styles.cbBtn}
+                    onPress={() =>
+                      void respondToOffer({
+                        id: o.id,
+                        status: "accepted",
+                        buyerId: o.buyer_id,
+                        listingTitle: o.listings?.title ?? null,
+                        listingId: o.listings?.id ?? o.id,
+                        amount: o.amount,
+                      })
+                        .then(() => {
+                          offers.refetch();
+                          toast.success(t("offerAccepted"));
+                        })
+                        .catch((err) => toast.error(err, t("dashUpdateFailed")))
+                    }
+                  >
+                    <Text style={styles.cbBtnText}>{t("dashAcceptOffer")}</Text>
+                  </Pressable>
+                  <Pressable
+                    style={[styles.cbBtn, styles.cbBtnGhost]}
+                    onPress={() =>
+                      void respondToOffer({
+                        id: o.id,
+                        status: "declined",
+                        buyerId: o.buyer_id,
+                        listingTitle: o.listings?.title ?? null,
+                        listingId: o.listings?.id ?? o.id,
+                        amount: o.amount,
+                      })
+                        .then(() => {
+                          offers.refetch();
+                          toast.success(t("offerDeclined"));
+                        })
+                        .catch((err) => toast.error(err, t("dashUpdateFailed")))
+                    }
+                  >
+                    <Text style={[styles.cbBtnText, { color: colors.text }]}>
+                      {t("dashDeclineOffer")}
+                    </Text>
+                  </Pressable>
+                </View>
+              ) : null}
+            </View>
           ))
         )}
       </View>
