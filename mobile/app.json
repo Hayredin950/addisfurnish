@@ -77,17 +77,17 @@
     },
     "extra": {
       "eas": {
-        "projectId": "838504d6-b211-4e5c-9df7-145b3ece145e"
+        "projectId": "a20e2096-ff1a-49cd-8b85-77f0acf08529"
       }
     },
     "runtimeVersion": {
       "policy": "appVersion"
     },
     "updates": {
-      "url": "https://u.expo.dev/838504d6-b211-4e5c-9df7-145b3ece145e",
+      "url": "https://u.expo.dev/a20e2096-ff1a-49cd-8b85-77f0acf08529",
       "checkAutomatically": "ON_LOAD",
       "fallbackToCacheTimeout": 0
     },
-    "owner": "hayredins-team"
+    "owner": "yunus750s-team"
   }
 }
