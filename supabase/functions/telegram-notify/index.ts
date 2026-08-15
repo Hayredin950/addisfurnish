@@ -107,10 +107,17 @@ function viewButton(
   return [{ text: "View full listing", url }];
 }
 
-/** One tappable "Reply now" button under a new-message DM. */
-function replyButton(): Record<string, unknown>[] | undefined {
+/** One tappable "Reply now" button under a new-message DM — deep-links into
+ * the exact conversation when we have its id, matching the web app's
+ * /messages?conv= pattern. */
+function replyButton(conversationId?: string): Record<string, unknown>[] | undefined {
   if (!SITE_URL) return undefined;
-  return [{ text: "Reply now", url: `${SITE_URL}/messages` }];
+  return [{
+    text: "Reply now",
+    url: conversationId
+      ? `${SITE_URL}/messages?conv=${encodeURIComponent(conversationId)}`
+      : `${SITE_URL}/messages`,
+  }];
 }
 
 /**
@@ -553,8 +560,17 @@ async function handleNotification(
         header = `⭐ <b>New review on your shop</b> ${stars}${payload.rating != null ? ` (${esc(payload.rating)}/5)` : ""}\n\n`;
       }
 
+      // A message notification should lead to the conversation, not the
+      // listing — tapping it opens the chat so the seller can reply.
+      const button =
+        type === "new_message" && payload.conversationId
+          ? (() => {
+              const url = `${SITE_URL}/messages?conv=${encodeURIComponent(payload.conversationId)}`;
+              return SITE_URL ? [{ text: "Open conversation", url }] : undefined;
+            })()
+          : viewButton(listing.id);
       const photo = coverUrl(listing, SUPABASE_URL);
-      await sendCard(chatId, header + html, photo, viewButton(listing.id));
+      await sendCard(chatId, header + html, photo, button);
       return new Response("ok", { status: 200 });
     }
   }
@@ -566,7 +582,7 @@ async function handleNotification(
       : "";
     const sender = payload.senderName ? esc(payload.senderName) : "Someone";
     const text = `💬 <b>New message from ${sender}</b>${preview ? `\n\n“${preview}”` : ""}`;
-    await sendCard(chatId, text, null, replyButton());
+    await sendCard(chatId, text, null, replyButton(payload.conversationId));
     return new Response("ok", { status: 200 });
   }
 
