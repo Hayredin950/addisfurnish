@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   ActivityIndicator,
   Image,
@@ -44,6 +44,7 @@ import {
   toggleFeatured,
   unbanUser,
   type AdminReport,
+  type AdminUser,
   type AdminVerificationDoc,
 } from "../lib/admin";
 import { CATEGORY_ICON_KEYS, categoryIcon } from "../lib/category-icons";
@@ -57,6 +58,33 @@ import { formatBirr, timeAgo } from "../lib/format";
 import type { DictKey } from "../lib/i18n";
 
 type Tab = "reports" | "verification" | "users" | "categories" | "listings" | "stats";
+
+/** A labeled value row used inside the user-detail modal. */
+function DetailRow({
+  label,
+  value,
+  danger,
+}: {
+  label: string;
+  value: string;
+  danger?: boolean;
+}) {
+  return (
+    <View style={{ marginTop: 2 }}>
+      <Text style={styles.detailRowLabel}>{label}</Text>
+      <Text style={[styles.detailRowValue, danger && { color: colors.danger }]}>{value}</Text>
+    </View>
+  );
+}
+
+function DetailSection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <View style={{ marginTop: 14 }}>
+      <Text style={styles.detailSectionLabel}>{title}</Text>
+      {children}
+    </View>
+  );
+}
 
 const TAB_LABELS: Record<Tab, DictKey> = {
   reports: "adminTabReports",
@@ -411,6 +439,7 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
   } | null>(null);
   const [roleCodeSent, setRoleCodeSent] = useState(false);
   const [roleCode, setRoleCode] = useState("");
+  const [detailUser, setDetailUser] = useState<AdminUser | null>(null);
   const [busy, setBusy] = useState(false);
 
   const filtered = useMemo(() => {
@@ -423,7 +452,8 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
       return (
         name.includes(q) ||
         (u.phone ?? "").toLowerCase().includes(q) ||
-        (u.city ?? "").toLowerCase().includes(q)
+        (u.city ?? "").toLowerCase().includes(q) ||
+        (u.email ?? "").toLowerCase().includes(q)
       );
     });
   }, [users.data, filter, search]);
@@ -564,22 +594,33 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
         const name = u.shop_name ?? u.full_name;
         return (
           <View key={u.id} style={styles.card}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-              <Text style={[styles.cardTitle, { flex: 1, marginBottom: 0 }]} numberOfLines={1}>
-                {name}
-              </Text>
-              {u.verified ? <Ionicons name="checkmark-circle" size={16} color={colors.success} /> : null}
-              {(u.user_roles ?? []).some((r: { role: string }) => r.role === "admin") ? (
-                <View style={[styles.chip, { backgroundColor: colors.primary + "20" }]}>
-                  <Text style={[styles.chipText, { color: colors.primary, fontSize: 10, fontWeight: "600" }]}>
-                    {u.is_super_admin ? t("adminRoleSuperAdmin") : t("adminRoleAdmin")}
+            <Pressable onPress={() => setDetailUser(u)}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                <Text style={[styles.cardTitle, { flex: 1, marginBottom: 0 }]} numberOfLines={1}>
+                  {name}
+                </Text>
+                {u.verified ? <Ionicons name="checkmark-circle" size={16} color={colors.success} /> : null}
+                {(u.role_names ?? []).includes("admin") ? (
+                  <View style={[styles.chip, { backgroundColor: colors.primary + "20" }]}>
+                    <Text style={[styles.chipText, { color: colors.primary, fontSize: 10, fontWeight: "600" }]}>
+                      {u.is_super_admin ? t("adminRoleSuperAdmin") : t("adminRoleAdmin")}
+                    </Text>
+                  </View>
+                ) : null}
+              </View>
+              {u.email ? (
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 2 }}>
+                  <Ionicons name="mail-outline" size={12} color={colors.textMuted} />
+                  <Text style={[styles.muted, { flex: 1 }]} numberOfLines={1}>
+                    {u.email}
                   </Text>
+                  {u.email_confirmed_at ? <Ionicons name="checkmark-circle" size={13} color={colors.success} /> : null}
                 </View>
               ) : null}
-            </View>
-            <Text style={styles.muted}>
-              {u.phone ?? "—"} · {u.city ?? "—"} · {timeAgo(u.created_at)}
-            </Text>
+              <Text style={styles.muted}>
+                {u.phone ?? "—"} · {u.city ?? "—"} · {timeAgo(u.created_at)}
+              </Text>
+            </Pressable>
             {u.is_seller ? <Text style={styles.muted}>{t("adminFilterSellers")}</Text> : null}
             {suspended ? (
               <Text style={[styles.muted, { color: colors.danger }]}>
@@ -648,7 +689,7 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
                   onPress={() => revoke(u.id)}
                   style={{ flex: 1 }}
                 />
-                {!u.is_super_admin && (u.user_roles ?? []).some((r: { role: string }) => r.role === "admin") ? (
+                {!u.is_super_admin && (u.role_names ?? []).includes("admin") ? (
                   <Button
                     title={t("adminRemoveAdmin")}
                     variant="outline"
@@ -657,7 +698,7 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
                     style={{ flex: 1 }}
                   />
                 ) : null}
-                {!u.is_super_admin && !(u.user_roles ?? []).some((r: { role: string }) => r.role === "admin") ? (
+                {!u.is_super_admin && !(u.role_names ?? []).includes("admin") ? (
                   <Button
                     title={t("adminMakeAdmin")}
                     variant="outline"
@@ -740,6 +781,108 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
               </Text>
             </Pressable>
           </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
+    {/* User detail view — opens when tapping a user card. */}
+    <Modal visible={!!detailUser} transparent animationType="fade" onRequestClose={() => setDetailUser(null)}>
+      <Pressable style={styles.backdrop} onPress={() => setDetailUser(null)}>
+        {/* maxHeight lives on the card (a child of the flex:1 backdrop) so the
+            percentage resolves; the ScrollView then shrinks inside it. */}
+        <Pressable style={[styles.modalCard, { maxHeight: "85%" }]} onPress={() => {}}>
+          {detailUser ? (() => {
+            const du = detailUser;
+            const roles = Array.isArray(du.role_names) ? du.role_names : [];
+            const isAdminUser = roles.includes("admin");
+            const who = du.shop_name ?? du.full_name;
+            const suspendedUser = !!du.banned_until && new Date(du.banned_until) > new Date();
+            const lang = du.preferred_language === "am" ? "አማርኛ" : du.preferred_language === "en" ? "English" : du.preferred_language || "—";
+            return (
+              <ScrollView contentContainerStyle={{ gap: 4 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+                  <View style={styles.avatarCircle}>
+                    <Text style={styles.avatarText}>{(who || "?").slice(0, 1).toUpperCase()}</Text>
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                      <Text style={[styles.cardTitle, { flex: 1, marginBottom: 0 }]} numberOfLines={1}>
+                        {who}
+                      </Text>
+                      {du.verified ? <Ionicons name="checkmark-circle" size={15} color={colors.success} /> : null}
+                      {isAdminUser ? (
+                        <View style={[styles.chip, { backgroundColor: colors.primary + "20" }]}>
+                          <Text style={[styles.chipText, { color: colors.primary, fontSize: 10, fontWeight: "600" }]}>
+                            {du.is_super_admin ? t("adminRoleSuperAdmin") : t("adminRoleAdmin")}
+                          </Text>
+                        </View>
+                      ) : null}
+                    </View>
+                    {du.email ? <Text style={styles.muted}>{du.email}</Text> : null}
+                  </View>
+                </View>
+
+                <DetailSection title={t("adminContact")}>
+                  <DetailRow label={t("adminEmail")} value={du.email ?? "—"} />
+                  <DetailRow label={t("adminPhone")} value={du.phone ?? "—"} />
+                  <DetailRow label={t("adminWhatsapp")} value={du.whatsapp ?? "—"} />
+                  <DetailRow
+                    label={t("adminTelegram")}
+                    value={
+                      du.telegram
+                        ? `@${du.telegram}${du.telegram_blocked ? ` (${t("adminBlocked")})` : ""}`
+                        : "—"
+                    }
+                  />
+                  <DetailRow label={t("adminLocation")} value={du.city ?? "—"} />
+                </DetailSection>
+
+                <DetailSection title={t("adminAccount")}>
+                  <DetailRow label={t("adminMemberSince")} value={timeAgo(du.created_at)} />
+                  <DetailRow label={t("adminLastSeen")} value={du.last_seen ? timeAgo(du.last_seen) : "—"} />
+                  <DetailRow label={t("adminLastSignIn")} value={du.last_sign_in_at ? timeAgo(du.last_sign_in_at) : "—"} />
+                  <DetailRow label={t("adminLanguage")} value={lang} />
+                  <DetailRow
+                    label={t("adminStatus")}
+                    value={
+                      suspendedUser
+                        ? `${t("adminSuspendedUntil")}: ${new Date(du.banned_until!).toLocaleString()}${
+                            du.ban_reason ? ` — ${du.ban_reason}` : ""
+                          }`
+                        : t("adminActiveAccount")
+                    }
+                    danger={suspendedUser}
+                  />
+                </DetailSection>
+
+                {du.is_seller || du.shop_name ? (
+                  <DetailSection title={t("adminShop")}>
+                    {du.shop_name ? <DetailRow label={t("adminShopName")} value={du.shop_name} /> : null}
+                    {du.shop_address ? <DetailRow label={t("adminShopAddress")} value={du.shop_address} /> : null}
+                    {du.registration_number ? <DetailRow label={t("adminRegNumber")} value={du.registration_number} /> : null}
+                    {du.shop_description ? <DetailRow label={t("adminShopDescription")} value={du.shop_description} /> : null}
+                    {du.shop_slug ? (
+                      <Pressable
+                        style={styles.shopLink}
+                        onPress={() => {
+                          setDetailUser(null);
+                          router.push(`/shop/${du.shop_slug}`);
+                        }}
+                      >
+                        <Ionicons name="storefront-outline" size={13} color={colors.primary} />
+                        <Text style={styles.shopLinkText}>{t("adminVisitShop")}</Text>
+                      </Pressable>
+                    ) : null}
+                  </DetailSection>
+                ) : null}
+
+                {du.bio ? (
+                  <DetailSection title={t("adminBio")}>
+                    <Text style={styles.muted}>{du.bio}</Text>
+                  </DetailSection>
+                ) : null}
+              </ScrollView>
+            );
+          })() : null}
         </Pressable>
       </Pressable>
     </Modal>
@@ -1604,4 +1747,22 @@ const styles = StyleSheet.create({
     color: colors.text,
     marginTop: 16,
   },
+  avatarCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: radius.full,
+    backgroundColor: colors.secondary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  avatarText: { fontSize: 20, fontWeight: "700", color: colors.text },
+  detailSectionLabel: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: colors.textMuted,
+    textTransform: "uppercase",
+    letterSpacing: 0.6,
+  },
+  detailRowLabel: { fontSize: 11, color: colors.textSoft, marginTop: 8 },
+  detailRowValue: { fontSize: 14, color: colors.text, marginTop: 1 },
 });

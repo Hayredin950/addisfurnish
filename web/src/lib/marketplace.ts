@@ -716,34 +716,51 @@ export type AdminUser = {
   is_seller: boolean;
   is_super_admin: boolean;
   created_at: string;
+  updated_at: string;
+  last_seen: string;
+  is_online: boolean;
   phone: string | null;
+  phone_verified_at: string | null;
+  whatsapp: string | null;
+  telegram: string | null;
+  telegram_blocked: boolean;
+  telegram_linked_at: string | null;
+  bio: string | null;
   city: string | null;
+  preferred_language: string;
+  registration_number: string | null;
+  shop_address: string | null;
+  shop_description: string | null;
   banned_until: string | null;
   ban_reason: string | null;
-  // Each user's roles (admin / moderator / user). Readable by admins via the
-  // "admins read all roles" policy; drives the promote/demote toggle.
-  user_roles?: { role: string }[] | null;
+  // From auth.users (via the admin_profile_details view):
+  email: string | null;
+  email_confirmed_at: string | null;
+  last_sign_in_at: string | null;
+  // Role names ("admin" / "moderator" / "user") aggregated by the view —
+  // drives the promote/demote toggle and the role badge.
+  role_names?: string[] | null;
 };
 
 /**
  * Every account, for the admin users tab. Readable only by admins — the
- * "admin reads all profiles" policy gates it.
+ * view's RLS policy gates it (admin_profile_details joins auth.users for
+ * the email).
  */
 export function adminAllUsersQuery(filter: "all" | "sellers" | "buyers" = "all") {
   return queryOptions({
     queryKey: ["admin-all-users", filter],
     queryFn: async () => {
-      let query = supabase
-        .from("profiles")
-        .select(
-          "id,full_name,shop_name,shop_slug,avatar_url,shop_logo_url,verified,is_seller,is_super_admin,created_at,phone,city,banned_until,ban_reason,user_roles(role)",
-        )
-        .order("created_at", { ascending: false });
-      if (filter === "sellers") query = query.eq("is_seller", true);
-      if (filter === "buyers") query = query.eq("is_seller", false);
-      const { data, error } = await query;
+      const { data, error } = await supabase.rpc(
+        "admin_get_profile_details",
+        filter === "sellers"
+          ? { _is_seller: true }
+          : filter === "buyers"
+            ? { _is_seller: false }
+            : {},
+      );
       if (error) throw error;
-      return (data ?? []) as AdminUser[];
+      return ((data ?? []) as unknown as AdminUser[]) ?? [];
     },
   });
 }

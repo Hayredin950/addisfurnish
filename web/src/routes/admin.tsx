@@ -40,6 +40,7 @@ import {
   categoriesQuery,
   categoryCountsQuery,
   isAdminQuery,
+  type AdminUser,
   type Category,
 } from "@/lib/marketplace";
 import { CATEGORY_ICON_KEYS, categoryIcon } from "@/lib/category-icons";
@@ -55,6 +56,7 @@ import { RequireAuth } from "@/components/RequireAuth";
 import { UserAvatar } from "@/components/UserAvatar";
 import { ListingImage } from "@/components/ListingImage";
 import { BanDialog } from "@/components/admin/BanDialog";
+import { UserDetailDialog } from "@/components/admin/UserDetailDialog";
 import { DocumentViewer } from "@/components/admin/DocumentViewer";
 import { deleteCloudinaryAssets, useImageUrl } from "@/lib/storage";
 import { timeAgo, formatBirr } from "@/lib/format";
@@ -253,13 +255,14 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
     name: string;
     action: "promote" | "demote";
   } | null>(null);
+  const [detailUser, setDetailUser] = useState<AdminUser | null>(null);
   const [busy, setBusy] = useState(false);
 
   const term = search.trim().toLowerCase();
   const visible = (users ?? []).filter((u) =>
     !term
       ? true
-      : [u.full_name, u.shop_name, u.phone, u.city]
+      : [u.full_name, u.shop_name, u.phone, u.city, u.email]
           .filter(Boolean)
           .some((v) => v!.toLowerCase().includes(term)),
   );
@@ -350,9 +353,7 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
       return;
     }
     toast.success(
-      roleTarget.action === "promote"
-        ? t("admin.roleChangeSuccess")
-        : t("admin.roleChangeRemoved"),
+      roleTarget.action === "promote" ? t("admin.roleChangeSuccess") : t("admin.roleChangeRemoved"),
     );
     setRoleTarget(null);
     setRoleCodeSent(false);
@@ -397,13 +398,17 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
                 key={u.id}
                 className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card p-3"
               >
-                <div className="flex min-w-0 items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setDetailUser(u)}
+                  className="flex min-w-0 flex-1 items-center gap-3 text-left"
+                >
                   <UserAvatar name={name} avatarUrl={u.shop_logo_url ?? u.avatar_url} size={36} />
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1">
                     <p className="flex items-center gap-1.5 truncate text-sm font-medium">
                       {name}
                       {u.verified ? <BadgeCheck className="h-3.5 w-3.5 text-primary" /> : null}
-                      {(u.user_roles ?? []).some((r: { role: string }) => r.role === "admin") ? (
+                      {(u.role_names ?? []).includes("admin") ? (
                         <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary">
                           {u.is_super_admin ? t("admin.roleSuperAdmin") : t("admin.roleAdmin")}
                         </span>
@@ -413,6 +418,15 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
                         </span>
                       )}
                     </p>
+                    {u.email ? (
+                      <p className="flex items-center gap-1 truncate text-xs text-muted-foreground">
+                        <Mail className="h-3 w-3 shrink-0" />
+                        <span className="truncate">{u.email}</span>
+                        {u.email_confirmed_at ? (
+                          <BadgeCheck className="h-3 w-3 shrink-0 text-emerald-600" />
+                        ) : null}
+                      </p>
+                    ) : null}
                     <p className="truncate text-xs text-muted-foreground">
                       {u.phone ?? "—"} · {u.city ?? "—"} · {timeAgo(u.created_at)}
                     </p>
@@ -425,7 +439,7 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
                       </p>
                     ) : null}
                   </div>
-                </div>
+                </button>
 
                 <div className="flex shrink-0 flex-wrap gap-2">
                   {u.shop_slug ? (
@@ -439,7 +453,7 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
                     <LogOut className="mr-1.5 h-3.5 w-3.5" /> {t("admin.revokeSessions")}
                   </Button>
                   {/* Promote / demote admin — the change requires email confirmation. */}
-                  {!u.is_super_admin && (u.user_roles ?? []).some((r: { role: string }) => r.role === "admin") ? (
+                  {!u.is_super_admin && (u.role_names ?? []).includes("admin") ? (
                     <Button
                       size="sm"
                       variant="outline"
@@ -448,7 +462,7 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
                       <Mail className="mr-1.5 h-3.5 w-3.5" /> {t("admin.removeAdmin")}
                     </Button>
                   ) : null}
-                  {!u.is_super_admin && !(u.user_roles ?? []).some((r: { role: string }) => r.role === "admin") ? (
+                  {!u.is_super_admin && !(u.role_names ?? []).includes("admin") ? (
                     <Button
                       size="sm"
                       variant="outline"
@@ -566,6 +580,15 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* User detail view — opens when clicking a user row. */}
+      <UserDetailDialog
+        user={detailUser}
+        open={!!detailUser}
+        onOpenChange={(open) => {
+          if (!open) setDetailUser(null);
+        }}
+      />
     </>
   );
 }

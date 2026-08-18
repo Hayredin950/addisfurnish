@@ -1232,6 +1232,10 @@ export type Database = {
         };
         Returns: undefined;
       };
+      admin_get_profile_details: {
+        Args: { _is_seller?: boolean | null };
+        Returns: Json;
+      };
       admin_request_role_change: {
         Args: { _target_user_id: string; _action: string };
         Returns: Json;
