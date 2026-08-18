@@ -73,7 +73,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
@@ -526,20 +525,16 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
 
           {roleCodeSent && (
             <div className="flex justify-center py-2">
-              <InputOTP
+              <input
+                type="text"
+                inputMode="numeric"
                 maxLength={6}
                 value={roleCode}
-                onChange={setRoleCode}
-              >
-                <InputOTPGroup>
-                  <InputOTPSlot index={0} />
-                  <InputOTPSlot index={1} />
-                  <InputOTPSlot index={2} />
-                  <InputOTPSlot index={3} />
-                  <InputOTPSlot index={4} />
-                  <InputOTPSlot index={5} />
-                </InputOTPGroup>
-              </InputOTP>
+                onChange={(e) => setRoleCode(e.target.value.replace(/\D/g, ""))}
+                autoFocus
+                placeholder="000000"
+                className="w-48 rounded-md border border-input bg-background px-4 py-3 text-center text-2xl font-bold tracking-[0.3em] shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-ring"
+              />
             </div>
           )}
 
