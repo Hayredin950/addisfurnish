@@ -63,6 +63,17 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import { InputOTP, InputOTPGroup, InputOTPSlot } from "@/components/ui/input-otp";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
@@ -287,9 +298,10 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
     toast.success(t("admin.sessionsRevoked"));
   };
 
-  // Promote / demote: the change is NOT applied here — the acting admin
-  // receives an email with a one-time confirmation link, and the role only
-  // flips after they click it (a stolen logged-in machine can't promote).
+  const [roleCodeSent, setRoleCodeSent] = useState(false);
+  const [roleCode, setRoleCode] = useState("");
+
+  // Step 1: send the 6-digit code to the acting admin's email.
   const requestRoleChange = async () => {
     if (!roleTarget) return;
     setBusy(true);
@@ -314,7 +326,39 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
       return;
     }
     toast.success(t("admin.roleChangeEmailSent"));
+    setRoleCodeSent(true);
+  };
+
+  // Step 2: verify the code and apply the role change.
+  const confirmRoleChange = async () => {
+    if (!roleTarget || roleCode.length !== 6) return;
+    setBusy(true);
+    const { data, error } = await supabase.rpc("admin_confirm_role_change", {
+      _code: roleCode,
+    });
+    setBusy(false);
+    if (error || !(data as { ok?: boolean } | null)?.ok) {
+      const err = (data as { error?: string } | null)?.error ?? error?.message;
+      toast.error(
+        err === "expired"
+          ? t("admin.roleChangeExpired")
+          : err === "invalid"
+            ? t("admin.roleChangeInvalidCode")
+            : err === "super_admin"
+              ? t("admin.superAdminProtected")
+              : t("admin.roleChangeFailed"),
+      );
+      return;
+    }
+    toast.success(
+      roleTarget.action === "promote"
+        ? t("admin.roleChangeSuccess")
+        : t("admin.roleChangeRemoved"),
+    );
     setRoleTarget(null);
+    setRoleCodeSent(false);
+    setRoleCode("");
+    queryClient.invalidateQueries({ queryKey: ["admin-all-users"] });
   };
 
   return (
@@ -451,28 +495,80 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
         pending={busy}
       />
 
-      {/* Confirm dialog for admin promote/demote — the action requires
-          email verification, so the dialog explains that before firing. */}
-      <ConfirmDialog
+      {/* Code-based confirm dialog for admin promote/demote */}
+      <AlertDialog
         open={!!roleTarget}
         onOpenChange={(open) => {
-          if (!open) setRoleTarget(null);
+          if (!open) {
+            setRoleTarget(null);
+            setRoleCodeSent(false);
+            setRoleCode("");
+          }
         }}
-        title={
-          roleTarget?.action === "promote"
-            ? t("admin.promoteTitle")
-            : t("admin.demoteTitle")
-        }
-        description={
-          roleTarget?.action === "promote"
-            ? t("admin.promoteBody")
-            : t("admin.demoteBody")
-        }
-        confirmLabel={t("admin.confirmAction")}
-        cancelLabel={t("admin.cancel")}
-        pending={busy}
-        onConfirm={requestRoleChange}
-      />
+      >
+        <AlertDialogContent className="max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="font-display">
+              {roleCodeSent
+                ? t("admin.roleChangeEnterCode")
+                : roleTarget?.action === "promote"
+                  ? t("admin.promoteTitle")
+                  : t("admin.demoteTitle")}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {roleCodeSent
+                ? t("admin.roleChangeCodeHint")
+                : roleTarget?.action === "promote"
+                  ? t("admin.promoteBody")
+                  : t("admin.demoteBody")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+
+          {roleCodeSent && (
+            <div className="flex justify-center py-2">
+              <InputOTP
+                maxLength={6}
+                value={roleCode}
+                onChange={setRoleCode}
+                render={({ slots }) => (
+                  <InputOTPGroup>
+                    {slots.map((slot, i) => (
+                      <InputOTPSlot key={i} index={i} />
+                    ))}
+                  </InputOTPGroup>
+                )}
+              />
+            </div>
+          )}
+
+          <AlertDialogFooter className="gap-2 sm:gap-2">
+            <AlertDialogCancel disabled={busy}>{t("admin.cancel")}</AlertDialogCancel>
+            {roleCodeSent ? (
+              <AlertDialogAction
+                disabled={busy || roleCode.length !== 6}
+                onClick={(e) => {
+                  e.preventDefault();
+                  confirmRoleChange();
+                }}
+                className="bg-primary text-primary-foreground shadow-sm hover:bg-primary/90"
+              >
+                {busy ? t("admin.roleChangeVerifying") : t("admin.roleChangeConfirmCode")}
+              </AlertDialogAction>
+            ) : (
+              <AlertDialogAction
+                disabled={busy}
+                onClick={(e) => {
+                  e.preventDefault();
+                  requestRoleChange();
+                }}
+                className="bg-primary text-primary-foreground shadow-sm hover:bg-primary/90"
+              >
+                {busy ? t("admin.roleChangeSending") : t("admin.roleChangeSendCode")}
+              </AlertDialogAction>
+            )}
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

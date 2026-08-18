@@ -43,7 +43,7 @@ function ConfirmRolePage() {
     let cancelled = false;
     (async () => {
       const { data, error } = await supabase.rpc("admin_confirm_role_change", {
-        _token: token,
+        _code: token,
       });
       if (cancelled) return;
       if (error || !data) {

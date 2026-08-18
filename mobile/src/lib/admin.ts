@@ -238,6 +238,22 @@ export async function requestRoleChange(
   return (data ?? { ok: false, error: "unknown" }) as { ok: boolean; error?: string };
 }
 
+/** Step 2: verify the 6-digit code and apply the role change. */
+export async function confirmRoleChange(
+  code: string,
+): Promise<{ ok: boolean; error?: string; action?: string; name?: string }> {
+  const { data, error } = await supabase.rpc("admin_confirm_role_change", {
+    _code: code,
+  });
+  if (error) return { ok: false, error: error.message };
+  return (data ?? { ok: false, error: "unknown" }) as {
+    ok: boolean;
+    error?: string;
+    action?: string;
+    name?: string;
+  };
+}
+
 /** Log the user out of every device (deletes sessions + refresh tokens). */
 export async function revokeSessions(userId: string): Promise<void> {
   const { error } = await supabase.rpc("admin_revoke_sessions", { _user_id: userId });

@@ -1,0 +1,18 @@
+{
+  "name": "brevo-node-examples",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "send:api": "tsx api-sdk.ts",
+    "send:smtp": "tsx smtp.ts"
+  },
+  "dependencies": {
+    "@getbrevo/brevo": "^6",
+    "dotenv": "^16",
+    "nodemailer": "^6.9"
+  },
+  "devDependencies": {
+    "tsx": "^4",
+    "typescript": "^5"
+  }
+}

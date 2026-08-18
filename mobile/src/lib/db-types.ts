@@ -1219,7 +1219,7 @@ export type Database = {
         Returns: Json;
       };
       admin_confirm_role_change: {
-        Args: { _token: string };
+        Args: { _code: string };
         Returns: Json;
       };
       admin_revoke_sessions: {

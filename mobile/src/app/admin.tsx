@@ -24,6 +24,7 @@ import {
   deleteCategory,
   deleteListingAdmin,
   requestRoleChange,
+  confirmRoleChange as confirmRoleChangeApi,
   fetchAdminCategories,
   fetchAdminCategoryCounts,
   fetchAdminListings,
@@ -408,6 +409,8 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
     name: string;
     action: "promote" | "demote";
   } | null>(null);
+  const [roleCodeSent, setRoleCodeSent] = useState(false);
+  const [roleCode, setRoleCode] = useState("");
   const [busy, setBusy] = useState(false);
 
   const filtered = useMemo(() => {
@@ -458,9 +461,7 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
     } catch (err) {
       toast.error(err, t("oops"));
     }
-  };
-
-  const handleRoleChange = async () => {
+  };  const handleRoleChange = async () => {
     if (!roleTarget) return;
     setBusy(true);
     try {
@@ -480,7 +481,41 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
         return;
       }
       toast.success(t("adminRoleChangeEmailSent"));
+      setRoleCodeSent(true);
+    } catch {
+      setBusy(false);
+      toast.error(null, t("adminRoleChangeFailed"));
+    }
+  };
+
+  const handleRoleConfirmCode = async () => {
+    if (!roleTarget || roleCode.length !== 6) return;
+    setBusy(true);
+    try {
+      const res = await confirmRoleChangeApi(roleCode);
+      setBusy(false);
+      if (!res.ok) {
+        toast.error(
+          null,
+          res.error === "expired"
+            ? t("adminRoleChangeExpired")
+            : res.error === "invalid"
+              ? t("adminRoleChangeInvalidCode")
+              : res.error === "super_admin"
+                ? t("adminSuperAdminProtected")
+                : t("adminRoleChangeFailed"),
+        );
+        return;
+      }
+      toast.success(
+        roleTarget.action === "promote"
+          ? t("adminRoleChangeSuccess")
+          : t("adminRoleChangeRemoved"),
+      );
       setRoleTarget(null);
+      setRoleCodeSent(false);
+      setRoleCode("");
+      users.refetch();
     } catch {
       setBusy(false);
       toast.error(null, t("adminRoleChangeFailed"));
@@ -658,16 +693,56 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
         );
       })}
     </ScrollView>
-    <ConfirmDialog
-      visible={!!roleTarget}
-      title={roleTarget?.action === "promote" ? t("adminPromoteTitle") : t("adminDemoteTitle")}
-      message={roleTarget?.action === "promote" ? t("adminPromoteBody") : t("adminDemoteBody")}
-      confirmLabel={t("adminConfirmAction")}
-      cancelLabel={t("cancel")}
-      busy={busy}
-      onConfirm={handleRoleChange}
-      onCancel={() => setRoleTarget(null)}
-    />
+    <Modal visible={!!roleTarget} transparent animationType="fade" onRequestClose={() => { setRoleTarget(null); setRoleCodeSent(false); setRoleCode(""); }}>
+      <Pressable style={styles.backdrop} onPress={() => { setRoleTarget(null); setRoleCodeSent(false); setRoleCode(""); }}>
+        <Pressable style={styles.modalCard} onPress={() => {}}>
+          <Text style={styles.title}>
+            {roleCodeSent
+              ? t("adminRoleChangeEnterCode")
+              : roleTarget?.action === "promote"
+                ? t("adminPromoteTitle")
+                : t("adminDemoteTitle")}
+          </Text>
+          <Text style={styles.message}>
+            {roleCodeSent
+              ? t("adminRoleChangeCodeHint")
+              : roleTarget?.action === "promote"
+                ? t("adminPromoteBody")
+                : t("adminDemoteBody")}
+          </Text>
+          {roleCodeSent && (
+            <TextInput
+              style={styles.codeInput}
+              value={roleCode}
+              onChangeText={setRoleCode}
+              keyboardType="numeric"
+              maxLength={6}
+              placeholder="000000"
+              placeholderTextColor={colors.textSoft}
+              autoFocus
+            />
+          )}
+          <View style={{ flexDirection: "row", gap: 10, marginTop: spacing.lg }}>
+            <Pressable
+              style={{ flex: 1, borderRadius: radius.md, paddingVertical: 12, alignItems: "center", backgroundColor: colors.secondary }}
+              onPress={() => { setRoleTarget(null); setRoleCodeSent(false); setRoleCode(""); }}
+              disabled={busy}
+            >
+              <Text style={{ fontSize: 14, fontWeight: "600", color: colors.text }}>{t("cancel")}</Text>
+            </Pressable>
+            <Pressable
+              style={{ flex: 1, borderRadius: radius.md, paddingVertical: 12, alignItems: "center", backgroundColor: colors.primary, opacity: busy || (roleCodeSent && roleCode.length !== 6) ? 0.5 : 1 }}
+              onPress={roleCodeSent ? handleRoleConfirmCode : handleRoleChange}
+              disabled={busy || (roleCodeSent && roleCode.length !== 6)}
+            >
+              <Text style={{ fontSize: 14, fontWeight: "700", color: colors.onPrimary }}>
+                {busy ? "…" : roleCodeSent ? t("adminRoleChangeConfirmCode") : t("adminRoleChangeSendCode")}
+              </Text>
+            </Pressable>
+          </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
     </>
   );
 }
@@ -1500,4 +1575,33 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   barFill: { height: 7, borderRadius: 4, backgroundColor: colors.primary },
+  backdrop: {
+    flex: 1,
+    backgroundColor: colors.overlay,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: spacing.xl,
+  },
+  modalCard: {
+    width: "100%",
+    maxWidth: 380,
+    backgroundColor: colors.card,
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+    ...shadows.card,
+  },
+  title: { fontSize: 17, fontWeight: "700", color: colors.text },
+  message: { fontSize: 14, color: colors.textMuted, lineHeight: 20, marginTop: 8 },
+  codeInput: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    padding: 14,
+    fontSize: 24,
+    fontWeight: "700",
+    letterSpacing: 12,
+    textAlign: "center",
+    color: colors.text,
+    marginTop: 16,
+  },
 });
