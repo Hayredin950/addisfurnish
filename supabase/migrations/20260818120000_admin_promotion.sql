@@ -71,7 +71,7 @@ ALTER TABLE public.admin_role_requests ENABLE ROW LEVEL SECURITY;
 -- pending request with a one-time token, then emails the ACTING admin a
 -- confirmation link. Returns { ok, error? }.
 CREATE OR REPLACE FUNCTION public.admin_request_role_change(_target_user_id uuid, _action text)
-RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, extensions AS $$
 DECLARE
   _requester uuid := auth.uid();
   _token text;
@@ -170,7 +170,7 @@ GRANT EXECUTE ON FUNCTION public.admin_request_role_change(uuid, text) TO authen
 -- need a session. Applies the change, marks the token used, and emails the
 -- affected user. Returns { ok, action, name, error? }.
 CREATE OR REPLACE FUNCTION public.admin_confirm_role_change(_token text)
-RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = public AS $$
+RETURNS jsonb LANGUAGE plpgsql SECURITY DEFINER SET search_path = public, extensions AS $$
 DECLARE
   _req public.admin_role_requests%ROWTYPE;
   _target_name text;
