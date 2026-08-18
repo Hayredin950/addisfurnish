@@ -589,6 +589,8 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
         ))}
       </View>
 
+      {filtered.length === 0 ? <Text style={styles.muted}>{t("adminNoUsers")}</Text> : null}
+
       {filtered.map((u) => {
         const suspended = !!u.banned_until && new Date(u.banned_until) > new Date();
         const name = u.shop_name ?? u.full_name;
