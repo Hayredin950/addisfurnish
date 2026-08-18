@@ -519,15 +519,6 @@ const en = {
   "admin.roleChangeAlreadyAdmin": "This user is already an admin",
   "admin.roleChangeNotAdmin": "This user is not an admin",
   "admin.superAdminProtected": "The super admin cannot be demoted",
-  // Confirm-role page (backward compat for emailed links)
-  "admin.confirmTitle": "Confirm admin change",
-  "admin.confirmPromoteDone": "{name} is now an admin",
-  "admin.confirmDemoteDone": "{name} is no longer an admin",
-  "admin.confirmInvalid": "This link is invalid.",
-  "admin.confirmUsed": "This link was already used.",
-  "admin.confirmExpired": "This link has expired.",
-  "admin.confirmSuperAdmin": "The super admin cannot be demoted.",
-  "admin.confirmBack": "Back to admin",
   "nav.admin": "Dashboard",
   "verif.becomeSeller": "Become a seller",
   "verif.becomeSellerHint":
@@ -1134,15 +1125,6 @@ const am: Record<keyof Dict, string> = {
   "admin.roleChangeAlreadyAdmin": "ይህ ተጠቃሚ አስቀድሞ አስተዳዳሪ ነው",
   "admin.roleChangeNotAdmin": "ይህ ተጠቃሚ አስተዳዳሪ አይደለም",
   "admin.superAdminProtected": "ዋናው አስተዳዳሪ መወገድ አይችልም",
-  // Confirm-role page (backward compat for emailed links)
-  "admin.confirmTitle": "የአስተዳዳሪ ለውጥ ማረጋገጫ",
-  "admin.confirmPromoteDone": "{name} አሁን አስተዳዳሪ ነው",
-  "admin.confirmDemoteDone": "{name} ከአስተዳዳሪነት ተወግዷል",
-  "admin.confirmInvalid": "ይህ አገናኝ ልክ ያልሆነ ነው።",
-  "admin.confirmUsed": "ይህ አገናኝ ቀድሞ ጥቅም ላይ ውሏል።",
-  "admin.confirmExpired": "ይህ አገናኝ ጊዜው አልፎታል።",
-  "admin.confirmSuperAdmin": "ዋናው አስተዳዳሪ መወገድ አይችልም።",
-  "admin.confirmBack": "ወደ አስተዳዳሪ ተመለስ",
   "nav.admin": "ዳሽቦርድ",
   "verif.becomeSeller": "ሻጭ ይሁኑ",
   "verif.becomeSellerHint":
