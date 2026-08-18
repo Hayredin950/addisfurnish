@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminRouteImport } from './routes/admin'
+import { Route as AdminConfirmRoleRouteImport } from './routes/admin.confirm-role'
 import { Route as AuthRouteImport } from './routes/auth'
 import { Route as BrowseRouteImport } from './routes/browse'
 import { Route as CategoriesRouteImport } from './routes/categories'
@@ -139,6 +140,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
+  '/admin/confirm-role': typeof AdminConfirmRoleRoute
   '/auth': typeof AuthRoute
   '/browse': typeof BrowseRoute
   '/categories': typeof CategoriesRoute
@@ -158,6 +160,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/admin'
+    | '/admin/confirm-role'
     | '/auth'
     | '/browse'
     | '/categories'
@@ -175,6 +178,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/admin'
+    | '/admin/confirm-role'
     | '/auth'
     | '/browse'
     | '/categories'
@@ -192,6 +196,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/admin'
+    | '/admin/confirm-role'
     | '/auth'
     | '/browse'
     | '/categories'
@@ -239,6 +244,13 @@ declare module '@tanstack/react-router' {
       path: '/admin'
       fullPath: '/admin'
       preLoaderRoute: typeof AdminRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin/confirm-role': {
+      id: '/admin/confirm-role'
+      path: '/admin/confirm-role'
+      fullPath: '/admin/confirm-role'
+      preLoaderRoute: typeof AdminConfirmRoleRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/auth': {
@@ -338,6 +350,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRoute,
+  AdminConfirmRoleRoute: AdminConfirmRoleRoute,
   AuthRoute: AuthRoute,
   BrowseRoute: BrowseRoute,
   CategoriesRoute: CategoriesRoute,

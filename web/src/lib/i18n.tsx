@@ -490,6 +490,35 @@ const en = {
   "admin.deleteCategoryTitle": "Delete this category?",
   "admin.deleteCategoryBody":
     "This category has sub-categories — they will be removed too. This cannot be undone.",
+  "admin.makeAdmin": "Make admin",
+  "admin.removeAdmin": "Remove admin",
+  "admin.roleAdmin": "Admin",
+  "admin.roleSuperAdmin": "Super admin",
+  "admin.promoteTitle": "Promote to admin?",
+  "admin.promoteBody":
+    "A confirmation email will be sent to your inbox. The role changes only after you click the link in it. This protects against unauthorized access if someone gains control of your session.",
+  "admin.demoteTitle": "Remove admin access?",
+  "admin.demoteBody":
+    "A confirmation email will be sent to your inbox. The role changes only after you click the link in it. This protects against unauthorized access if someone gains control of your session.",
+  "admin.confirmAction": "Send confirmation email",
+  "admin.cancel": "Cancel",
+  "admin.roleChangeEmailSent": "Check your email to confirm",
+  "admin.roleChangeFailed": "Could not start the role change",
+  "admin.roleChangeNoEmail":
+    "Your account has no email address — add one in your profile settings first.",
+  "admin.roleChangeAlreadyAdmin": "This user is already an admin",
+  "admin.roleChangeNotAdmin": "This user is not an admin",
+  "admin.superAdminProtected": "The super admin cannot be demoted",
+  // Confirm-role page (public — reached from emailed link)
+  "admin.confirmTitle": "Confirm admin change",
+  "admin.confirmPromoteDone": "{name} is now an admin",
+  "admin.confirmDemoteDone": "{name} is no longer an admin",
+  "admin.confirmInvalid": "This link is invalid.",
+  "admin.confirmUsed": "This link was already used.",
+  "admin.confirmExpired":
+    "This link has expired. Go back to the admin page and start a new change.",
+  "admin.confirmSuperAdmin": "The super admin cannot be demoted.",
+  "admin.confirmBack": "Back to admin",
   "nav.admin": "Dashboard",
   "verif.becomeSeller": "Become a seller",
   "verif.becomeSellerHint":
@@ -1067,6 +1096,34 @@ const am: Record<keyof Dict, string> = {
   "admin.deleteListingBody": "ይህ ማስታወቂያውንና ፎቶዎቹን ከገበያ ያስወግዳል። ወደ ኋላ መመለስ አይቻልም።",
   "admin.deleteCategoryTitle": "ይህን ምድብ ይሰርዙ?",
   "admin.deleteCategoryBody": "ይህ ምድብ ንዑስ-ምድቦች አሉት — እነሱም ይወገዳሉ። ወደ ኋላ መመለስ አይቻልም።",
+  "admin.makeAdmin": "አስተዳዳሪ አድርግ",
+  "admin.removeAdmin": "አስተዳዳሪነት አስወግድ",
+  "admin.roleAdmin": "አስተዳዳሪ",
+  "admin.roleSuperAdmin": "ዋና አስተዳዳሪ",
+  "admin.promoteTitle": "ወደ አስተዳዳሪነት ማስተዋወቅ?",
+  "admin.promoteBody":
+    "የማረጋገጫ ኢሜይል ይደርስዎታል። በውስጡ ያለውን አገናኝ ሲጫኑ ብቻ ለውጡ ይተገበራል። መለያዎ የተገለበጠ ሰው ከመቀዛቀዛቸው ይከላከላል።",
+  "admin.demoteTitle": "የአስተዳዳሪነት መዳረሻን ማስወገድ?",
+  "admin.demoteBody":
+    "የማረጋገጫ ኢሜይል ይደርስዎታል። በውስጡ ያለውን አገናኝ ሲጫኑ ብቻ ለውጡ ይተገበራል። መለያዎ የተገለበጠ ሰው ከመቀዛቀዛቸው ይከላከላል።",
+  "admin.confirmAction": "የማረጋገጫ ኢሜይል ላክ",
+  "admin.cancel": "ሰርዝ",
+  "admin.roleChangeEmailSent": "ለማረጋገጥ ኢሜይልዎን ይፈትሹ",
+  "admin.roleChangeFailed": "ለውጡን ማስጀመር አልተቻለም",
+  "admin.roleChangeNoEmail":
+    "መለያዎ ኢሜይል አልባ ነው — ከመረጃ ገጹ በፊት አንድ ያስቀምጡ።",
+  "admin.roleChangeAlreadyAdmin": "ይህ ተጠቃሚ አስቀድሞ አስተዳዳሪ ነው",
+  "admin.roleChangeNotAdmin": "ይህ ተጠቃሚ አስተዳዳሪ አይደለም",
+  "admin.superAdminProtected": "ዋናው አስተዳዳሪ መወገድ አይችልም",
+  "admin.confirmTitle": "የአስተዳዳሪ ለውጥ ማረጋገጫ",
+  "admin.confirmPromoteDone": "{name} አሁን አስተዳዳሪ ነው",
+  "admin.confirmDemoteDone": "{name} ከአስተዳዳሪነት ተወግዷል",
+  "admin.confirmInvalid": "ይህ አገናኝ ልክ ያልሆነ ነው።",
+  "admin.confirmUsed": "ይህ አገናኝ ቀድሞ ጥቅም ላይ ውሏል።",
+  "admin.confirmExpired":
+    "ይህ አገናኝ ጊዜው አልፎታል። ከአስተዳዳሪ ገጹ አዲስ ለውጥ ይጀምሩ።",
+  "admin.confirmSuperAdmin": "ዋናው አስተዳዳሪ መወገድ አይችልም።",
+  "admin.confirmBack": "ወደ አስተዳዳሪ ተመለስ",
   "nav.admin": "ዳሽቦርድ",
   "verif.becomeSeller": "ሻጭ ይሁኑ",
   "verif.becomeSellerHint":

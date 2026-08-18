@@ -714,11 +714,15 @@ export type AdminUser = {
   shop_logo_url: string | null;
   verified: boolean;
   is_seller: boolean;
+  is_super_admin: boolean;
   created_at: string;
   phone: string | null;
   city: string | null;
   banned_until: string | null;
   ban_reason: string | null;
+  // Each user's roles (admin / moderator / user). Readable by admins via the
+  // "admins read all roles" policy; drives the promote/demote toggle.
+  user_roles?: { role: string }[] | null;
 };
 
 /**
@@ -732,7 +736,7 @@ export function adminAllUsersQuery(filter: "all" | "sellers" | "buyers" = "all")
       let query = supabase
         .from("profiles")
         .select(
-          "id,full_name,shop_name,shop_slug,avatar_url,shop_logo_url,verified,is_seller,created_at,phone,city,banned_until,ban_reason",
+          "id,full_name,shop_name,shop_slug,avatar_url,shop_logo_url,verified,is_seller,is_super_admin,created_at,phone,city,banned_until,ban_reason,user_roles(role)",
         )
         .order("created_at", { ascending: false });
       if (filter === "sellers") query = query.eq("is_seller", true);

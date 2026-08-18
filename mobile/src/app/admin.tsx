@@ -23,6 +23,7 @@ import {
   decideDocument,
   deleteCategory,
   deleteListingAdmin,
+  requestRoleChange,
   fetchAdminCategories,
   fetchAdminCategoryCounts,
   fetchAdminListings,
@@ -402,6 +403,11 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
   const [banTarget, setBanTarget] = useState<{ id: string; name: string } | null>(null);
   const [banDuration, setBanDuration] = useState(BAN_OPTIONS[0]!);
   const [banReason, setBanReason] = useState("");
+  const [roleTarget, setRoleTarget] = useState<{
+    id: string;
+    name: string;
+    action: "promote" | "demote";
+  } | null>(null);
   const [busy, setBusy] = useState(false);
 
   const filtered = useMemo(() => {
@@ -454,6 +460,33 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
     }
   };
 
+  const handleRoleChange = async () => {
+    if (!roleTarget) return;
+    setBusy(true);
+    try {
+      const res = await requestRoleChange(roleTarget.id, roleTarget.action);
+      setBusy(false);
+      if (!res.ok) {
+        toast.error(
+          null,
+          res.error === "super_admin"
+            ? t("adminSuperAdminProtected")
+            : res.error === "already_admin"
+              ? t("adminRoleChangeAlreadyAdmin")
+              : res.error === "not_admin"
+                ? t("adminRoleChangeNotAdmin")
+                : t("adminRoleChangeFailed"),
+        );
+        return;
+      }
+      toast.success(t("adminRoleChangeEmailSent"));
+      setRoleTarget(null);
+    } catch {
+      setBusy(false);
+      toast.error(null, t("adminRoleChangeFailed"));
+    }
+  };
+
   if (users.loading && !users.data) {
     return (
       <View style={styles.center}>
@@ -463,6 +496,7 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
   }
 
   return (
+    <>
     <ScrollView contentContainerStyle={{ padding: spacing.lg, gap: 12 }}>
       <View style={styles.searchRow}>
         <View style={styles.searchBox}>
@@ -500,6 +534,13 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
                 {name}
               </Text>
               {u.verified ? <Ionicons name="checkmark-circle" size={16} color={colors.success} /> : null}
+              {(u.user_roles ?? []).some((r: { role: string }) => r.role === "admin") ? (
+                <View style={[styles.chip, { backgroundColor: colors.primary + "20" }]}>
+                  <Text style={[styles.chipText, { color: colors.primary, fontSize: 10, fontWeight: "600" }]}>
+                    {u.is_super_admin ? t("adminRoleSuperAdmin") : t("adminRoleAdmin")}
+                  </Text>
+                </View>
+              ) : null}
             </View>
             <Text style={styles.muted}>
               {u.phone ?? "—"} · {u.city ?? "—"} · {timeAgo(u.created_at)}
@@ -572,6 +613,24 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
                   onPress={() => revoke(u.id)}
                   style={{ flex: 1 }}
                 />
+                {!u.is_super_admin && (u.user_roles ?? []).some((r: { role: string }) => r.role === "admin") ? (
+                  <Button
+                    title={t("adminRemoveAdmin")}
+                    variant="outline"
+                    size="sm"
+                    onPress={() => setRoleTarget({ id: u.id, name, action: "demote" })}
+                    style={{ flex: 1 }}
+                  />
+                ) : null}
+                {!u.is_super_admin && !(u.user_roles ?? []).some((r: { role: string }) => r.role === "admin") ? (
+                  <Button
+                    title={t("adminMakeAdmin")}
+                    variant="outline"
+                    size="sm"
+                    onPress={() => setRoleTarget({ id: u.id, name, action: "promote" })}
+                    style={{ flex: 1 }}
+                  />
+                ) : null}
                 {suspended ? (
                   <Button
                     title={t("adminUnban")}
@@ -599,6 +658,17 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
         );
       })}
     </ScrollView>
+    <ConfirmDialog
+      visible={!!roleTarget}
+      title={roleTarget?.action === "promote" ? t("adminPromoteTitle") : t("adminDemoteTitle")}
+      message={roleTarget?.action === "promote" ? t("adminPromoteBody") : t("adminDemoteBody")}
+      confirmLabel={t("adminConfirmAction")}
+      cancelLabel={t("cancel")}
+      busy={busy}
+      onConfirm={handleRoleChange}
+      onCancel={() => setRoleTarget(null)}
+    />
+    </>
   );
 }
 

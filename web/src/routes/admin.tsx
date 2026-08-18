@@ -238,6 +238,11 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
   const [search, setSearch] = useState("");
   const { data: users } = useQuery(adminAllUsersQuery(filter));
   const [banTarget, setBanTarget] = useState<{ id: string; name: string } | null>(null);
+  const [roleTarget, setRoleTarget] = useState<{
+    id: string;
+    name: string;
+    action: "promote" | "demote";
+  } | null>(null);
   const [busy, setBusy] = useState(false);
 
   const term = search.trim().toLowerCase();
@@ -280,6 +285,36 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
       return;
     }
     toast.success(t("admin.sessionsRevoked"));
+  };
+
+  // Promote / demote: the change is NOT applied here — the acting admin
+  // receives an email with a one-time confirmation link, and the role only
+  // flips after they click it (a stolen logged-in machine can't promote).
+  const requestRoleChange = async () => {
+    if (!roleTarget) return;
+    setBusy(true);
+    const { data, error } = await supabase.rpc("admin_request_role_change", {
+      _target_user_id: roleTarget.id,
+      _action: roleTarget.action,
+    });
+    setBusy(false);
+    if (error || !(data as { ok?: boolean } | null)?.ok) {
+      const err = (data as { error?: string } | null)?.error ?? error?.message;
+      toast.error(
+        err === "super_admin"
+          ? t("admin.superAdminProtected")
+          : err === "no_email"
+            ? t("admin.roleChangeNoEmail")
+            : err === "already_admin"
+              ? t("admin.roleChangeAlreadyAdmin")
+              : err === "not_admin"
+                ? t("admin.roleChangeNotAdmin")
+                : t("admin.roleChangeFailed"),
+      );
+      return;
+    }
+    toast.success(t("admin.roleChangeEmailSent"));
+    setRoleTarget(null);
   };
 
   return (
@@ -325,9 +360,15 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
                     <p className="flex items-center gap-1.5 truncate text-sm font-medium">
                       {name}
                       {u.verified ? <BadgeCheck className="h-3.5 w-3.5 text-primary" /> : null}
-                      <span className="rounded-full bg-secondary px-1.5 py-0.5 text-[10px] font-normal text-muted-foreground">
-                        {u.is_seller ? t("admin.roleSeller") : t("admin.roleBuyer")}
-                      </span>
+                      {(u.user_roles ?? []).some((r: { role: string }) => r.role === "admin") ? (
+                        <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary">
+                          {u.is_super_admin ? t("admin.roleSuperAdmin") : t("admin.roleAdmin")}
+                        </span>
+                      ) : (
+                        <span className="rounded-full bg-secondary px-1.5 py-0.5 text-[10px] font-normal text-muted-foreground">
+                          {u.is_seller ? t("admin.roleSeller") : t("admin.roleBuyer")}
+                        </span>
+                      )}
                     </p>
                     <p className="truncate text-xs text-muted-foreground">
                       {u.phone ?? "—"} · {u.city ?? "—"} · {timeAgo(u.created_at)}
@@ -354,6 +395,25 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
                   <Button size="sm" variant="outline" onClick={() => revoke(u.id)}>
                     <LogOut className="mr-1.5 h-3.5 w-3.5" /> {t("admin.revokeSessions")}
                   </Button>
+                  {/* Promote / demote admin — the change requires email confirmation. */}
+                  {!u.is_super_admin && (u.user_roles ?? []).some((r: { role: string }) => r.role === "admin") ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setRoleTarget({ id: u.id, name, action: "demote" })}
+                    >
+                      <Mail className="mr-1.5 h-3.5 w-3.5" /> {t("admin.removeAdmin")}
+                    </Button>
+                  ) : null}
+                  {!u.is_super_admin && !(u.user_roles ?? []).some((r: { role: string }) => r.role === "admin") ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setRoleTarget({ id: u.id, name, action: "promote" })}
+                    >
+                      <Mail className="mr-1.5 h-3.5 w-3.5" /> {t("admin.makeAdmin")}
+                    </Button>
+                  ) : null}
                   {/* Only ONE of suspend / lift-suspend per user — a suspended
                       account shows "Lift suspension", an active one shows
                       "Suspend". (The profiles mirror is written by the same
@@ -389,6 +449,29 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
         onConfirm={confirmBan}
         subjectName={banTarget?.name ?? ""}
         pending={busy}
+      />
+
+      {/* Confirm dialog for admin promote/demote — the action requires
+          email verification, so the dialog explains that before firing. */}
+      <ConfirmDialog
+        open={!!roleTarget}
+        onOpenChange={(open) => {
+          if (!open) setRoleTarget(null);
+        }}
+        title={
+          roleTarget?.action === "promote"
+            ? t("admin.promoteTitle")
+            : t("admin.demoteTitle")
+        }
+        description={
+          roleTarget?.action === "promote"
+            ? t("admin.promoteBody")
+            : t("admin.demoteBody")
+        }
+        confirmLabel={t("admin.confirmAction")}
+        cancelLabel={t("admin.cancel")}
+        pending={busy}
+        onConfirm={requestRoleChange}
       />
     </>
   );

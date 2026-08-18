@@ -8,6 +8,54 @@ export type Database = {
   };
   public: {
     Tables: {
+      admin_role_requests: {
+        Row: {
+          action: string;
+          created_at: string;
+          expires_at: string;
+          id: string;
+          requester_id: string;
+          target_user_id: string;
+          token: string;
+          used_at: string | null;
+        };
+        Insert: {
+          action: string;
+          created_at?: string;
+          expires_at: string;
+          id?: string;
+          requester_id: string;
+          target_user_id: string;
+          token: string;
+          used_at?: string | null;
+        };
+        Update: {
+          action?: string;
+          created_at?: string;
+          expires_at?: string;
+          id?: string;
+          requester_id?: string;
+          target_user_id?: string;
+          token?: string;
+          used_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "admin_role_requests_requester_id_fkey";
+            columns: ["requester_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "admin_role_requests_target_user_id_fkey";
+            columns: ["target_user_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       analytics_events: {
         Row: {
           id: string;
@@ -406,6 +454,7 @@ export type Database = {
           id: string;
           is_online: boolean;
           is_seller: boolean;
+          is_super_admin: boolean;
           last_seen: string;
           latitude: number | null;
           longitude: number | null;
@@ -444,6 +493,7 @@ export type Database = {
           id: string;
           is_online?: boolean;
           is_seller?: boolean;
+          is_super_admin?: boolean;
           last_seen?: string;
           latitude?: number | null;
           longitude?: number | null;
@@ -482,6 +532,7 @@ export type Database = {
           id?: string;
           is_online?: boolean;
           is_seller?: boolean;
+          is_super_admin?: boolean;
           last_seen?: string;
           latitude?: number | null;
           longitude?: number | null;
@@ -1125,7 +1176,15 @@ export type Database = {
           role?: Database["public"]["Enums"]["app_role"];
           user_id?: string;
         };
-        Relationships: [];
+        Relationships: [
+          {
+            foreignKeyName: "user_roles_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
       };
     };
     Views: {
@@ -1154,6 +1213,14 @@ export type Database = {
           _payload?: Json;
         };
         Returns: undefined;
+      };
+      admin_request_role_change: {
+        Args: { _target_user_id: string; _action: string };
+        Returns: Json;
+      };
+      admin_confirm_role_change: {
+        Args: { _token: string };
+        Returns: Json;
       };
       admin_revoke_sessions: {
         Args: { _user_id: string };

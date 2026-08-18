@@ -201,22 +201,41 @@ export type AdminUser = {
   shop_logo_url: string | null;
   verified: boolean;
   is_seller: boolean;
+  is_super_admin: boolean;
   created_at: string;
   phone: string | null;
   city: string | null;
   banned_until: string | null;
   ban_reason: string | null;
+  user_roles?: { role: string }[] | null;
 };
 
 export async function fetchAdminUsers(): Promise<AdminUser[]> {
   const { data, error } = await supabase
     .from("profiles")
     .select(
-      "id,full_name,shop_name,shop_slug,avatar_url,shop_logo_url,verified,is_seller,created_at,phone,city,banned_until,ban_reason",
+      "id,full_name,shop_name,shop_slug,avatar_url,shop_logo_url,verified,is_seller,is_super_admin,created_at,phone,city,banned_until,ban_reason,user_roles(role)",
     )
     .order("created_at", { ascending: false });
   if (error) throw error;
   return (data ?? []) as AdminUser[];
+}
+
+/**
+ * Request a role change (promote / demote). The change is NOT applied
+ * immediately — a confirmation email goes to the acting admin with a
+ * one-time link, and the role only flips after they click it.
+ */
+export async function requestRoleChange(
+  targetUserId: string,
+  action: "promote" | "demote",
+): Promise<{ ok: boolean; error?: string }> {
+  const { data, error } = await supabase.rpc("admin_request_role_change", {
+    _target_user_id: targetUserId,
+    _action: action,
+  });
+  if (error) return { ok: false, error: error.message };
+  return (data ?? { ok: false, error: "unknown" }) as { ok: boolean; error?: string };
 }
 
 /** Log the user out of every device (deletes sessions + refresh tokens). */
