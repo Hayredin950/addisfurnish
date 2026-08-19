@@ -466,8 +466,8 @@ export async function fetchAdminStats(): Promise<AdminStats> {
       .from("profiles")
       .select("id", { count: "exact", head: true })
       .eq("telegram_blocked", true),
-    supabase.from("telegram_channel_posts").select("id", { count: "exact", head: true }),
-    supabase.from("telegram_processed_updates").select("id", { count: "exact", head: true }),
+    supabase.from("telegram_channel_posts").select("listing_id", { count: "exact", head: true }),
+    supabase.from("telegram_processed_updates").select("update_id", { count: "exact", head: true }),
   ]);
   const totalViews = (views.data ?? []).reduce(
     (sum: number, l: { view_count: number }) => sum + (l.view_count ?? 0),
