@@ -24,10 +24,10 @@ import { Link } from "@tanstack/react-router";
 export const Route = createFileRoute("/shop/$slug")({
   head: () => ({
     meta: [
-      { title: "Furniture Shop — AddisFurnish" },
+      { title: "Furniture Shop — HabeshaHome" },
       { name: "description", content: "Browse every item this seller currently has for sale." },
-      { property: "og:title", content: "Furniture Shop — AddisFurnish" },
-      { property: "og:description", content: "A verified used-furniture shop on AddisFurnish." },
+      { property: "og:title", content: "Furniture Shop — HabeshaHome" },
+      { property: "og:description", content: "A verified used-furniture shop on HabeshaHome." },
     ],
   }),
   component: Shop,

@@ -17,10 +17,10 @@ import { Input } from "@/components/ui/input";
 export const Route = createFileRoute("/messages")({
   head: () => ({
     meta: [
-      { title: "Messages — AddisFurnish" },
+      { title: "Messages — HabeshaHome" },
       { name: "description", content: "Chat with buyers and sellers about furniture listings." },
-      { property: "og:title", content: "Messages — AddisFurnish" },
-      { property: "og:description", content: "Your AddisFurnish conversations." },
+      { property: "og:title", content: "Messages — HabeshaHome" },
+      { property: "og:description", content: "Your HabeshaHome conversations." },
     ],
   }),
   component: () => (

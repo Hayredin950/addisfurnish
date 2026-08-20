@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Addisfurnish</string>
+	<string>HabeshaHome</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -15,7 +15,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>addisfurnish</string>
+	<string>HabeshaHome</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleURLTypes</key>
@@ -40,9 +40,9 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>AddisFurnish uses the camera to let you take photos of furniture you want to sell or update your profile.</string>
+	<string>HabeshaHome uses the camera to let you take photos of furniture you want to sell or update your profile.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
-	<string>AddisFurnish accesses your photo library so you can upload photos of your furniture.</string>
+	<string>HabeshaHome accesses your photo library so you can upload photos of your furniture.</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

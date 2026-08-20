@@ -1,6 +1,6 @@
 import 'dart:ui';
 
-/// AddisFurnish design tokens.
+/// HabeshaHome design tokens.
 ///
 /// Mirrors `web/src/styles.css` — warm, crafted: cream paper, walnut ink,
 /// terracotta accent. Values converted from OKLCH to sRGB hex.

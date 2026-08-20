@@ -80,12 +80,12 @@ async function ensureConversation(
 export const Route = createFileRoute("/listing/$id")({
   head: () => ({
     meta: [
-      { title: "Furniture Listing — AddisFurnish" },
+      { title: "Furniture Listing — HabeshaHome" },
       {
         name: "description",
         content: "View photos, price history, condition details and contact the seller directly.",
       },
-      { property: "og:title", content: "Furniture Listing — AddisFurnish" },
+      { property: "og:title", content: "Furniture Listing — HabeshaHome" },
       { property: "og:description", content: "Second-hand furniture for sale in Ethiopia." },
     ],
   }),
@@ -386,7 +386,7 @@ function ListingDetail() {
   const online = seller ? seller.is_online || isOnlineNow(seller.last_seen) : false;
   const waLink = seller?.whatsapp
     ? `https://wa.me/${seller.whatsapp.replace(/\D/g, "")}?text=${encodeURIComponent(
-        `Hi, I'm interested in "${listing.title}" on AddisFurnish`,
+        `Hi, I'm interested in "${listing.title}" on HabeshaHome`,
       )}`
     : null;
   const tgLink = seller?.telegram ? `https://t.me/${seller.telegram.replace(/^@/, "")}` : null;

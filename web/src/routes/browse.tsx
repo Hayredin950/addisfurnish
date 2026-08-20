@@ -68,13 +68,13 @@ export const Route = createFileRoute("/browse")({
   }),
   head: () => ({
     meta: [
-      { title: "Browse Used Furniture — AddisFurnish" },
+      { title: "Browse Used Furniture — HabeshaHome" },
       {
         name: "description",
         content:
           "Search second-hand furniture by category, price, condition, material and city across Ethiopia.",
       },
-      { property: "og:title", content: "Browse Used Furniture — AddisFurnish" },
+      { property: "og:title", content: "Browse Used Furniture — HabeshaHome" },
       {
         property: "og:description",
         content: "Filter thousands of pre-owned furniture listings by price, room and condition.",

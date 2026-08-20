@@ -6,7 +6,7 @@ class I18n {
   I18n._();
 
   static const Map<String, String> en = {
-    'app.name': 'AddisFurnish',
+    'app.name': 'HabeshaHome',
     'app.tagline':
         "Ethiopia's marketplace for quality second-hand furniture. Free to browse, free to list.",
 
@@ -142,7 +142,7 @@ class I18n {
     'shop.notFound': 'Shop not found',
     'shop.reviewCount': '{count} reviews',
 
-    'auth.title': 'Welcome to AddisFurnish',
+    'auth.title': 'Welcome to HabeshaHome',
     'auth.subtitle': 'One account to buy, sell and message.',
     'auth.google': 'Continue with Google',
     'auth.phoneTab': 'Phone',
@@ -187,7 +187,7 @@ class I18n {
     'auth.backToSignIn': 'Back to sign in',
 
     'setup.title': 'Set up your profile',
-    'setup.subtitle': 'Four quick steps to get the most out of AddisFurnish.',
+    'setup.subtitle': 'Four quick steps to get the most out of HabeshaHome.',
     'setup.step': 'Step',
     'setup.basics': 'Basic info',
     'setup.basicsHint': 'Who you are — name, city, and a phone buyers can reach you on.',
@@ -500,7 +500,7 @@ class I18n {
     'safetyCheckBody': 'Look for the verified badge — it means the shop uploaded valid documents.',
     'safetyReportTitle': 'Report suspicious activity',
     'safetyReportBody': 'If something feels off, use the report button. We review every case.',
-    'safetySellerNote': 'Sellers: never share your OTP or passwords. AddisFurnish will never ask for them.',
+    'safetySellerNote': 'Sellers: never share your OTP or passwords. HabeshaHome will never ask for them.',
 
     // Map
     'dragPinHint': 'Tap or drag the pin to set the location',
@@ -692,7 +692,7 @@ class I18n {
     'auth.backToSignIn': 'ወደ መግቢያ ተመለስ',
 
     'setup.title': 'መገለጫዎን ያዘጋጁ',
-    'setup.subtitle': 'ከAddisFurnish ምርጥ ተጠቃሚ ለመሆን 4 ፈጣን ደረጃዎች።',
+    'setup.subtitle': 'ከHabeshaHome ምርጥ ተጠቃሚ ለመሆን 4 ፈጣን ደረጃዎች።',
     'setup.step': 'ደረጃ',
     'setup.basics': 'መሰረታዊ መረጃ',
     'setup.basicsHint': 'እርስዎ ማን እንደሆኑ — ስም፣ ከተማ እና ገዢዎች ሊደርሱበት የሚችሉት ስልክ።',
@@ -1004,7 +1004,7 @@ class I18n {
     'safetyCheckBody': 'የተረጋገጠ ምልክት ያለው ሱቅ ትክክለኛ ሰነዶች ያስገባ ማለት ነው።',
     'safetyReportTitle': 'አጠራጣሪ እንቅስቃሴ ያሳውቁ',
     'safetyReportBody': 'ነገሮች ስህተት ከተሰማዎት የሪፖርት ቁልፉን ይጠቀሙ።',
-    'safetySellerNote': 'ሻጮች፡ ኦቲፒ ወይም የይለፍ ቃላትዎን ፈጽሞ አያጋሩ። AddisFurnish ፈጽሞ አይጠይቃቸውም።',
+    'safetySellerNote': 'ሻጮች፡ ኦቲፒ ወይም የይለፍ ቃላትዎን ፈጽሞ አያጋሩ። HabeshaHome ፈጽሞ አይጠይቃቸውም።',
 
     // Map
     'dragPinHint': 'ቦታ ለማስቀመጥ ፒኑን ይንኩ ወይም ያንቀሳቅሱት',

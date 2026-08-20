@@ -28,13 +28,13 @@ import { categoryIcon } from "@/lib/category-icons";
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title: "AddisFurnish — Buy & Sell Used Furniture in Ethiopia" },
+      { title: "HabeshaHome — Buy & Sell Used Furniture in Ethiopia" },
       {
         name: "description",
         content:
           "Browse thousands of second-hand sofas, beds, desks and dining sets from trusted shops across Addis Ababa. Free to list, free to message.",
       },
-      { property: "og:title", content: "AddisFurnish — Buy & Sell Used Furniture in Ethiopia" },
+      { property: "og:title", content: "HabeshaHome — Buy & Sell Used Furniture in Ethiopia" },
       {
         property: "og:description",
         content:

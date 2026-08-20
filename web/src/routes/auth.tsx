@@ -12,14 +12,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 export const Route = createFileRoute("/auth")({
   head: () => ({
     meta: [
-      { title: "Sign In or Create an Account — AddisFurnish" },
+      { title: "Sign In or Create an Account — HabeshaHome" },
       {
         name: "description",
         content:
-          "Sign in with your email or Google to message sellers, save favourites and post your own used furniture listings on AddisFurnish.",
+          "Sign in with your email or Google to message sellers, save favourites and post your own used furniture listings on HabeshaHome.",
       },
-      { property: "og:title", content: "Sign In — AddisFurnish" },
-      { property: "og:description", content: "Access your AddisFurnish buyer and seller tools." },
+      { property: "og:title", content: "Sign In — HabeshaHome" },
+      { property: "og:description", content: "Access your HabeshaHome buyer and seller tools." },
     ],
   }),
   component: AuthPage,

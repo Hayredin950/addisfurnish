@@ -1,6 +1,6 @@
-# AddisFurnish Mobile (Flutter)
+# HabeshaHome Mobile (Flutter)
 
-The official Flutter mobile app for the AddisFurnish used-furniture marketplace —
+The official Flutter mobile app for the HabeshaHome used-furniture marketplace —
 the same Supabase backend as the web app and the React Native app, with
 phone-first login, realtime chat, GPS "near me" browsing, camera-first listing
 and in-app notifications.

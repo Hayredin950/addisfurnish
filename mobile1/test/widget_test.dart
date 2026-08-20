@@ -5,7 +5,7 @@ import 'package:addisfurnish/app.dart';
 
 void main() {
   testWidgets('app builds without Supabase configured', (tester) async {
-    await tester.pumpWidget(const AddisFurnishApp());
+    await tester.pumpWidget(const HabeshaHomeApp());
     await tester.pump();
     expect(find.byType(Scaffold), findsWidgets);
   });

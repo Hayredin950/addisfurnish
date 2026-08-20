@@ -1,6 +1,6 @@
-# AddisFurnish Web
+# HabeshaHome Web
 
-The web marketplace for AddisFurnish — React + TanStack Start (SSR) + Vite, with
+The web marketplace for HabeshaHome — React + TanStack Start (SSR) + Vite, with
 Tailwind + shadcn/ui components and a Supabase backend shared with the
 `mobile/` app.
 

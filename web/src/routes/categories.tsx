@@ -20,16 +20,16 @@ const BROWSE_DEFAULTS = {
 export const Route = createFileRoute("/categories")({
   head: () => ({
     meta: [
-      { title: "Furniture Categories — AddisFurnish" },
+      { title: "Furniture Categories — HabeshaHome" },
       {
         name: "description",
         content:
           "Browse used furniture by room and type: living room sofas, bedroom wardrobes, office desks, dining sets, outdoor and storage.",
       },
-      { property: "og:title", content: "Furniture Categories — AddisFurnish" },
+      { property: "og:title", content: "Furniture Categories — HabeshaHome" },
       {
         property: "og:description",
-        content: "Every room and furniture type available on AddisFurnish.",
+        content: "Every room and furniture type available on HabeshaHome.",
       },
     ],
   }),

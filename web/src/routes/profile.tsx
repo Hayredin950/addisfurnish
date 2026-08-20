@@ -41,10 +41,10 @@ export const Route = createFileRoute("/profile")({
   },
   head: () => ({
     meta: [
-      { title: "Your Profile & Shop — AddisFurnish" },
+      { title: "Your Profile & Shop — HabeshaHome" },
       { name: "description", content: "Update your contact details and shop information." },
-      { property: "og:title", content: "Your Profile — AddisFurnish" },
-      { property: "og:description", content: "Manage your AddisFurnish account and shop page." },
+      { property: "og:title", content: "Your Profile — HabeshaHome" },
+      { property: "og:description", content: "Manage your HabeshaHome account and shop page." },
     ],
   }),
   component: () => (

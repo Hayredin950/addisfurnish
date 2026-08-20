@@ -30,7 +30,7 @@ class PushService {
   static final PushService instance = PushService._();
 
   static const _channelId = 'default';
-  static const _channelName = 'AddisFurnish';
+  static const _channelName = 'HabeshaHome';
 
   final FlutterLocalNotificationsPlugin _local =
       FlutterLocalNotificationsPlugin();
@@ -196,7 +196,7 @@ class PushService {
       const android = AndroidNotificationDetails(
         _channelId,
         _channelName,
-        channelDescription: 'AddisFurnish notifications',
+        channelDescription: 'HabeshaHome notifications',
         importance: Importance.max,
         priority: Priority.high,
       );
@@ -239,7 +239,7 @@ class PushService {
       case 'seller_rejected':
         return 'Verification needs changes';
       default:
-        return 'AddisFurnish';
+        return 'HabeshaHome';
     }
   }
 

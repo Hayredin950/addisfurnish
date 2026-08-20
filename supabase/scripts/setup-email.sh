@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# setup-email.sh — one-shot configuration of AddisFurnish auth email delivery.
+# setup-email.sh — one-shot configuration of HabeshaHome auth email delivery.
 #
 # This wires up everything that was previously done by hand (and which took a
 # long time to get right): Brevo SMTP credentials as project secrets, token-only
@@ -30,7 +30,7 @@
 #   BREVO_SMTP_HOST         default smtp-relay.brevo.com
 #   BREVO_SMTP_PORT         default 465
 #   BREVO_SENDER            default sadim9812@gmail.com (must be verified in Brevo)
-#   BREVO_SENDER_NAME       default AddisFurnish
+#   BREVO_SENDER_NAME       default HabeshaHome
 #   OTP_LENGTH              default 6 (must match the app's code inputs)
 #   EMAIL_RATE_LIMIT        default 300 (per-window auth email allowance)
 
@@ -47,7 +47,7 @@ FUNCTION_FILE="$SCRIPT_DIR/../functions/send-mail/index.ts"
 HOST="${BREVO_SMTP_HOST:-smtp-relay.brevo.com}"
 PORT="${BREVO_SMTP_PORT:-465}"
 SENDER="${BREVO_SENDER:-sadim9812@gmail.com}"
-SENDER_NAME="${BREVO_SENDER_NAME:-AddisFurnish}"
+SENDER_NAME="${BREVO_SENDER_NAME:-HabeshaHome}"
 OTP_LENGTH="${OTP_LENGTH:-6}"
 RATE_LIMIT="${EMAIL_RATE_LIMIT:-300}"
 
@@ -93,7 +93,7 @@ recovery = ('<h2>Password Reset</h2>'
 print(json.dumps({
     "mailer_templates_confirmation_content": confirmation,
     "mailer_templates_recovery_content": recovery,
-    "mailer_subjects_confirmation": "Verify your email for AddisFurnish",
+    "mailer_subjects_confirmation": "Verify your email for HabeshaHome",
     "mailer_subjects_recovery": "Reset Your Password",
     "mailer_otp_length": int(otp_len),
     "rate_limit_email_sent": int(rate),

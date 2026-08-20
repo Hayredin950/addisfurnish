@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 
 /**
- * EAS project id for AddisFurnish (mobile/app.json → extra.eas.projectId).
+ * EAS project id for HabeshaHome (mobile/app.json → extra.eas.projectId).
  * The app moved from the old account (hayredins-team) to yunus750s-team
  * (commit 74a446f); the banner must point at the new project.
  */

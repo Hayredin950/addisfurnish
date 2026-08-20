@@ -3,7 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 
 import 'colors.dart';
 
-/// Builds the AddisFurnish theme. Cream paper / walnut ink / terracotta —
+/// Builds the HabeshaHome theme. Cream paper / walnut ink / terracotta —
 /// mirrors `web/src/styles.css` with Fraunces (display serif) + DM Sans.
 class AppTheme {
   AppTheme._();

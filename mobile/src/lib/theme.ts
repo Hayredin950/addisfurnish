@@ -1,5 +1,5 @@
 /**
- * AddisFurnish design tokens — matches the web app palette exactly (terracotta
+ * HabeshaHome design tokens — matches the web app palette exactly (terracotta
  * #AC451B primary on warm cream #F5EEE2), so both apps share the same brand.
  */
 export const colors = {

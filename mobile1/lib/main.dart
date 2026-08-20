@@ -8,5 +8,5 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await AppState.instance.init();
   await setupLocator();
-  runApp(const AddisFurnishApp());
+  runApp(const HabeshaHomeApp());
 }

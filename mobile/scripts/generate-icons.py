@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regenerates the AddisFurnish mobile brand assets into assets/images/.
+"""Regenerates the HabeshaHome mobile brand assets into assets/images/.
 
 The single source of truth is the web app's apple-touch-icon.png — the real
 logo (cream tile #F5EEE2 with the terracotta #E14C25 "sofa under a roof"

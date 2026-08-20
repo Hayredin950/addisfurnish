@@ -386,7 +386,7 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> with AppState
     if (listing == null) return;
     await Share.share(
       '${listing.title}\n${Fmt.birr(listing.price)}\n'
-      'Check it out on AddisFurnish!',
+      'Check it out on HabeshaHome!',
     );
   }
 

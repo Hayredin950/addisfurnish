@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "AddisFurnish",
+    "name": "HabeshaHome",
     "slug": "addisfurnish",
     "version": "1.1.0",
     "orientation": "portrait",
@@ -11,9 +11,9 @@
       "supportsTablet": true,
       "bundleIdentifier": "com.addisfurnish.app",
       "infoPlist": {
-        "NSCameraUsageDescription": "AddisFurnish uses the camera to take photos of the furniture you want to sell.",
-        "NSPhotoLibraryUsageDescription": "AddisFurnish accesses your photos so you can add pictures to your furniture listings.",
-        "NSLocationWhenInUseUsageDescription": "AddisFurnish uses your location to find furniture listings near you."
+        "NSCameraUsageDescription": "HabeshaHome uses the camera to take photos of the furniture you want to sell.",
+        "NSPhotoLibraryUsageDescription": "HabeshaHome accesses your photos so you can add pictures to your furniture listings.",
+        "NSLocationWhenInUseUsageDescription": "HabeshaHome uses your location to find furniture listings near you."
       }
     },
     "android": {
@@ -54,7 +54,7 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Allow AddisFurnish to access your photos so you can list your furniture."
+          "photosPermission": "Allow HabeshaHome to access your photos so you can list your furniture."
         }
       ],
       [
@@ -68,7 +68,7 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Allow AddisFurnish to use your location to find furniture near you."
+          "locationWhenInUsePermission": "Allow HabeshaHome to use your location to find furniture near you."
         }
       ]
     ],
