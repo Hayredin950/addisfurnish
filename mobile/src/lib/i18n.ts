@@ -116,6 +116,8 @@ const dict = {
     listFurniture: "List your furniture",
     publish: "Publish listing",
     publishing: "Publishing…",
+    saveDraft: "Save as Draft",
+    draftSaved: "Draft saved!",
     titleRequired: "Title is required",
     priceRequired: "Enter a price",
     published: "Your listing is live!",
@@ -225,6 +227,7 @@ const dict = {
     notifOpenShop: "Open shop",
     // Chat
     msgWrite: "Write a message…",
+    imageAttached: "Image attached",
     msgEdited: "edited",
     msgDeleted: "This message was deleted",
     msgEdit: "Edit",
@@ -666,6 +669,8 @@ const dict = {
     listFurniture: "የቤት እቃዎን ይዘርዝሩ",
     publish: "ማስታወቂያ ያትሙ",
     publishing: "በመታተም ላይ…",
+    saveDraft: ">Draft አስቀምጥ",
+    draftSaved: "Draft ተቀምጧል!",
     titleRequired: "ርዕስ ያስፈልጋል",
     priceRequired: "ዋጋ ያስገቡ",
     published: "ማስታወቂያዎ ተለጠፈ!",
@@ -774,6 +779,7 @@ const dict = {
     notifOpenShop: "ሱቅ ይክፈቱ",
     // Chat
     msgWrite: "መልዕክት ይጻፉ…",
+    imageAttached: "ምስል ተያይዟል",
     msgEdited: "ተስተካክሏል",
     msgDeleted: "ይህ መልዕክት ተሰርዟል",
     msgEdit: "አስተካክል",

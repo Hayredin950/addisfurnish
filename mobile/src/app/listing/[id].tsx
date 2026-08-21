@@ -413,8 +413,7 @@ export default function ListingDetailScreen() {
                 // Attributed link + a concise visual message (spec §4). The
                 // OS sheet handles Telegram / WhatsApp / copy automatically.
                 void Share.share({
-                  message: `${item.title} — ${formatBirr(item.price)} on AddisHome`,
-                  url: shareUrl(item.id, "mobile"),
+                  message: `${item.title} — ${formatBirr(item.price)} on AddisHome\n\n${shareUrl(item.id, "mobile")}`,
                 });
                 void trackShare("mobile", item.id);
               } catch {

@@ -425,10 +425,20 @@ export async function ensureConversation(
   return data.id;
 }
 
-export async function sendMessage(conversationId: string, senderId: string, body: string) {
+export async function sendMessage(
+  conversationId: string,
+  senderId: string,
+  body: string,
+  imageUrl?: string | null,
+) {
   const { error } = await supabase
     .from("messages")
-    .insert({ conversation_id: conversationId, sender_id: senderId, body });
+    .insert({
+      conversation_id: conversationId,
+      sender_id: senderId,
+      body,
+      image_url: imageUrl ?? null,
+    });
   if (error) throw error;
 }
 
@@ -1077,7 +1087,9 @@ export async function createListing(input: {
   longitude: number | null;
   imagePaths: string[];
   videoUrl?: string | null;
+  status?: "active" | "draft";
 }): Promise<string> {
+  const listingStatus = input.status ?? "active";
   const { data, error } = await supabase
     .from("listings")
     .insert({
@@ -1101,6 +1113,7 @@ export async function createListing(input: {
       latitude: input.latitude,
       longitude: input.longitude,
       video_url: input.videoUrl ?? null,
+      status: listingStatus,
     })
     .select("id")
     .single();
@@ -1113,8 +1126,8 @@ export async function createListing(input: {
     if (imgError) throw imgError;
   }
   // Announce only after the images exist — the channel post uses the first one
-  // as its cover photo.
-  announceListing(data.id);
+  // as its cover photo. Drafts are not announced.
+  if (listingStatus === "active") announceListing(data.id);
   return data.id;
 }
 

@@ -352,6 +352,95 @@ export default function SellScreen() {
     }
   };
 
+  const saveDraft = async () => {
+    if (!user || !profile?.is_seller) return;
+    if (!title.trim()) {
+      toast.error(null, t("titleRequired"));
+      return;
+    }
+    const priceNum = Number(price);
+    if (!priceNum || priceNum <= 0) {
+      toast.error(null, t("priceRequired"));
+      return;
+    }
+    setPublishing(true);
+    try {
+      const newPaths = await Promise.all(
+        photos
+          .filter((p) => !p.isExisting)
+          .map((p) => uploadListingImage(user.id, p)),
+      );
+      const finalUrls = photos.map((p) => (p.isExisting ? p.uri : newPaths.shift()!));
+      let videoUrl: string | null = null;
+      if (video) {
+        videoUrl = video.isExisting ? video.uri : await uploadListingVideo(user.id, video);
+      }
+      const discountExpiresAt = discountDate;
+      const patch = {
+        title: title.trim(),
+        description: desc.trim(),
+        price: priceNum,
+        original_price: originalPrice ? Number(originalPrice) : null,
+        negotiable,
+        condition,
+        material: material.trim() || null,
+        color: color.trim() || null,
+        room_type: roomType,
+        brand: brand.trim() || null,
+        city,
+        sub_city: subCity.trim() || null,
+        category_id: categoryId ?? rootCategoryId,
+        delivery_offered: deliveryOffered,
+        delivery_fee: deliveryOffered && deliveryFee ? Number(deliveryFee) : null,
+        discount_expires_at: discountExpiresAt,
+        latitude: lat,
+        longitude: lon,
+        video_url: videoUrl,
+      };
+      if (lat == null && lon == null && subCity.trim()) {
+        const c = coordsForSubCity(subCity.trim());
+        if (c) {
+          patch.latitude = c[0];
+          patch.longitude = c[1];
+        }
+      }
+      await createListing({
+        sellerId: user.id,
+        title: patch.title,
+        description: patch.description,
+        price: patch.price,
+        originalPrice: patch.original_price,
+        negotiable: patch.negotiable,
+        condition: patch.condition,
+        material: patch.material,
+        color: patch.color,
+        roomType: patch.room_type,
+        brand: patch.brand,
+        city: patch.city,
+        subCity: patch.sub_city,
+        categoryId: patch.category_id,
+        deliveryOffered: patch.delivery_offered,
+        deliveryFee: patch.delivery_fee,
+        discountExpiresAt: patch.discount_expires_at,
+        latitude: patch.latitude,
+        longitude: patch.longitude,
+        imagePaths: finalUrls,
+        videoUrl,
+        status: "draft",
+      });
+      toast.success(t("draftSaved"));
+      setPhotos([]);
+      setVideo(null);
+      setTitle("");
+      setDesc("");
+      setPrice("");
+    } catch (err) {
+      toast.error(err, t("oops"));
+    } finally {
+      setPublishing(false);
+    }
+  };
+
   const removePhoto = (index: number) => setPhotos((prev) => prev.filter((_, j) => j !== index));
 
   const isEditLoading = !!editId && editing.loading && !item;
@@ -645,7 +734,7 @@ export default function SellScreen() {
           <Field label={t("description")} value={desc} onChange={setDesc} multiline />
         </View>
 
-        <View style={{ paddingHorizontal: spacing.lg, marginTop: spacing.lg }}>
+        <View style={{ paddingHorizontal: spacing.lg, marginTop: spacing.lg, gap: 10 }}>
           <Button
             title={
               publishing
@@ -659,6 +748,15 @@ export default function SellScreen() {
             disabled={publishing}
             size="lg"
           />
+          {!editId ? (
+            <Button
+              title={t("saveDraft")}
+              variant="outline"
+              onPress={saveDraft}
+              loading={publishing}
+              disabled={publishing}
+            />
+          ) : null}
         </View>
       </ScrollView>
     </KeyboardAvoidingView>

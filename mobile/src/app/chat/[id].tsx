@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   FlatList,
   Image,
   KeyboardAvoidingView,
@@ -11,6 +12,7 @@ import {
   TextInput,
   View,
 } from "react-native";
+import * as ImagePicker from "expo-image-picker";
 import { router, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { supabase } from "../../lib/supabase";
@@ -25,6 +27,7 @@ import {
   markConversationRead,
   notifyUser,
   sendMessage,
+  uploadListingImage,
 } from "../../lib/api";
 import { colors, radius, spacing } from "../../lib/theme";
 import { imageSource } from "../../lib/storage";
@@ -42,6 +45,8 @@ export default function ChatScreen() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editBody, setEditBody] = useState("");
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
+  const [pendingImage, setPendingImage] = useState<string | null>(null);
+  const [imageBusy, setImageBusy] = useState(false);
   const listRef = useRef<FlatList>(null);
 
   const messages = useAsync(() => fetchMessages(id ?? ""), [id]);
@@ -94,14 +99,33 @@ export default function ChatScreen() {
     }
   }, [all.length]);
 
+  const pickImage = async () => {
+    if (!user || imageBusy) return;
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      quality: 0.7,
+      allowsEditing: false,
+    });
+    if (result.canceled || !result.assets?.[0]) return;
+    setPendingImage(result.assets[0].uri);
+  };
+
   const send = async () => {
     const text = body.trim();
-    if (!text || !id || !user) return;
+    const imgUri = pendingImage;
+    if ((!text && !imgUri) || !id || !user) return;
     setBody("");
+    setPendingImage(null);
     try {
-      await sendMessage(id, user.id, text);
-      // Notify the other party. This one call fans out to the in-app centre,
-      // push and Telegram via the notifications triggers.
+      let imageUrl: string | null = null;
+      if (imgUri) {
+        setImageBusy(true);
+        imageUrl = await uploadListingImage(user.id, {
+          uri: imgUri,
+          name: "chat-photo.jpg",
+        } as any);
+      }
+      await sendMessage(id, user.id, text || "", imageUrl);
       if (conv) {
         const recipientId = conv.buyer_id === user.id ? conv.seller_id : conv.buyer_id;
         const me = conv.buyer_id === user.id ? conv.buyer : conv.seller;
@@ -110,12 +134,15 @@ export default function ChatScreen() {
           listingId: listing?.id ?? "",
           conversationId: id,
           senderName: me?.shop_name || me?.full_name || "",
-          messagePreview: text,
+          messagePreview: text || "[Image]",
         });
       }
       messages.refetch();
     } catch {
       setBody(text);
+      setPendingImage(imgUri);
+    } finally {
+      setImageBusy(false);
     }
   };
 
@@ -180,9 +207,14 @@ export default function ChatScreen() {
           </View>
         ) : (
           <View style={[styles.bubble, mine ? styles.mine : styles.theirs]}>
-            <Text style={[styles.bubbleText, mine && { color: colors.onPrimary }]}>
-              {deleted ? t("msgDeleted") : item.body}
-            </Text>
+            {!deleted && item.image_url ? (
+              <Image source={imageSource(item.image_url, undefined, 400)} style={styles.msgImage} resizeMode="cover" />
+            ) : null}
+            {item.body || deleted ? (
+              <Text style={[styles.bubbleText, mine && { color: colors.onPrimary }]}>
+                {deleted ? t("msgDeleted") : item.body}
+              </Text>
+            ) : null}
           </View>
         )}
         <View style={[styles.timeRow, mine ? styles.timeRowMine : styles.timeRowTheirs]}>
@@ -297,7 +329,25 @@ export default function ChatScreen() {
         }
         renderItem={renderBubble}
       />
+      {pendingImage ? (
+        <View style={{ paddingHorizontal: spacing.lg, paddingBottom: 6 }}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <Image source={{ uri: pendingImage }} style={{ width: 48, height: 48, borderRadius: 8 }} />
+            <Text style={{ flex: 1, fontSize: 12, color: colors.textMuted }}>{t("imageAttached")}</Text>
+            <Pressable onPress={() => setPendingImage(null)} hitSlop={8}>
+              <Ionicons name="close-circle" size={20} color={colors.textMuted} />
+            </Pressable>
+          </View>
+        </View>
+      ) : null}
       <View style={styles.inputBar}>
+        <Pressable style={styles.imgBtn} onPress={pickImage} disabled={imageBusy}>
+          {imageBusy ? (
+            <ActivityIndicator size="small" color={colors.primary} />
+          ) : (
+            <Ionicons name="image-outline" size={20} color={colors.textMuted} />
+          )}
+        </Pressable>
         <TextInput
           value={body}
           onChangeText={setBody}
@@ -307,9 +357,9 @@ export default function ChatScreen() {
           multiline
         />
         <Pressable
-          style={[styles.sendBtn, !body.trim() && { opacity: 0.4 }]}
+          style={[styles.sendBtn, (!body.trim() && !pendingImage) && { opacity: 0.4 }]}
           onPress={send}
-          disabled={!body.trim()}
+          disabled={!body.trim() && !pendingImage}
         >
           <Ionicons name="send" size={18} color="#fff" />
         </Pressable>
@@ -408,5 +458,18 @@ const styles = StyleSheet.create({
     backgroundColor: colors.primary,
     alignItems: "center",
     justifyContent: "center",
+  },
+  imgBtn: {
+    width: 42,
+    height: 42,
+    borderRadius: radius.full,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  msgImage: {
+    width: 220,
+    height: 160,
+    borderRadius: radius.md,
+    marginBottom: 4,
   },
 });

@@ -70,6 +70,7 @@ type Message = {
   edited_at: string | null;
   deleted_at: string | null;
   read_at: string | null;
+  image_url: string | null;
   profiles: { full_name: string | null; avatar_url: string | null } | null;
 };
 
@@ -147,7 +148,7 @@ function Messages() {
       const { data, error } = await supabase
         .from("messages")
         .select(
-          "id,body,sender_id,created_at,edited_at,deleted_at,read_at," +
+          "id,body,sender_id,created_at,edited_at,deleted_at,read_at,image_url," +
             "profiles!messages_sender_id_fkey(full_name,avatar_url)",
         )
         .eq("conversation_id", current!)
@@ -239,11 +240,14 @@ function Messages() {
     };
   }, [current, queryClient]);
 
+  const [pendingImage, setPendingImage] = useState<string | null>(null);
+  const [imageUrl, setImageUrl] = useState<string | null>(null);
+
   const send = useMutation({
     mutationFn: async () => {
       const { error } = await supabase
         .from("messages")
-        .insert({ conversation_id: current!, sender_id: user!.id, body });
+        .insert({ conversation_id: current!, sender_id: user!.id, body, image_url: imageUrl });
       if (error) throw error;
       // Notify the other party (mobile parity): this inserts the in-app
       // notification row, which also fans out to push + Telegram.
@@ -267,6 +271,8 @@ function Messages() {
     },
     onSuccess: () => {
       setBody("");
+      setImageUrl(null);
+      setPendingImage(null);
       queryClient.invalidateQueries({ queryKey: ["messages", current] });
       queryClient.invalidateQueries({ queryKey: ["conversations"] });
       queryClient.invalidateQueries({ queryKey: ["conversation-unread"] });
@@ -507,6 +513,9 @@ function Messages() {
                               : "bg-secondary"
                         }`}
                       >
+                        {!deleted && m.image_url ? (
+                          <img src={m.image_url} alt="" className="mb-1 max-h-48 rounded-md object-cover" />
+                        ) : null}
                         {deleted ? t("msg.deletedPlaceholder") : m.body}
                       </div>
                     )}
@@ -558,20 +567,52 @@ function Messages() {
           </div>
           {current ? (
             <form
-              className="mt-4 flex gap-2"
+              className="mt-4 space-y-2"
               onSubmit={(e) => {
                 e.preventDefault();
-                if (body.trim()) send.mutate();
+                if (body.trim() || imageUrl) send.mutate();
               }}
             >
-              <Input
-                value={body}
-                onChange={(e) => setBody(e.target.value)}
-                placeholder={t("msg.write")}
-              />
-              <Button type="submit" disabled={send.isPending}>
-                {t("msg.send")}
-              </Button>
+              {pendingImage ? (
+                <div className="flex items-center gap-2 rounded-md border p-2">
+                  <img src={pendingImage} alt="" className="h-12 w-12 rounded object-cover" />
+                  <span className="flex-1 text-xs text-muted-foreground">{t("msg.imageAttached")}</span>
+                  <button type="button" onClick={() => { setPendingImage(null); setImageUrl(null); }} className="text-muted-foreground hover:text-foreground">
+                    ×
+                  </button>
+                </div>
+              ) : null}
+              <div className="flex gap-2">
+                <label className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-md border bg-background hover:bg-accent">
+                  <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file || !user) return;
+                    setPendingImage(URL.createObjectURL(file));
+                    const form = new FormData();
+                    form.append("file", file);
+                    // Upload via Cloudinary sign (reuse listing image upload for chat)
+                    const { data: sign } = await supabase.functions.invoke("cloudinary-sign", { body: { scope: "listing" } });
+                    if (sign?.signature) {
+                      form.append("api_key", sign.api_key);
+                      form.append("timestamp", sign.timestamp);
+                      form.append("signature", sign.signature);
+                      form.append("folder", sign.folder);
+                      const res = await fetch(sign.upload_url, { method: "POST", body: form });
+                      const json = await res.json();
+                      if (json.secure_url) setImageUrl(json.secure_url);
+                    }
+                  }} />
+                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
+                </label>
+                <Input
+                  value={body}
+                  onChange={(e) => setBody(e.target.value)}
+                  placeholder={t("msg.write")}
+                />
+                <Button type="submit" disabled={send.isPending || (!body.trim() && !imageUrl)}>
+                  {t("msg.send")}
+                </Button>
+              </div>
             </form>
           ) : null}
         </section>

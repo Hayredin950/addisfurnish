@@ -394,6 +394,7 @@ export type Database = {
           deleted_at: string | null;
           edited_at: string | null;
           id: string;
+          image_url: string | null;
           read_at: string | null;
           sender_id: string;
         };
@@ -404,6 +405,7 @@ export type Database = {
           deleted_at?: string | null;
           edited_at?: string | null;
           id?: string;
+          image_url?: string | null;
           read_at?: string | null;
           sender_id: string;
         };
@@ -414,6 +416,7 @@ export type Database = {
           deleted_at?: string | null;
           edited_at?: string | null;
           id?: string;
+          image_url?: string | null;
           read_at?: string | null;
           sender_id?: string;
         };
