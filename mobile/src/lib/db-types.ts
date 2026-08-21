@@ -135,31 +135,46 @@ export type Database = {
       };
       categories: {
         Row: {
+          description: string | null;
           icon: string | null;
           id: string;
+          image_url: string | null;
+          is_active: boolean;
+          level: number;
           name: string;
           name_am: string | null;
           parent_id: string | null;
           slug: string;
           sort_order: number;
+          updated_at: string;
         };
         Insert: {
+          description?: string | null;
           icon?: string | null;
           id?: string;
+          image_url?: string | null;
+          is_active?: boolean;
+          level?: number;
           name: string;
           name_am?: string | null;
           parent_id?: string | null;
           slug: string;
           sort_order?: number;
+          updated_at?: string;
         };
         Update: {
+          description?: string | null;
           icon?: string | null;
           id?: string;
+          image_url?: string | null;
+          is_active?: boolean;
+          level?: number;
           name?: string;
           name_am?: string | null;
           parent_id?: string | null;
           slug?: string;
           sort_order?: number;
+          updated_at?: string;
         };
         Relationships: [
           {

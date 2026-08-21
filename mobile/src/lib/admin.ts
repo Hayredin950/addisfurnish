@@ -308,12 +308,14 @@ export type AdminCategory = {
   parent_id: string | null;
   icon: string | null;
   sort_order: number;
+  level: number | null;
+  is_active: boolean | null;
 };
 
 export async function fetchAdminCategories(): Promise<AdminCategory[]> {
   const { data, error } = await supabase.from("categories").select("*").order("sort_order");
   if (error) throw error;
-  return (data ?? []) as AdminCategory[];
+  return (data ?? []) as unknown as AdminCategory[];
 }
 
 export async function createCategory(name: string, parentId?: string | null, icon?: string) {
@@ -379,6 +381,11 @@ export async function fetchAdminCategoryCounts(): Promise<Record<string, number>
 
 export async function deleteCategory(id: string) {
   const { error } = await supabase.from("categories").delete().eq("id", id);
+  if (error) throw error;
+}
+
+export async function toggleCategoryActive(id: string, isActive: boolean) {
+  const { error } = await supabase.from("categories").update({ is_active: isActive }).eq("id", id);
   if (error) throw error;
 }
 

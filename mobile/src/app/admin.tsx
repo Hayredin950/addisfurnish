@@ -22,6 +22,7 @@ import {
   createCategory,
   decideDocument,
   deleteCategory,
+  toggleCategoryActive,
   deleteListingAdmin,
   requestRoleChange,
   confirmRoleChange as confirmRoleChangeApi,
@@ -179,6 +180,7 @@ export default function AdminScreen() {
             setDrill(f);
             setTab("users");
           }}
+          onOpenListings={() => setTab("listings")}
         />
       ) : null}
     </KeyboardAvoidingView>
@@ -971,7 +973,7 @@ function CategoriesTab() {
     cat,
     depth,
   }: {
-    cat: { id: string; name: string; slug: string; icon: string | null; parent_id: string | null };
+    cat: { id: string; name: string; slug: string; icon: string | null; parent_id: string | null; level: number | null; is_active: boolean | null };
     depth: number;
   }) => {
     const n = counts.data?.[cat.id] ?? 0;
@@ -996,6 +998,16 @@ function CategoriesTab() {
             <View style={{ flex: 1 }}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                 <Text style={styles.catName}>{cat.name}</Text>
+                {cat.level != null ? (
+                  <View style={[styles.countBadge, { backgroundColor: colors.primary + "20" }]}>
+                    <Text style={[styles.countBadgeText, { color: colors.primary }]}>L{cat.level}</Text>
+                  </View>
+                ) : null}
+                {cat.is_active === false ? (
+                  <View style={[styles.countBadge, { backgroundColor: colors.danger + "20" }]}>
+                    <Text style={[styles.countBadgeText, { color: colors.danger }]}>off</Text>
+                  </View>
+                ) : null}
                 {n > 0 ? (
                   <View style={styles.countBadge}>
                     <Text style={styles.countBadgeText}>{n}</Text>
@@ -1030,6 +1042,18 @@ function CategoriesTab() {
               }}
             >
               <Ionicons name="pencil" size={15} color={colors.textMuted} />
+            </Pressable>
+            <Pressable
+              style={styles.iconBtn}
+              hitSlop={6}
+              onPress={async () => {
+                try {
+                  await toggleCategoryActive(cat.id, cat.is_active === false);
+                  invalidate();
+                } catch { /* ignore */ }
+              }}
+            >
+              <Ionicons name={cat.is_active !== false ? "checkmark-circle" : "pause-circle"} size={15} color={cat.is_active !== false ? colors.success : colors.textMuted} />
             </Pressable>
             <Pressable
               style={styles.iconBtn}
@@ -1082,6 +1106,20 @@ function CategoriesTab() {
               <Text style={[styles.chipText, parentId === r.id && styles.chipTextActive]}>{r.name}</Text>
             </Pressable>
           ))}
+          {children
+            .filter((c) => roots.some((r) => r.id === c.parent_id))
+            .map((c) => {
+              const rootName = roots.find((r) => r.id === c.parent_id)?.name ?? "";
+              return (
+                <Pressable
+                  key={c.id}
+                  style={[styles.chip, parentId === c.id && styles.chipActive]}
+                  onPress={() => setParentId(parentId === c.id ? "" : c.id)}
+                >
+                  <Text style={[styles.chipText, parentId === c.id && styles.chipTextActive]}>{rootName} → {c.name}</Text>
+                </Pressable>
+              );
+            })}
         </ScrollView>
         <Text style={styles.fieldLabel}>{t("adminCategoryIcon")}</Text>
         <IconPicker value={icon} onChange={setIcon} />
@@ -1104,7 +1142,15 @@ function CategoriesTab() {
             {children
               .filter((c) => c.parent_id === r.id)
               .map((c) => (
-                <Row key={c.id} cat={c} depth={1} />
+                <View key={c.id}>
+                  <Row cat={c} depth={1} />
+                  {/* Level 2: grandchildren */}
+                  {children
+                    .filter((gc) => gc.parent_id === c.id)
+                    .map((gc) => (
+                      <Row key={gc.id} cat={gc} depth={2} />
+                    ))}
+                </View>
               ))}
           </View>
         ))
@@ -1263,7 +1309,7 @@ function ListingsTab() {
   );
 }
 
-function StatsTab({ onOpenUsers }: { onOpenUsers?: (f: "all" | "sellers") => void }) {
+function StatsTab({ onOpenUsers, onOpenListings }: { onOpenUsers?: (f: "all" | "sellers") => void; onOpenListings?: () => void }) {
   const { t } = useLang();
   const stats = useAsync(fetchAdminStats, []);
   const topCats = useAsync(fetchAdminTopCategories, []);
@@ -1297,7 +1343,9 @@ function StatsTab({ onOpenUsers }: { onOpenUsers?: (f: "all" | "sellers") => voi
     <ScrollView contentContainerStyle={{ padding: spacing.lg, gap: 12 }}>
       {/* Hero row — big numbers + verified ratio; cards open the Users tab. */}
       <View style={styles.statGrid}>
-        <StatBox label={t("adminStatListings")} value={s?.listings ?? 0} icon="pricetags" />
+        <Pressable onPress={() => onOpenListings?.()} style={({ pressed }) => [pressed && { opacity: 0.8 }]}>
+          <StatBox label={t("adminStatListings")} value={s?.listings ?? 0} icon="pricetags" />
+        </Pressable>
         <Pressable onPress={() => onOpenUsers?.("all")} style={({ pressed }) => [pressed && { opacity: 0.8 }]}>
           <StatBox label={t("adminStatUsers")} value={s?.users ?? 0} icon="people" />
         </Pressable>
