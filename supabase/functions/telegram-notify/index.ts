@@ -45,7 +45,7 @@ const SITE_BASE = SITE_URL || "https://addisfurnish.vercel.app";
 
 // The single acceptable fallback image: every card is a photo card, so a
 // listing with no usable cover still renders as a photo message with the
-// AddisFurnish logo instead of plain text with a raw link.
+// AddisHome logo instead of plain text with a raw link.
 const ADDISFURNISH_LOGO_URL = `${SITE_BASE}/logo-mark.png`;
 
 /** Telegram's URL fetcher truncates large files behind Cloudflare — relay
@@ -503,7 +503,7 @@ function copyFor(type: string, payload: NotifPayload, lang: Lang): string {
         : ""
     }`,
     shop_reviewed: `⭐ New review on your shop${payload.rating != null ? ` — ${payload.rating}/5` : ""}${payload.title ? `: “${payload.title}”` : ""}`,
-    seller_verified: "✅ Your shop has been verified on AddisFurnish. Your badge is now live.",
+    seller_verified: "✅ Your shop has been verified on AddisHome. Your badge is now live.",
     seller_rejected: `❌ Your verification was not approved${
       payload.reason ? `: ${payload.reason}` : "."
     } You can edit your details and resubmit.`,
@@ -530,7 +530,7 @@ function copyFor(type: string, payload: NotifPayload, lang: Lang): string {
         : ""
     }`,
     shop_reviewed: `⭐ በሱቅዎ ላይ አዲስ ግምገማ${payload.rating != null ? ` — ${payload.rating}/5` : ""}${payload.title ? `፦ “${payload.title}”` : ""}`,
-    seller_verified: "✅ ሱቅዎ በAddisFurnish ተረጋግጧል። የማረጋገጫ ምልክትዎ አሁን ይታያል።",
+    seller_verified: "✅ ሱቅዎ በAddisHome ተረጋግጧል። የማረጋገጫ ምልክትዎ አሁን ይታያል።",
     seller_rejected: `❌ ማረጋገጫዎ አልጸደቀም${
       payload.reason ? `፦ ${payload.reason}` : "።"
     } መረጃዎን አስተካክለው እንደገና ማስገባት ይችላሉ።`,
@@ -538,7 +538,7 @@ function copyFor(type: string, payload: NotifPayload, lang: Lang): string {
     report_dismissed: "ሪፖርትዎ ተገምግሟል — እርምጃ አያስፈልግም ነበር።",
   };
   const table = lang === "am" ? am : en;
-  return (table[type] ?? en[type] ?? `AddisFurnish: ${listing}`) + link;
+  return (table[type] ?? en[type] ?? `AddisHome: ${listing}`) + link;
 }
 
 // The generated `Database` types live in web/ and mobile/, not in this folder,

@@ -99,13 +99,13 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
       { name: "theme-color", content: "#AC451B" },
-      { title: "AddisFurnish — Buy & Sell Used Furniture in Ethiopia" },
+      { title: "AddisHome — Buy & Sell Used Furniture in Ethiopia" },
       {
         name: "description",
         content:
           "Browse thousands of second-hand sofas, beds, desks and dining sets from trusted shops across Addis Ababa. Free to list, free to message.",
       },
-      { property: "og:title", content: "AddisFurnish — Buy & Sell Used Furniture in Ethiopia" },
+      { property: "og:title", content: "AddisHome — Buy & Sell Used Furniture in Ethiopia" },
       {
         property: "og:description",
         content:
@@ -113,7 +113,7 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
       },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary_large_image" },
-      { name: "twitter:title", content: "AddisFurnish — Buy & Sell Used Furniture in Ethiopia" },
+      { name: "twitter:title", content: "AddisHome — Buy & Sell Used Furniture in Ethiopia" },
       {
         name: "twitter:description",
         content:

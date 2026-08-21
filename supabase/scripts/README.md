@@ -1,6 +1,6 @@
 # Auth email delivery (Brevo + Supabase)
 
-How AddisFurnish sends signup-confirmation and password-reset emails, and how
+How AddisHome sends signup-confirmation and password-reset emails, and how
 to set it up again from scratch (new environment, new project, or after a
 provider change) in one command instead of the long debugging session it took
 the first time.
@@ -107,7 +107,7 @@ add at your registrar), then set the sender to `noreply@addisfurnish.com`:
 ```bash
 SUPABASE_ACCESS_TOKEN=sbp_... SUPABASE_PROJECT_REF=<ref> \
 BREVO_SMTP_USER=xxxxx@smtp-brevo.com BREVO_SMTP_KEY=xsmtpsib-... \
-BREVO_SENDER=noreply@addisfurnish.com BREVO_SENDER_NAME=AddisFurnish \
+BREVO_SENDER=noreply@addisfurnish.com BREVO_SENDER_NAME=AddisHome \
 ./setup-email.sh
 ```
 
@@ -126,7 +126,7 @@ problem above.
 - **Rotating the Brevo key**: Brevo → SMTP & API → regenerate the key, then
   update the `BREVO_SMTP_KEY` secret in Supabase (Project Settings → Secrets).
   Re-run `setup-email.sh` if you want everything re-verified.
-- **Shared Brevo account**: AddisFurnish currently uses a friend's Brevo
+- **Shared Brevo account**: AddisHome currently uses a friend's Brevo
   account. Its free-plan daily quota, sender, and any future key rotation
   affect us. For production, get your own Brevo account and a real domain
   (`noreply@addisfurnish.com` with SPF/DKIM) — sender address and domain

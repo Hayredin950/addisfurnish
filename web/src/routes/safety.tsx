@@ -5,16 +5,16 @@ import { useLang } from "@/lib/i18n";
 export const Route = createFileRoute("/safety")({
   head: () => ({
     meta: [
-      { title: "Safety Guidelines — AddisFurnish" },
+      { title: "Safety Guidelines — AddisHome" },
       {
         name: "description",
         content:
           "How to buy and sell used furniture safely in Ethiopia: meet in public, inspect before paying, and report suspicious listings.",
       },
-      { property: "og:title", content: "Safety Guidelines — AddisFurnish" },
+      { property: "og:title", content: "Safety Guidelines — AddisHome" },
       {
         property: "og:description",
-        content: "Simple rules that keep buyers and sellers safe on AddisFurnish.",
+        content: "Simple rules that keep buyers and sellers safe on AddisHome.",
       },
     ],
   }),

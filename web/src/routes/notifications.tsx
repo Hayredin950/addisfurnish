@@ -21,10 +21,10 @@ import {
 export const Route = createFileRoute("/notifications")({
   head: () => ({
     meta: [
-      { title: "Notifications — AddisFurnish" },
+      { title: "Notifications — AddisHome" },
       { name: "description", content: "Messages, callback requests and price updates." },
-      { property: "og:title", content: "Notifications — AddisFurnish" },
-      { property: "og:description", content: "Your AddisFurnish activity." },
+      { property: "og:title", content: "Notifications — AddisHome" },
+      { property: "og:description", content: "Your AddisHome activity." },
     ],
   }),
   component: () => (

@@ -3,7 +3,7 @@ import { colors } from "./theme";
 /** Minimal en/am dictionary for the mobile app (mirrors web i18n keys). */
 const dict = {
   en: {
-    appName: "AddisFurnish",
+    appName: "AddisHome",
     tagline: "Good furniture deserves a second home",
     searchPlaceholder: "Search sofas, beds, tables…",
     search: "Search",
@@ -22,7 +22,7 @@ const dict = {
     notifications: "Notifications",
     signIn: "Sign in",
     signOut: "Sign out",
-    welcome: "Welcome to AddisFurnish",
+    welcome: "Welcome to AddisHome",
     loginPhone: "Enter your phone number to sign in or create an account",
     phone: "Phone number",
     code: "Verification code",
@@ -148,7 +148,7 @@ const dict = {
     telegramConnect: "Connect Telegram",
     telegramConnected: "Telegram connected",
     telegramDisconnect: "Disconnect",
-    telegramDisconnectConfirm: "Stop receiving AddisFurnish alerts on Telegram?",
+    telegramDisconnectConfirm: "Stop receiving AddisHome alerts on Telegram?",
     alertPrefs: "Alert preferences",
     preferredCities: "Preferred cities",
     priceRange: "Price range",
@@ -185,7 +185,7 @@ const dict = {
     delete: "Delete",
     confirmDelete: "Are you sure you want to delete this listing?",
     cancel: "Cancel",
-    logoutConfirm: "Sign out of AddisFurnish?",
+    logoutConfirm: "Sign out of AddisHome?",
     about: "About",
     madeInEthiopia: "Made for Ethiopian furniture shoppers & sellers 🇪🇹",
     freeToUse: "Free to use — launch offer",
@@ -419,7 +419,7 @@ const dict = {
     otpVerifyViaTelegram: "Verify via Telegram",
     // Profile setup wizard
     setupTitle: "Set up your profile",
-    setupSubtitle: "Four quick steps to get the most out of AddisFurnish.",
+    setupSubtitle: "Four quick steps to get the most out of AddisHome.",
     setupStep: "Step",
     setupBasics: "Basic info",
     setupBasicsHint: "Who you are — name, city, and a phone buyers can reach you on.",
@@ -520,7 +520,7 @@ const dict = {
     reportUnavailable: "Item is not actually available",
     reportOffensive: "Offensive or abusive behaviour",
     reportOther: "Other",
-    reportSent: "Report sent. Thank you for keeping AddisFurnish safe.",
+    reportSent: "Report sent. Thank you for keeping AddisHome safe.",
     // Google sign-in
     continueGoogle: "Continue with Google",
     googleSignInFailed: "Google sign-in failed. Try again or use your email.",
@@ -696,7 +696,7 @@ const dict = {
     telegramConnect: "ቴሌግራም ያገናኙ",
     telegramConnected: "ቴሌግራም ተገናኝቷል",
     telegramDisconnect: "አቋርጥ",
-    telegramDisconnectConfirm: "የAddisFurnish ማሳወቂያዎችን በቴሌግራም መቀበል ያቁሙ?",
+    telegramDisconnectConfirm: "የAddisHome ማሳወቂያዎችን በቴሌግራም መቀበል ያቁሙ?",
     alertPrefs: "የማሳወቂያ ምርጫዎች",
     preferredCities: "የሚመረጡ ከተሞች",
     priceRange: "የዋጋ ክልል",
@@ -967,7 +967,7 @@ const dict = {
     otpVerifyViaTelegram: "በቴሌግራም ያረጋግጡ",
     // Profile setup wizard
     setupTitle: "መገለጫዎን ያዘጋጁ",
-    setupSubtitle: "ከAddisFurnish ምርጥ ተጠቃሚ ለመሆን 4 ፈጣን ደረጃዎች።",
+    setupSubtitle: "ከAddisHome ምርጥ ተጠቃሚ ለመሆን 4 ፈጣን ደረጃዎች።",
     setupStep: "ደረጃ",
     setupBasics: "መሰረታዊ መረጃ",
     setupBasicsHint: "እርስዎ ማን እንደሆኑ — ስም፣ ከተማ እና ገዢዎች ሊደርሱበት የሚችሉት ስልክ።",

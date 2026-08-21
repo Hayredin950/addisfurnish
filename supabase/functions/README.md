@@ -48,7 +48,7 @@ conversation returns to the platform and stays measurable.
 
 In Telegram, open **@BotFather** → `/newbot`
 
-- Display name: `AddisFurnish`
+- Display name: `AddisHome`
 - Username: must end in `bot` — e.g. `addisfurnish_bot`
 
 It replies with a token like `8123456789:AAH…`. **Treat it as a password** — it
@@ -59,14 +59,14 @@ Optionally set `/setdescription`, `/setabouttext`, `/setuserpic`, and
 `/setcommands`:
 
 ```
-start - Connect your AddisFurnish account
+start - Connect your AddisHome account
 help - What this bot does
 stop - Stop receiving alerts
 ```
 
 ### 2. Create the public channel
 
-Telegram → New Channel → `AddisFurnish Listings` → **Public** → link
+Telegram → New Channel → `AddisHome Listings` → **Public** → link
 `addisfurnish_listings`. Then Channel → Administrators → add your bot and grant
 **Post Messages**. The channel ID is `@addisfurnish_listings`.
 

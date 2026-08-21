@@ -25,13 +25,13 @@ export const Route = createFileRoute("/sell")({
     typeof search["edit"] === "string" && search["edit"] ? { edit: search["edit"] } : {},
   head: () => ({
     meta: [
-      { title: "Post an Item — Sell Used Furniture | AddisFurnish" },
+      { title: "Post an Item — Sell Used Furniture | AddisHome" },
       {
         name: "description",
         content:
           "List your used furniture for free: add photos, set a price in Birr and reach buyers across Ethiopia.",
       },
-      { property: "og:title", content: "Post an Item — AddisFurnish" },
+      { property: "og:title", content: "Post an Item — AddisHome" },
       { property: "og:description", content: "Free listings for second-hand furniture sellers." },
     ],
   }),

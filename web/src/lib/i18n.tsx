@@ -155,7 +155,7 @@ const en = {
   "shop.reviewCount": "{count} reviews",
 
   // ── Auth ─────────────────────────────────────────────────────────
-  "auth.welcome": "Welcome to AddisFurnish",
+  "auth.welcome": "Welcome to AddisHome",
   "auth.subtitle": "One account to buy, sell and message.",
   "auth.google": "Continue with Google",
   "auth.confirmSent": "Check your email to confirm your account",
@@ -191,7 +191,7 @@ const en = {
   // ── Safety ───────────────────────────────────────────────────────
   "safety.title": "Buying and selling safely",
   "safety.subtitle":
-    "AddisFurnish connects people directly — money and goods change hands in person. These six rules prevent almost every problem we see.",
+    "AddisHome connects people directly — money and goods change hands in person. These six rules prevent almost every problem we see.",
   "safety.meetTitle": "Meet in a public place",
   "safety.meetBody":
     "Arrange handover at the shop, a busy street or a compound gate. For large items, bring a friend along.",

@@ -31,10 +31,10 @@ export const Route = createFileRoute("/dashboard")({
     typeof search["offer"] === "string" && search["offer"] ? { offer: search["offer"] } : {},
   head: () => ({
     meta: [
-      { title: "Seller Dashboard — AddisFurnish" },
+      { title: "Seller Dashboard — AddisHome" },
       { name: "description", content: "Manage your listings, prices and callback requests." },
-      { property: "og:title", content: "Seller Dashboard — AddisFurnish" },
-      { property: "og:description", content: "Your AddisFurnish selling tools." },
+      { property: "og:title", content: "Seller Dashboard — AddisHome" },
+      { property: "og:description", content: "Your AddisHome selling tools." },
     ],
   }),
   component: () => (

@@ -1,7 +1,7 @@
 // Telegram bot webhook — the Telegram side of account linking.
 //
 // Handles the t.me/<bot>?start=TOKEN deep link so a buyer's or seller's
-// Telegram chat gets bound to their AddisFurnish account, plus /stop and
+// Telegram chat gets bound to their AddisHome account, plus /stop and
 // /help. Once profiles.telegram_chat_id is set, the telegram-notify function
 // delivers every alert.
 //
@@ -57,11 +57,11 @@ const COPY = {
     linked: (shop: string) =>
       `✅ Connected to <b>${shop}</b>.\n\nYou'll get alerts here when someone messages you, requests a callback, or a listing matches your saved preferences.\n\nSend /stop any time to turn them off.`,
     invalid:
-      "This link is invalid or has already been used. Open your AddisFurnish profile and tap “Connect Telegram” to get a fresh one.",
+      "This link is invalid or has already been used. Open your AddisHome profile and tap “Connect Telegram” to get a fresh one.",
     expired:
-      "This link has expired — they're valid for 15 minutes. Open your AddisFurnish profile and tap “Connect Telegram” for a new one.",
+      "This link has expired — they're valid for 15 minutes. Open your AddisHome profile and tap “Connect Telegram” for a new one.",
     noToken:
-      `Hello! 👋 I send AddisFurnish alerts.\n\nTo connect, open <a href="${SITE_URL}/profile?connect=telegram">your profile on addisfurnish.vercel.app</a> and tap “Connect Telegram”.`,
+      `Hello! 👋 I send AddisHome alerts.\n\nTo connect, open <a href="${SITE_URL}/profile?connect=telegram">your profile on addisfurnish.vercel.app</a> and tap “Connect Telegram”.`,
     joinAsk:
       "Almost done! 🎉\n\nTo start receiving alerts, please join our channel and tap the button below.",
     joinButton: "✅ I've joined — verify",
@@ -74,11 +74,11 @@ const COPY = {
       "I couldn't verify your membership right now (Telegram may be busy). Try the button again in a minute.",
     alreadyVerified: "✅ You're already verified — alerts are active. Nothing to do!",
     stopped:
-      "🔕 Disconnected. You won't get any more alerts here.\n\nReconnect any time from your AddisFurnish profile.",
+      "🔕 Disconnected. You won't get any more alerts here.\n\nReconnect any time from your AddisHome profile.",
     notLinked:
-      `This chat isn't connected to an AddisFurnish account.\n\nOpen <a href="${SITE_URL}/profile?connect=telegram">your AddisFurnish profile</a>, sign in, and tap “Connect Telegram”.`,
+      `This chat isn't connected to an AddisHome account.\n\nOpen <a href="${SITE_URL}/profile?connect=telegram">your AddisHome profile</a>, sign in, and tap “Connect Telegram”.`,
     help: (site: string) =>
-      `I deliver AddisFurnish alerts — new messages, callback requests, and listings matching your saved preferences.\n\n/start — connect your account\n/join — join our channel (required before alerts start)\n/find — browse the marketplace\n/saved — your saved items\n/mylistings — your active listings\n/inquiries — your messages\n/alerts — manage saved-search alerts\n/account — account summary\n/sell — create a draft listing from here\n/lang — switch language (English / አማርኛ)\n/stop — stop alerts\n/help — this message${
+      `I deliver AddisHome alerts — new messages, callback requests, and listings matching your saved preferences.\n\n/start — connect your account\n/join — join our channel (required before alerts start)\n/find — browse the marketplace\n/saved — your saved items\n/mylistings — your active listings\n/inquiries — your messages\n/alerts — manage saved-search alerts\n/account — account summary\n/sell — create a draft listing from here\n/lang — switch language (English / አማርኛ)\n/stop — stop alerts\n/help — this message${
         site ? `\n\n${site}` : ""
       }`,
     fallback: "I only send alerts. Use /help to see what I can do.",
@@ -91,15 +91,15 @@ const COPY = {
     shareMismatch: (want: string) =>
       `⚠️ That's not the number you're verifying.\n\nYou asked to verify <b>${want}</b>, but this Telegram account is registered with a different number. Verify the number your Telegram uses, or start again with the right one.`,
     shareNoPending:
-      "Start from your AddisFurnish profile — open “Verify phone” there and I'll take it from here.",
+      "Start from your AddisHome profile — open “Verify phone” there and I'll take it from here.",
     codeSent: (code: string) =>
-      `✅ Number confirmed.\n\nYour verification code is <b>${code}</b>\n\nType it on the AddisFurnish page you came from. It expires in 10 minutes.`,
+      `✅ Number confirmed.\n\nYour verification code is <b>${code}</b>\n\nType it on the AddisHome page you came from. It expires in 10 minutes.`,
     // ── Language ──
     langAsk: "Choose the language for this bot:\n\nቋንቋ ይምረጡ:",
     langSet: (l: string) => `✅ Language set to <b>${l}</b>.`,
     // ── Shortcut commands ──
     findIntro:
-      "🔎 <b>Browse AddisFurnish</b> — sofas, beds, desks and more from shops across Ethiopia.",
+      "🔎 <b>Browse AddisHome</b> — sofas, beds, desks and more from shops across Ethiopia.",
     findButton: "🛒 Browse items",
     savedIntro:
       "❤️ <b>Your saved items</b> — tap below to open the items you've favorited.",
@@ -140,11 +140,11 @@ const COPY = {
     linked: (shop: string) =>
       `✅ ከ<b>${shop}</b> ጋር ተገናኝቷል።\n\nሰው ሲልክልዎ፣ ጥሪ ሲጠይቅ ወይም ከምርጫዎ ጋር የሚስማማ ዕቃ ሲወጣ እዚህ ማሳወቂያ ይደርስዎታል።\n\nለማቆም በማንኛውም ጊዜ /stop ይላኩ።`,
     invalid:
-      "ይህ ሊንክ ዋጋ የለውም ወይም አስቀድሞ ተጠቅሟል። የAddisFurnish መገለጫዎን ከፍተው “ቴሌግራም አገናኝ” ይጫኑ።",
+      "ይህ ሊንክ ዋጋ የለውም ወይም አስቀድሞ ተጠቅሟል። የAddisHome መገለጫዎን ከፍተው “ቴሌግራም አገናኝ” ይጫኑ።",
     expired:
-      "የዚህ ሊንክ ጊዜ አልፎበታል — ለ15 ደቂቃ ብቻ ይሰራል። የAddisFurnish መገለጫዎን ከፍተው አዲስ ያግኙ።",
+      "የዚህ ሊንክ ጊዜ አልፎበታል — ለ15 ደቂቃ ብቻ ይሰራል። የAddisHome መገለጫዎን ከፍተው አዲስ ያግኙ።",
     noToken:
-      `ሰላም! 👋 የAddisFurnish ማሳወቂያዎችን እልካለሁ።\n\nለማገናኘት <a href="${SITE_URL}/profile?connect=telegram">በaddisfurnish.vercel.app ላይ መገለጫዎን</a> ከፍተው “ቴሌግራም አገናኝ” ይጫኑ።`,
+      `ሰላም! 👋 የAddisHome ማሳወቂያዎችን እልካለሁ።\n\nለማገናኘት <a href="${SITE_URL}/profile?connect=telegram">በaddisfurnish.vercel.app ላይ መገለጫዎን</a> ከፍተው “ቴሌግራም አገናኝ” ይጫኑ።`,
     joinAsk:
       "ተይቶ ተጠናቋል! 🎉\n\nማሳወቂያ መቀበል ለመጀመር እባክዎ ቻናላችንን ይቀላቀሉ እና ከታች ያለውን ቁልፍ ይጫኑ።",
     joinButton: "✅ ተቀላቅያለሁ — አረጋግጥ",
@@ -158,9 +158,9 @@ const COPY = {
     alreadyVerified: "✅ አስቀድመው ተረጋግጠዋል — ማሳወቂያዎች ንቁ ናቸው። ምንም አይጠበቅም!",
     stopped: "🔕 ተቋርጧል። ከዚህ በኋላ ማሳወቂያ አይደርስዎትም።\n\nበማንኛውም ጊዜ ከመገለጫዎ እንደገና ማገናኘት ይችላሉ።",
     notLinked:
-      `ይህ ውይይት ከAddisFurnish መለያ ጋር አልተገናኘም።\n\n<a href="${SITE_URL}/profile?connect=telegram">የAddisFurnish መገለጫዎን</a> ይክፈቱ፣ ይግቡ እና “ቴሌግራም አገናኝ” ይጫኑ።`,
+      `ይህ ውይይት ከAddisHome መለያ ጋር አልተገናኘም።\n\n<a href="${SITE_URL}/profile?connect=telegram">የAddisHome መገለጫዎን</a> ይክፈቱ፣ ይግቡ እና “ቴሌግራም አገናኝ” ይጫኑ።`,
     help: (site: string) =>
-      `የAddisFurnish ማሳወቂያዎችን አደርሳለሁ — አዲስ መልእክቶች፣ የጥሪ ጥያቄዎች እና ከምርጫዎ ጋር የሚስማሙ ዕቃዎች።\n\n/start — መለያዎን ያገናኙ\n/join — ቻናላችንን ይቀላቀሉ (ማሳወቂያ ከመጀመሩ በፊት ያስፈልጋል)\n/find — ገበያውን ያስሱ\n/saved — የተቀመጡ እቃዎችዎ\n/mylistings — ንቁ ማስታወቂያዎችዎ\n/inquiries — መልእክቶችዎ\n/alerts — የተቀመጡ ፍለጋዎችን ያስተዳድሩ\n/account — የመለያ ማጠቃለያ\n/sell — ከዚህ የረቂቅ ማስታወቂያ ይፍጠሩ\n/lang — ቋንቋ ይቀይሩ (English / አማርኛ)\n/stop — ማሳወቂያ ያቁሙ\n/help — ይህ መልእክት${
+      `የAddisHome ማሳወቂያዎችን አደርሳለሁ — አዲስ መልእክቶች፣ የጥሪ ጥያቄዎች እና ከምርጫዎ ጋር የሚስማሙ ዕቃዎች።\n\n/start — መለያዎን ያገናኙ\n/join — ቻናላችንን ይቀላቀሉ (ማሳወቂያ ከመጀመሩ በፊት ያስፈልጋል)\n/find — ገበያውን ያስሱ\n/saved — የተቀመጡ እቃዎችዎ\n/mylistings — ንቁ ማስታወቂያዎችዎ\n/inquiries — መልእክቶችዎ\n/alerts — የተቀመጡ ፍለጋዎችን ያስተዳድሩ\n/account — የመለያ ማጠቃለያ\n/sell — ከዚህ የረቂቅ ማስታወቂያ ይፍጠሩ\n/lang — ቋንቋ ይቀይሩ (English / አማርኛ)\n/stop — ማሳወቂያ ያቁሙ\n/help — ይህ መልእክት${
         site ? `\n\n${site}` : ""
       }`,
     fallback: "ማሳወቂያ ብቻ ነው የምልከው። /help ይጠቀሙ።",
@@ -172,15 +172,15 @@ const COPY = {
       "⚠️ ያ አድራሻ የእርስዎ አይደለም።\n\nእባክዎ የ<b>ስልክ ቁጥሬን አጋራ</b> ቁልፍ ይጠቀሙ — ማረጋገጥ የምችለው ይህ የቴሌግራም መለያ የተመዘገበበትን ቁጥር ብቻ ነው።",
     shareMismatch: (want: string) =>
       `⚠️ የሚያረጋግጡት ቁጥር አይደለም።\n\n<b>${want}</b>ን ለማረጋገጥ ጠይቀዋል፣ ግን ይህ የቴሌግራም መለያ በሌላ ቁጥር ተመዝግቧል። ቴሌግራምዎ የሚጠቀመውን ቁጥር ያረጋግጡ።`,
-    shareNoPending: "ከAddisFurnish መገለጫዎ ይጀምሩ — “ስልክ አረጋግጥ” የሚለውን ይክፈቱ።",
+    shareNoPending: "ከAddisHome መገለጫዎ ይጀምሩ — “ስልክ አረጋግጥ” የሚለውን ይክፈቱ።",
     codeSent: (code: string) =>
-      `✅ ቁጥሩ ተረጋግጧል።\n\nየማረጋገጫ ኮድዎ <b>${code}</b> ነው\n\nመጥተውበት ባለው የAddisFurnish ገጽ ላይ ያስገቡት። በ10 ደቂቃ ውስጥ ያልፋል።`,
+      `✅ ቁጥሩ ተረጋግጧል።\n\nየማረጋገጫ ኮድዎ <b>${code}</b> ነው\n\nመጥተውበት ባለው የAddisHome ገጽ ላይ ያስገቡት። በ10 ደቂቃ ውስጥ ያልፋል።`,
     // ── Language ──
     langAsk: "ለዚህ ቦት ቋንቋ ይምረጡ:\n\nChoose the language for this bot:",
     langSet: (l: string) => `✅ ቋንቋ ወደ <b>${l}</b> ተቀይሯል።`,
     // ── Shortcut commands ──
     findIntro:
-      "🔎 <b>AddisFurnishን ያስሱ</b> — ከመላ ኢትዮጵያ ሱቆች ሶፋዎችን፣ አልጋዎችን፣ ጠረጴዛዎችን እና ሌሎችንም ያገኛሉ።",
+      "🔎 <b>AddisHomeን ያስሱ</b> — ከመላ ኢትዮጵያ ሱቆች ሶፋዎችን፣ አልጋዎችን፣ ጠረጴዛዎችን እና ሌሎችንም ያገኛሉ።",
     findButton: "🛒 እቃዎችን ይመልከቱ",
     savedIntro:
       "❤️ <b>ያስቀመጧቸው እቃዎች</b> — ለመክፈት ከታች ይጫኑ።",
@@ -334,7 +334,7 @@ async function sendMessage(chatId: number, text: string, replyMarkup?: unknown):
 
 /**
  * Send a photo message (the bot's signature card) with an optional inline
- * keyboard. Falls back to the AddisFurnish logo when no real photo exists,
+ * keyboard. Falls back to the AddisHome logo when no real photo exists,
  * and to a plain message when the photo fails to send (a dead photo URL must
  * never make a user lose the text). Returns the message_id when sent, so
  * callers can edit/delete the card later.
@@ -884,7 +884,7 @@ Deno.serve(async (req) => {
   // /help works for linked and unlinked chats alike.
   if (text === "/help") {
     await sendPhoto(chatId, null, copy.help(SITE_URL), {
-      inline_keyboard: [[{ text: "🌐 Open AddisFurnish", url: SITE_URL }]],
+      inline_keyboard: [[{ text: "🌐 Open AddisHome", url: SITE_URL }]],
     });
     return new Response("ok", { status: 200 });
   }
@@ -1005,7 +1005,7 @@ Deno.serve(async (req) => {
         );
       } else {
         await sendPhoto(chatId, null, copy.noToken, {
-          inline_keyboard: [[{ text: "🌐 Open AddisFurnish", url: `${SITE_URL}/profile?connect=telegram` }]],
+          inline_keyboard: [[{ text: "🌐 Open AddisHome", url: `${SITE_URL}/profile?connect=telegram` }]],
         });
       }
       return new Response("ok", { status: 200 });
@@ -1094,7 +1094,7 @@ Deno.serve(async (req) => {
     const name =
       (profile.shop_name as string | null) ??
       (profile.full_name as string | null) ??
-      "AddisFurnish";
+      "AddisHome";
     const logo = (profile.shop_logo_url as string | null | undefined) ?? null;
 
     // Channel gate: new links must join and verify before alerts flow

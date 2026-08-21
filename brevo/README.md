@@ -9,7 +9,7 @@ Two send paths:
 2. **SMTP relay** (nodemailer) — for when you need a plain SMTP client (e.g. a
    Supabase Auth "send email" hook, or existing mail infrastructure).
 
-This folder is deliberately **project-agnostic**. The AddisFurnish-specific
+This folder is deliberately **project-agnostic**. The AddisHome-specific
 wiring (Supabase send-email hook + one-shot `setup-email.sh`) lives in
 `supabase/scripts/` — read it for the Supabase integration recipe; copy this
 folder for everything else.
@@ -34,7 +34,7 @@ Create a free account at **https://app.brevo.com/** (200–300 emails/day free).
   **Senders & IPs → Domains** → Brevo shows you the SPF/DKIM records to add at
   your registrar. Then you can send from `noreply@yourdomain.com`.
 
-> ⚠️ Common mistake (cost us a long debugging session in AddisFurnish): the
+> ⚠️ Common mistake (cost us a long debugging session in AddisHome): the
 > SMTP **username** must be the relay login (`xxxxx@smtp-brevo.com`), **not**
 > your account email address. Brevo replies `535` otherwise.
 
@@ -116,7 +116,7 @@ send-email hook is the classic example — it hands you an SMTP-shaped payload).
 
 ---
 
-## 6. Deliverability (learned the hard way in AddisFurnish)
+## 6. Deliverability (learned the hard way in AddisHome)
 
 - **Verify your sender/domain in Brevo** before sending anything real —
   unverified senders get rejected, and a gmail.com address relayed through

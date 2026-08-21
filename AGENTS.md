@@ -1,6 +1,6 @@
-# AddisFurnish — Agent Guide
+# AddisHome — Agent Guide
 
-AddisFurnish is a used-furniture marketplace for Ethiopia. Two apps share one
+AddisHome is a used-furniture marketplace for Ethiopia. Two apps share one
 Supabase backend.
 
 ## Repository layout

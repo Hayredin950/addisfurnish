@@ -14,7 +14,7 @@ import nodemailer from "npm:nodemailer@6.9.16";
  * Returning { message: "success" } tells GoTrue the mail was handled.
  *
  * Deliverability notes (why these messages can still land in spam):
- * - The sender address comes from BREVO_SENDER and, until AddisFurnish owns a
+ * - The sender address comes from BREVO_SENDER and, until AddisHome owns a
  *   real domain, it is a gmail.com address relayed through Brevo. Gmail only
  *   trusts gmail.com mail sent from Google's own servers, so SPF/DKIM/DMARC
  *   fail and Gmail may route these to spam. The durable fix is a domain you
@@ -29,7 +29,7 @@ const PORT = Number(Deno.env.get("BREVO_SMTP_PORT") ?? 465);
 const USER = Deno.env.get("BREVO_SMTP_USER") ?? "";
 const PASS = Deno.env.get("BREVO_SMTP_KEY") ?? "";
 const SENDER = Deno.env.get("BREVO_SENDER") ?? "sadim9812@gmail.com";
-const SENDER_NAME = Deno.env.get("BREVO_SENDER_NAME") ?? "AddisFurnish";
+const SENDER_NAME = Deno.env.get("BREVO_SENDER_NAME") ?? "AddisHome";
 
 function json(status: number, body: Record<string, unknown>) {
   return new Response(JSON.stringify(body), {
@@ -67,7 +67,7 @@ function renderCodeEmail(mailerType: string, token: string): string {
     `<p>Use the verification code below ${purpose}:</p>` +
     `<h1 style="letter-spacing: 8px; font-size: 36px;">${token}</h1>` +
     `<p>This code expires in 15 minutes.</p>` +
-    `<p style="color:#666;font-size:12px;">AddisFurnish — Ethiopia's marketplace for quality second-hand furniture.</p>`
+    `<p style="color:#666;font-size:12px;">AddisHome — Ethiopia's marketplace for quality second-hand furniture.</p>`
   );
 }
 
@@ -94,7 +94,7 @@ Deno.serve(async (req) => {
     email.subject ??
       (mailerType === "recovery"
         ? "Reset Your Password"
-        : "Verify your email for AddisFurnish"),
+        : "Verify your email for AddisHome"),
   );
   const content = String(email.content ?? email.body ?? emailData.content ?? "");
   const html = content || renderCodeEmail(mailerType, token);

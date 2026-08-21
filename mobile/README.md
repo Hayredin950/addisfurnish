@@ -1,6 +1,6 @@
-# AddisFurnish Mobile (React Native + Expo)
+# AddisHome Mobile (React Native + Expo)
 
-The official mobile app for the AddisFurnish used-furniture marketplace — the same
+The official mobile app for the AddisHome used-furniture marketplace — the same
 Supabase backend as the web app, with phone-first login, realtime chat, GPS
 "near me" browsing, and camera-first listing.
 

@@ -1,4 +1,4 @@
-# AddisFurnish — Used Furniture Marketplace (Ethiopia)
+# AddisHome — Used Furniture Marketplace (Ethiopia)
 
 A web + mobile marketplace connecting furniture sellers (companies/shops) with
 buyers in Ethiopia.
@@ -52,7 +52,7 @@ so every migration applies to both.
 
 ## Marketplace features
 
-This app implements the AddisFurnish used-furniture marketplace spec:
+This app implements the AddisHome used-furniture marketplace spec:
 
 - **Auth (phone-first)** — passwordless registration & login via SMS OTP on the `/auth` page (one account; becoming a seller is an upgrade in place, not a separate signup). Email and Google remain as fallbacks. OTPs: 5-min expiry, 5-attempt lock, rate-limited per phone (3/10 min) and per IP (5/10 min), one-time password rotated after each login.
 - **Trust & safety** — seller reviews & ratings, report listing/shop flows, and an admin panel (`/admin`) with a moderation queue, seller verification, and platform stats.

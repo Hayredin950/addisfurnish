@@ -11,9 +11,9 @@ import { Button } from "@/components/ui/button";
 export const Route = createFileRoute("/favorites")({
   head: () => ({
     meta: [
-      { title: "Saved Furniture — AddisFurnish" },
+      { title: "Saved Furniture — AddisHome" },
       { name: "description", content: "Every listing you saved, in one place." },
-      { property: "og:title", content: "Saved Furniture — AddisFurnish" },
+      { property: "og:title", content: "Saved Furniture — AddisHome" },
       { property: "og:description", content: "Your shortlist of second-hand furniture." },
     ],
   }),

@@ -1,6 +1,6 @@
-# AddisFurnish — Production Deployment Runbook
+# AddisHome — Production Deployment Runbook
 
-This guide takes the AddisFurnish marketplace from local development to a live product
+This guide takes the AddisHome marketplace from local development to a live product
 for the public and testers. The repo is split into three parts:
 
 | Folder | What it is | Deploys to |

@@ -23,7 +23,7 @@ const SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 const EXPO_ACCESS_TOKEN = Deno.env.get("EXPO_ACCESS_TOKEN");
 
 const EXPO_PUSH_ENDPOINT = "https://exp.host/--/api/v2/push/send";
-const APP_NAME = "AddisFurnish";
+const APP_NAME = "AddisHome";
 
 type NotifPayload = {
   title?: string;
