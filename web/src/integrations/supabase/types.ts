@@ -92,6 +92,89 @@ export type Database = {
         };
         Relationships: [];
       };
+      attribute_options: {
+        Row: {
+          attribute_id: string;
+          id: string;
+          is_active: boolean;
+          label: string;
+          label_am: string | null;
+          sort_order: number;
+          value: string;
+        };
+        Insert: {
+          attribute_id: string;
+          id?: string;
+          is_active?: boolean;
+          label: string;
+          label_am?: string | null;
+          sort_order?: number;
+          value: string;
+        };
+        Update: {
+          attribute_id?: string;
+          id?: string;
+          is_active?: boolean;
+          label?: string;
+          label_am?: string | null;
+          sort_order?: number;
+          value?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "attribute_options_attribute_id_fkey";
+            columns: ["attribute_id"];
+            isOneToOne: false;
+            referencedRelation: "attributes";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      attributes: {
+        Row: {
+          created_at: string;
+          id: string;
+          is_active: boolean;
+          is_filterable: boolean;
+          is_required: boolean;
+          name: string;
+          name_am: string | null;
+          slug: string;
+          sort_order: number;
+          type: string;
+          unit: string | null;
+          updated_at: string;
+        };
+        Insert: {
+          created_at?: string;
+          id?: string;
+          is_active?: boolean;
+          is_filterable?: boolean;
+          is_required?: boolean;
+          name: string;
+          name_am?: string | null;
+          slug: string;
+          sort_order?: number;
+          type: string;
+          unit?: string | null;
+          updated_at?: string;
+        };
+        Update: {
+          created_at?: string;
+          id?: string;
+          is_active?: boolean;
+          is_filterable?: boolean;
+          is_required?: boolean;
+          name?: string;
+          name_am?: string | null;
+          slug?: string;
+          sort_order?: number;
+          type?: string;
+          unit?: string | null;
+          updated_at?: string;
+        };
+        Relationships: [];
+      };
       callback_requests: {
         Row: {
           buyer_id: string;
@@ -186,6 +269,48 @@ export type Database = {
           },
         ];
       };
+      category_attributes: {
+        Row: {
+          attribute_id: string;
+          category_id: string;
+          id: string;
+          is_filterable: boolean;
+          is_required: boolean;
+          sort_order: number;
+        };
+        Insert: {
+          attribute_id: string;
+          category_id: string;
+          id?: string;
+          is_filterable?: boolean;
+          is_required?: boolean;
+          sort_order?: number;
+        };
+        Update: {
+          attribute_id?: string;
+          category_id?: string;
+          id?: string;
+          is_filterable?: boolean;
+          is_required?: boolean;
+          sort_order?: number;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "category_attributes_attribute_id_fkey";
+            columns: ["attribute_id"];
+            isOneToOne: false;
+            referencedRelation: "attributes";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "category_attributes_category_id_fkey";
+            columns: ["category_id"];
+            isOneToOne: false;
+            referencedRelation: "categories";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       conversations: {
         Row: {
           buyer_deleted_at: string | null;
@@ -263,6 +388,61 @@ export type Database = {
             columns: ["listing_id"];
             isOneToOne: false;
             referencedRelation: "listings";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      listing_attribute_values: {
+        Row: {
+          attribute_id: string;
+          created_at: string;
+          id: string;
+          listing_id: string;
+          option_id: string | null;
+          value_boolean: boolean | null;
+          value_number: number | null;
+          value_text: string | null;
+        };
+        Insert: {
+          attribute_id: string;
+          created_at?: string;
+          id?: string;
+          listing_id: string;
+          option_id?: string | null;
+          value_boolean?: boolean | null;
+          value_number?: number | null;
+          value_text?: string | null;
+        };
+        Update: {
+          attribute_id?: string;
+          created_at?: string;
+          id?: string;
+          listing_id?: string;
+          option_id?: string | null;
+          value_boolean?: boolean | null;
+          value_number?: number | null;
+          value_text?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "listing_attribute_values_attribute_id_fkey";
+            columns: ["attribute_id"];
+            isOneToOne: false;
+            referencedRelation: "attributes";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "listing_attribute_values_listing_id_fkey";
+            columns: ["listing_id"];
+            isOneToOne: false;
+            referencedRelation: "listings";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "listing_attribute_values_option_id_fkey";
+            columns: ["option_id"];
+            isOneToOne: false;
+            referencedRelation: "attribute_options";
             referencedColumns: ["id"];
           },
         ];
@@ -1292,6 +1472,21 @@ export type Database = {
       increment_listing_views: {
         Args: { _listing_id: string };
         Returns: undefined;
+      };
+      category_attribute_set: {
+        Args: { _category_id: string };
+        Returns: {
+          attribute_id: string;
+          slug: string;
+          name: string;
+          name_am: string | null;
+          type: string;
+          unit: string | null;
+          is_required: boolean;
+          is_filterable: boolean;
+          sort_order: number;
+          from_level: number;
+        }[];
       };
     };
     Enums: {

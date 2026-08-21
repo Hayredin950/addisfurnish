@@ -10,6 +10,15 @@ import { LocationPicker, type Coords } from "@/components/LocationPicker";
 import { PhotoPicker, type ExistingPhoto } from "@/components/PhotoPicker";
 import { deleteCloudinaryAssets, uploadListingImage, uploadListingVideo } from "@/lib/storage";
 import { categoriesQuery } from "@/lib/marketplace";
+import { CategoryTreeField } from "@/components/category-tree-select";
+import {
+  categoryAttributesQuery,
+  collectAttributeValues,
+  fetchListingAttributeValues,
+  saveListingAttributeValues,
+  type CategoryAttributeDef,
+  type ListingAttributeValueRow,
+} from "@/lib/attributes";
 import { CITIES, CONDITIONS, MATERIALS, ROOM_TYPES, SUB_CITY_COORDS } from "@/lib/format";
 import { announceListing, syncListingChannel } from "@/lib/telegram";
 import { ChevronDown, Video } from "lucide-react";
@@ -74,6 +83,33 @@ function Sell() {
       return data;
     },
   });
+
+  // Selected category drives which dynamic attributes the form shows (spec §15).
+  const [categoryId, setCategoryId] = useState("");
+  const seededCategory = useRef(false);
+  useEffect(() => {
+    if (!seededCategory.current && editing?.category_id) {
+      seededCategory.current = true;
+      setCategoryId(editing.category_id);
+    }
+  }, [editing]);
+
+  // Attribute definitions for the selected category, loaded live from the
+  // backend so admin changes reach the form without a rebuild (spec §15).
+  const { data: attrDefs } = useQuery(categoryAttributesQuery(categoryId || null));
+  // Seller-provided values already on the listing (edit mode prefill).
+  const { data: existingAttrRows } = useQuery({
+    queryKey: ["listing-attr-values", editId],
+    enabled: !!editId,
+    queryFn: () => fetchListingAttributeValues(editId!),
+  });
+  const existingByAttr = useMemo(() => {
+    const m = new Map<string, ListingAttributeValueRow[]>();
+    for (const r of existingAttrRows ?? []) {
+      m.set(r.attribute_id, [...(m.get(r.attribute_id) ?? []), r]);
+    }
+    return m;
+  }, [existingAttrRows]);
 
   /** Existing photos minus pending removals, cover-first. */
   const existingPhotos = useMemo(() => {
@@ -156,8 +192,23 @@ function Sell() {
         video_url: videoUrl,
       };
 
+      // Dynamic category attributes (spec §12/§15): required ones must be
+      // provided before publishing — the backend enforces the same rule.
+      const defs = attrDefs ?? [];
+      const { rows: attrRows, missingRequired } = collectAttributeValues(form, defs);
+      if (missingRequired.length) {
+        toast.error(
+          t("sell.attrMissing").replace("{names}", missingRequired.map((d) => d.name).join(", ")),
+        );
+        return;
+      }
+
       let listing: { id: string };
       if (editId) {
+        // Values are saved first: updating the row re-fires the backend
+        // required-attribute check, so a category switch must already have
+        // its values in place.
+        await saveListingAttributeValues(editId, defs, attrRows);
         const { data, error } = await supabase
           .from("listings")
           .update({ ...values, updated_at: new Date().toISOString() })
@@ -168,13 +219,21 @@ function Sell() {
         if (error) throw error;
         listing = data;
       } else {
+        // Draft → values → activate, so the backend's publish-time check sees
+        // the attribute values when the listing goes live.
         const { data, error } = await supabase
           .from("listings")
-          .insert({ ...values, seller_id: user!.id, status: "active" })
+          .insert({ ...values, seller_id: user!.id, status: "draft" })
           .select("id")
           .single();
         if (error) throw error;
         listing = data;
+        await saveListingAttributeValues(listing.id, defs, attrRows);
+        const { error: activateError } = await supabase
+          .from("listings")
+          .update({ status: "active" })
+          .eq("id", listing.id);
+        if (activateError) throw activateError;
       }
 
       // The listing row exists from here on, so an image failure must not be
@@ -370,13 +429,14 @@ function Sell() {
 
         {/* Category & condition. */}
         <SectionCard title={t("sell.categoryCondition")}>
+          <CategoryTreeField
+            categories={categories ?? []}
+            inputName="category_id"
+            defaultValue={editing?.category_id ?? ""}
+            label={t("sell.category")}
+            onChange={setCategoryId}
+          />
           <div className="grid gap-4 sm:grid-cols-2">
-            <SelectField
-              label={t("sell.category")}
-              name="category_id"
-              defaultValue={editing?.category_id ?? ""}
-              options={(categories ?? []).map((c) => ({ value: c.id, label: c.name }))}
-            />
             <SelectField
               label={t("sell.condition")}
               name="condition"
@@ -484,6 +544,23 @@ function Sell() {
             <Field label={t("sell.colour")} name="color" defaultValue={editing?.color ?? ""} />
             <Field label={t("sell.brand")} name="brand" defaultValue={editing?.brand ?? ""} />
           </div>
+
+          {/* Dynamic attributes for the selected category (spec §15) — loaded
+              from the backend, so admin changes appear here without a release. */}
+          {attrDefs?.length ? (
+            <div className="space-y-4 border-t pt-4">
+              <p className="text-xs text-muted-foreground">{t("sell.attrHint")}</p>
+              <div className="grid gap-4 sm:grid-cols-2">
+                {attrDefs.map((def) => (
+                  <AttributeInput
+                    key={def.attribute_id}
+                    def={def}
+                    existing={existingByAttr.get(def.attribute_id) ?? []}
+                  />
+                ))}
+              </div>
+            </div>
+          ) : null}
         </SectionCard>
 
         <div className="flex gap-2">
@@ -609,6 +686,97 @@ function SelectField({
           </option>
         ))}
       </select>
+    </div>
+  );
+}
+
+/**
+ * One dynamically-configured attribute input (spec §15). The control matches
+ * the attribute's type; every field is named `attr_<attribute-id>` so
+ * `collectAttributeValues` can map submissions back to typed value rows.
+ */
+function AttributeInput({
+  def,
+  existing,
+}: {
+  def: CategoryAttributeDef;
+  existing: ListingAttributeValueRow[];
+}) {
+  const { t, lang } = useLang();
+  const name = `attr_${def.attribute_id}`;
+  const label = `${lang === "am" && def.name_am ? def.name_am : def.name}${
+    def.unit ? ` (${def.unit})` : ""
+  }${def.is_required ? " *" : ""}`;
+  const first = existing[0];
+
+  if (def.type === "boolean") {
+    return (
+      <div className="flex items-center gap-3">
+        <Switch id={name} name={name} defaultChecked={first?.value_boolean === true} />
+        <Label htmlFor={name}>{label}</Label>
+      </div>
+    );
+  }
+  if (def.type === "single_select") {
+    return (
+      <div className="space-y-2">
+        <Label htmlFor={name}>{label}</Label>
+        <select
+          id={name}
+          name={name}
+          required={def.is_required}
+          defaultValue={first?.option_id ?? ""}
+          className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm capitalize"
+        >
+          <option value="">{t("sell.select")}</option>
+          {def.options.map((o) => (
+            <option key={o.id} value={o.id}>
+              {lang === "am" && o.label_am ? o.label_am : o.label}
+            </option>
+          ))}
+        </select>
+      </div>
+    );
+  }
+  if (def.type === "multi_select") {
+    return (
+      <div className="space-y-2">
+        <Label>{label}</Label>
+        <div className="flex flex-wrap gap-x-4 gap-y-2">
+          {def.options.map((o) => (
+            <label key={o.id} className="flex items-center gap-1.5 text-sm font-normal">
+              <input
+                type="checkbox"
+                name={name}
+                value={o.id}
+                defaultChecked={existing.some((r) => r.option_id === o.id)}
+                className="h-4 w-4"
+              />
+              {lang === "am" && o.label_am ? o.label_am : o.label}
+            </label>
+          ))}
+        </div>
+      </div>
+    );
+  }
+  // text / number / range
+  return (
+    <div className="space-y-2">
+      <Label htmlFor={name}>{label}</Label>
+      <Input
+        id={name}
+        name={name}
+        type={def.type === "text" ? "text" : "number"}
+        required={def.is_required}
+        step="any"
+        defaultValue={
+          def.type === "text"
+            ? (first?.value_text ?? "")
+            : first?.value_number != null
+              ? String(first.value_number)
+              : ""
+        }
+      />
     </div>
   );
 }
