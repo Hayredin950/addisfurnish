@@ -63,7 +63,12 @@ export function imageUrl(
   ) {
     return width && width > 0 ? cloudThumb(pathOrUrl, width) ?? pathOrUrl : pathOrUrl;
   }
-  return supabase.storage.from(bucket).getPublicUrl(pathOrUrl).data.publicUrl;
+  // Strip a leading bucket prefix so legacy rows that stored
+  // `listing-images/<uuid>/photo.jpg` don't double-prefix.
+  const path = pathOrUrl.startsWith(`${bucket}/`)
+    ? pathOrUrl.substring(bucket.length + 1)
+    : pathOrUrl;
+  return supabase.storage.from(bucket).getPublicUrl(path).data.publicUrl;
 }
 
 /** `source` prop for <Image>, or undefined so the caller can render a placeholder. */

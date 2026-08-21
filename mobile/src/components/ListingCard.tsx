@@ -6,15 +6,20 @@ import { imageSource } from "../lib/storage";
 import { translate } from "../lib/i18n";
 import type { Lang } from "../lib/i18n";
 import type { Listing } from "../lib/api";
+import { FavoriteButton } from "./FavoriteButton";
 
 export function ListingCard({
   listing,
   lang,
   compact,
+  isFav,
+  onToggleFav,
 }: {
   listing: Listing;
   lang: Lang;
   compact?: boolean;
+  isFav?: boolean;
+  onToggleFav?: (listingId: string, isFav: boolean) => void;
 }) {
   const t = (k: Parameters<typeof translate>[1]) => translate(lang, k);
   const img = listing.listing_images?.[0];
@@ -37,6 +42,13 @@ export function ListingCard({
           <View style={[styles.image, styles.placeholder]}>
             <Text style={styles.placeholderText}>🛋️</Text>
           </View>
+        )}
+        {onToggleFav && (
+          <FavoriteButton
+            listingId={listing.id}
+            isFav={isFav ?? false}
+            onToggle={onToggleFav}
+          />
         )}
         <View style={styles.badgeRow}>
           {off > 0 && !sold && (

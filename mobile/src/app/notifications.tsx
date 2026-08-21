@@ -157,7 +157,7 @@ export default function NotificationsScreen() {
   }, [user?.id]);
 
   const openNotif = (n: Notif) => {
-    void markNotificationRead(n.id);
+    void markNotificationRead(n.id).then(() => refetch());
     // Seller-side offer alert lands on the dashboard's exact offer row
     // (?offer=<id>); older offers without an id fall back to the chat thread
     // (offers are mirrored into the conversation), then the plain dashboard.

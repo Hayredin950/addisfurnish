@@ -14,37 +14,69 @@ ALTER TABLE public.categories
 UPDATE public.categories SET level = 0 WHERE parent_id IS NULL;
 UPDATE public.categories SET level = 1 WHERE parent_id IS NOT NULL;
 
--- 3) Hierarchy validation (max 3 levels, parent level must be exactly one above)
+-- 3) Hierarchy validation (max 3 levels; spec §6)
+--
+-- `level` is a denormalised cache of depth, so it is always DERIVED from
+-- parent_id and never trusted from the caller. That keeps admin "move
+-- category" calls honest: the client only has to send the new parent_id, and
+-- it is impossible to write a row whose level disagrees with its parent.
 CREATE OR REPLACE FUNCTION public.validate_category_hierarchy()
 RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE
   _parent_level int;
+  _ancestor uuid;
+  _hops int := 0;
+  _max_descendant_depth int;
 BEGIN
   IF NEW.parent_id IS NULL THEN
     NEW.level := 0;
   ELSE
+    IF NEW.parent_id = NEW.id THEN
+      RAISE EXCEPTION 'a category cannot be its own parent';
+    END IF;
+
     SELECT level INTO _parent_level FROM public.categories WHERE id = NEW.parent_id;
     IF _parent_level IS NULL THEN
       RAISE EXCEPTION 'parent category does not exist';
     END IF;
-    IF NEW.level = 0 THEN
-      NEW.level := _parent_level + 1;
-    ELSIF NEW.level <> _parent_level + 1 THEN
-      RAISE EXCEPTION 'a child of a level % category must be level %, got level %',
-        _parent_level, _parent_level + 1, NEW.level;
-    END IF;
+
+    -- Cycle guard: walk up from the new parent. If we reach this row, the move
+    -- would create a loop, which would make the recursive tree queries below
+    -- (and category_listing_counts) spin forever.
+    _ancestor := NEW.parent_id;
+    WHILE _ancestor IS NOT NULL LOOP
+      IF _ancestor = NEW.id THEN
+        RAISE EXCEPTION 'cannot move a category beneath one of its own descendants';
+      END IF;
+      _hops := _hops + 1;
+      IF _hops > 64 THEN
+        RAISE EXCEPTION 'category hierarchy already contains a cycle';
+      END IF;
+      SELECT parent_id INTO _ancestor FROM public.categories WHERE id = _ancestor;
+    END LOOP;
+
+    NEW.level := _parent_level + 1;
   END IF;
 
   IF NEW.level > 2 THEN
     RAISE EXCEPTION 'category depth cannot exceed 3 levels';
   END IF;
 
-  -- Moving a category that still has children to the deepest level would
-  -- orphan its children below the legal depth — forbid it.
-  IF TG_OP = 'UPDATE' AND NEW.level = 2
-     AND (NEW.level IS DISTINCT FROM OLD.level OR NEW.parent_id IS DISTINCT FROM OLD.parent_id)
-     AND EXISTS (SELECT 1 FROM public.categories WHERE parent_id = NEW.id) THEN
-    RAISE EXCEPTION 'cannot move a category that has children to level 2';
+  -- A move must also leave room for everything already hanging underneath.
+  IF TG_OP = 'UPDATE' AND NEW.parent_id IS DISTINCT FROM OLD.parent_id THEN
+    WITH RECURSIVE d AS (
+      SELECT id, 0 AS rel_depth FROM public.categories WHERE id = NEW.id
+      UNION ALL
+      SELECT c.id, d.rel_depth + 1
+      FROM public.categories c JOIN d ON c.parent_id = d.id
+    )
+    SELECT max(rel_depth) INTO _max_descendant_depth FROM d;
+
+    IF NEW.level + coalesce(_max_descendant_depth, 0) > 2 THEN
+      RAISE EXCEPTION
+        'moving this category to level % would push its deepest child to level %, past the 3-level limit',
+        NEW.level, NEW.level + _max_descendant_depth;
+    END IF;
   END IF;
 
   NEW.updated_at := now();
@@ -55,6 +87,27 @@ DROP TRIGGER IF EXISTS categories_hierarchy ON public.categories;
 CREATE TRIGGER categories_hierarchy
   BEFORE INSERT OR UPDATE ON public.categories
   FOR EACH ROW EXECUTE FUNCTION public.validate_category_hierarchy();
+
+-- 3b) Re-derive descendants' levels after a subtree is moved. Without this a
+--     move leaves children holding their old level. Touching each child
+--     re-fires the BEFORE trigger, which recomputes its level from the new
+--     parent and cascades one step further down. Bounded by the depth limit.
+CREATE OR REPLACE FUNCTION public.cascade_category_levels()
+RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  UPDATE public.categories
+  SET parent_id = parent_id          -- no-op write; the BEFORE trigger re-derives level
+  WHERE parent_id = NEW.id
+    AND level <> NEW.level + 1;
+  RETURN NULL;
+END; $$;
+
+DROP TRIGGER IF EXISTS categories_cascade_levels ON public.categories;
+CREATE TRIGGER categories_cascade_levels
+  AFTER UPDATE OF parent_id, level ON public.categories
+  FOR EACH ROW
+  WHEN (NEW.level IS DISTINCT FROM OLD.level)
+  EXECUTE FUNCTION public.cascade_category_levels();
 
 -- 4) Listings may only reference existing, active categories.
 --    Deactivating a category never touches existing listings.

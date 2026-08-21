@@ -3,6 +3,34 @@ import { supabase } from "./supabase";
 import { formatBirr } from "./format";
 import type { Database } from "./db-types";
 
+/**
+ * Turn raw Supabase/Postgres errors into user-friendly strings.
+ * The user sees these — never a raw `duplicate key value violates unique
+ * constraint` stack trace.
+ */
+export function friendlyError(err: unknown): string {
+  const msg = err instanceof Error ? err.message : String(err ?? "");
+  if (msg.includes("Invalid login credentials") || msg.includes("invalid_credentials"))
+    return "Email or password is incorrect.";
+  if (msg.includes("User already registered") || msg.includes("already registered"))
+    return "An account with this email already exists. Try signing in instead.";
+  if (msg.includes("duplicate key") && msg.includes("profiles_phone_key"))
+    return "This phone number is already registered by another account.";
+  if (msg.includes("duplicate key"))
+    return "This record already exists. Please check and try again.";
+  if (msg.includes("Network request failed") || msg.includes("fetch failed"))
+    return "Network error — please check your connection and try again.";
+  if (msg.includes("Password should be at least"))
+    return "Password must be at least 6 characters.";
+  if (msg.includes("Unable to validate email address"))
+    return "Please enter a valid email address.";
+  if (msg.includes("rate limit") || msg.includes("too many"))
+    return "Too many attempts — please wait a minute and try again.";
+  // Fallback: shorten long Postgres messages to one readable line.
+  const short = msg.split("\n")[0].substring(0, 120);
+  return short || "Something went wrong. Please try again.";
+}
+
 export type Category = Database["public"]["Tables"]["categories"]["Row"];
 export type ListingRow = Database["public"]["Tables"]["listings"]["Row"];
 export type Profile = Database["public"]["Tables"]["profiles"]["Row"];

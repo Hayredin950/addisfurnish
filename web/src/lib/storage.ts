@@ -28,7 +28,12 @@ export function useImageUrl(pathOrUrl: string | null | undefined, bucket: string
       const value = pathOrUrl!;
       if (value.startsWith("http")) return value;
       if (isPublicBucket) {
-        return supabase.storage.from(bucket).getPublicUrl(value).data.publicUrl;
+        // Strip a leading bucket prefix so legacy rows that stored
+        // `listing-images/<uuid>/photo.jpg` don't double-prefix.
+        const path = value.startsWith(`${bucket}/`)
+          ? value.substring(bucket.length + 1)
+          : value;
+        return supabase.storage.from(bucket).getPublicUrl(path).data.publicUrl;
       }
       const { data, error } = await supabase.storage.from(bucket).createSignedUrl(value, 60 * 60);
       if (error) throw error;

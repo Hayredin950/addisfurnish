@@ -988,13 +988,20 @@ class SupabaseApi {
           : 'jpg';
       final path =
           '$userId/${DateTime.now().millisecondsSinceEpoch}-${_rand()}.$ext';
-      return await AppSupabase.client.storage
+      // uploadBinary returns the bucket-relative path, but some SDK versions
+      // prepend the bucket name. Strip it so the DB always stores a bare path
+      // like `<uuid>/photo.jpg` — matching what web and Expo Cloudinary uploads
+      // produce, and preventing the double-prefix bug on web/Expo.
+      final uploaded = await AppSupabase.client.storage
           .from('listing-images')
           .uploadBinary(
             path,
             await upload.readAsBytes(),
             fileOptions: const FileOptions(cacheControl: '3600', upsert: false),
           );
+      return uploaded.startsWith('listing-images/')
+          ? uploaded.substring('listing-images/'.length)
+          : uploaded;
     } catch (e) {
       _raise(e);
     }

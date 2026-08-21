@@ -121,6 +121,8 @@ export default function ListingDetailScreen() {
   const item = listing.data;
   const seller = item?.profiles ?? null;
   const isFav = favIds.includes(id ?? "");
+  const sold = item?.status === "sold";
+  const reserved = item?.status === "reserved";
   const off =
     item?.original_price && item.original_price > item.price
       ? Math.round(((item.original_price - item.price) / item.original_price) * 100)
@@ -477,56 +479,64 @@ export default function ListingDetailScreen() {
             </View>
             <Ionicons name="chevron-forward" size={18} color={colors.textSoft} />
           </View>
-          <View style={styles.contactRow}>
-            <Button
-              title={t("messageSeller")}
-              size="sm"
-              style={{ flex: 1 }}
-              onPress={() => {
-                if (!user) {
-                  router.push("/auth");
-                  return;
-                }
-                setMsgOpen(true);
-              }}
-            />
-            {seller.phone ? (
+          {!sold && !reserved ? (
+            <>
+              <View style={styles.contactRow}>
+                <Button
+                  title={t("messageSeller")}
+                  size="sm"
+                  style={{ flex: 1 }}
+                  onPress={() => {
+                    if (!user) {
+                      router.push("/auth");
+                      return;
+                    }
+                    setMsgOpen(true);
+                  }}
+                />
+                {seller.phone ? (
+                  <Button
+                    title={t("callNow")}
+                    size="sm"
+                    variant="outline"
+                    style={{ flex: 1 }}
+                    onPress={() => Linking.openURL(`tel:${seller.phone}`)}
+                  />
+                ) : null}
+              </View>
               <Button
-                title={t("callNow")}
+                title={t("requestCallback")}
+                size="sm"
+                variant="ghost"
+                style={{ marginTop: 8 }}
+                onPress={() => {
+                  if (!user) {
+                    router.push("/auth");
+                    return;
+                  }
+                  setCallbackPhone(myProfile.data?.phone ?? "");
+                  setCallbackOpen(true);
+                }}
+              />
+              <Button
+                title={t("makeOffer")}
                 size="sm"
                 variant="outline"
-                style={{ flex: 1 }}
-                onPress={() => Linking.openURL(`tel:${seller.phone}`)}
+                style={{ marginTop: 8 }}
+                onPress={() => {
+                  if (!user) {
+                    router.push("/auth");
+                    return;
+                  }
+                  setOfferOpen(true);
+                }}
               />
-            ) : null}
-          </View>
-          <Button
-            title={t("requestCallback")}
-            size="sm"
-            variant="ghost"
-            style={{ marginTop: 8 }}
-            onPress={() => {
-              if (!user) {
-                router.push("/auth");
-                return;
-              }
-              setCallbackPhone(myProfile.data?.phone ?? "");
-              setCallbackOpen(true);
-            }}
-          />
-          <Button
-            title={t("makeOffer")}
-            size="sm"
-            variant="outline"
-            style={{ marginTop: 8 }}
-            onPress={() => {
-              if (!user) {
-                router.push("/auth");
-                return;
-              }
-              setOfferOpen(true);
-            }}
-          />
+            </>
+          ) : (
+            <Text style={[styles.sellerMeta, { marginTop: 8, textAlign: "center" }]}>  
+              {sold ? t("soldOut") : t("reserved")} — {t("noLongerAvailable")}
+            </Text>
+          )}
           {seller.whatsapp ? (
             <Pressable
               style={styles.socialRow}

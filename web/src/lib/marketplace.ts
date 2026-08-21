@@ -154,6 +154,13 @@ export type ListingFilters = {
   sort?: string;
   sellerId?: string;
   limit?: number;
+  /**
+   * Phase 6 (§6): dynamic attribute filters. Maps an attribute slug to the
+   * values to match. Single/multi-select values are option values (e.g.
+   * "wood","leather"); number/range attributes take a 2-tuple [min,max]. Every
+   * supplied attribute is ANDed; values within one attribute OR.
+   */
+  attributes?: Record<string, (string | [number, number])[]>;
 };
 
 export function listingsQuery(filters: ListingFilters = {}) {

@@ -141,6 +141,7 @@ const en = {
   "listing.statusAvailable": "Available",
   "listing.statusReserved": "Reserved",
   "listing.statusSold": "Sold",
+  "listing.noLongerAvailable": "This item is no longer available.",
 
   // ── Shop ─────────────────────────────────────────────────────────
   "shop.notFound": "Shop not found",
@@ -794,6 +795,7 @@ const am: Record<keyof Dict, string> = {
   "listing.statusAvailable": "ይገኛል",
   "listing.statusReserved": "ተይዟል",
   "listing.statusSold": "ተሽጧል",
+  "listing.noLongerAvailable": "ይህ ዕቃ በድሆ ሁኔታ ነው።",
 
   "shop.notFound": "ሱቅ አልተገኘም",
   "shop.verified": "የተረጋገጠ",

@@ -636,6 +636,12 @@ function ListingDetail() {
                 </Button>
               </div>
             </div>
+          ) : (listing.status === "sold" || listing.status === "reserved" ? (
+            <div className="rounded-xl border bg-card p-6 text-center">
+              <p className="text-muted-foreground">
+                {listing.status === "sold" ? t("listing.statusSold") : t("listing.statusReserved")} — {t("listing.noLongerAvailable")}
+              </p>
+            </div>
           ) : (
             <div className="rounded-xl border bg-card p-6">
               <h2 className="font-display text-lg font-semibold">{t("listing.contact")}</h2>
@@ -717,7 +723,7 @@ function ListingDetail() {
                 </Link>
               </p>
             </div>
-          )}
+          ))}
 
           <Dialog open={offerOpen} onOpenChange={setOfferOpen}>
             <DialogContent>

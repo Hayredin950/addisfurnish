@@ -18,12 +18,14 @@ import { useAsync } from "../../hooks/use-async";
 import { useAuth } from "../../lib/auth";
 import {
   fetchCategories,
+  fetchFavoriteIds,
   fetchListings,
   fetchSavedSearches,
   fetchTrendingSearches,
   logSearch,
   saveSearch,
   deleteSavedSearch,
+  toggleFavorite,
 } from "../../lib/api";
 import { ListingCard } from "../../components/ListingCard";
 import { SheetOverlay } from "../../components/SheetOverlay";
@@ -56,6 +58,23 @@ export default function BrowseScreen() {
   const [location, setLocation] = useState<{ lat: number; lon: number } | null>(null);
   const [locating, setLocating] = useState(false);
   const [savedCurrent, setSavedCurrent] = useState(false);
+  const [favIds, setFavIds] = useState<string[]>([]);
+
+  // Load the user's favourite listing ids.
+  useEffect(() => {
+    if (!user) return;
+    void fetchFavoriteIds(user.id).then(setFavIds);
+  }, [user?.id]);
+
+  const handleToggleFav = async (listingId: string, isFav: boolean) => {
+    if (!user) return;
+    try {
+      await toggleFavorite(user.id, listingId, isFav);
+      setFavIds((prev) =>
+        isFav ? prev.filter((x) => x !== listingId) : [...prev, listingId],
+      );
+    } catch { /* ignore */ }
+  };
 
   const cats = useAsync(fetchCategories, []);
   const trending = useAsync(fetchTrendingSearches, []);
@@ -395,7 +414,14 @@ export default function BrowseScreen() {
             />
           )
         }
-        renderItem={({ item }) => <ListingCard listing={item} lang={lang} />}
+        renderItem={({ item }) => (
+          <ListingCard
+            listing={item}
+            lang={lang}
+            isFav={favIds.includes(item.id)}
+            onToggleFav={handleToggleFav}
+          />
+        )}
         onRefresh={refetch}
         refreshing={loading && !!data}
       />

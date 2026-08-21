@@ -489,6 +489,11 @@ export default function ProfileScreen() {
             label={t("favorites")}
             onPress={() => router.push("/favorites")}
           />
+          <QuickAction
+            icon="language-outline"
+            label={lang === "am" ? "English" : "አማርኛ"}
+            onPress={() => setLang(lang === "en" ? "am" : "en")}
+          />
         </View>
 
         {/* Set up your profile — one clear entry to the guided wizard. */}

@@ -15,6 +15,7 @@ import * as WebBrowser from "expo-web-browser";
 import * as Linking from "expo-linking";
 import { Ionicons } from "@expo/vector-icons";
 import { supabase } from "../lib/supabase";
+import { friendlyError } from "../lib/api";
 import { useLang } from "../lib/lang";
 import { authFlow } from "../lib/authFlow";
 import { Button } from "../components/Button";
@@ -126,7 +127,7 @@ export default function AuthScreen() {
         password,
       });
       if (err) {
-        setError(err.message);
+        setError(friendlyError(err));
       } else {
         router.replace("/(tabs)");
       }
@@ -154,7 +155,7 @@ export default function AuthScreen() {
         },
       });
       if (err) {
-        setError(err.message);
+        setError(friendlyError(err));
         return;
       }
       if (!data.session) {
@@ -178,7 +179,7 @@ export default function AuthScreen() {
         type: "signup",
         email: pendingEmail,
       });
-      if (err) setError(err.message);
+      if (err) setError(friendlyError(err));
       else setNotice(t("confirmationResent"));
     } finally {
       setBusy(false);
@@ -197,7 +198,7 @@ export default function AuthScreen() {
         type: "signup",
       });
       if (err) {
-        setError(err.message);
+        setError(friendlyError(err));
         return;
       }
       if (data.session) {
@@ -217,7 +218,7 @@ export default function AuthScreen() {
         redirectTo: Linking.createURL("auth"),
       });
       if (err) {
-        setError(err.message);
+        setError(friendlyError(err));
         return;
       }
       setNotice(t("resetSent"));
@@ -238,7 +239,7 @@ export default function AuthScreen() {
         type: "recovery",
       });
       if (err) {
-        setError(err.message);
+        setError(friendlyError(err));
         return;
       }
       if (data.session) {
@@ -260,7 +261,7 @@ export default function AuthScreen() {
     try {
       const { error: err } = await supabase.auth.updateUser({ password: newPassword });
       if (err) {
-        setError(err.message);
+        setError(friendlyError(err));
         return;
       }
       setNotice(t("resetDone"));
@@ -278,7 +279,7 @@ export default function AuthScreen() {
       const { error: err } = await supabase.auth.resetPasswordForEmail(resetEmail.trim(), {
         redirectTo: Linking.createURL("auth"),
       });
-      if (err) setError(err.message);
+      if (err) setError(friendlyError(err));
       else setNotice(t("resetSent"));
     } finally {
       setBusy(false);
