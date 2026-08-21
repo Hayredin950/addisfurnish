@@ -71,12 +71,11 @@ export async function fetchListings(filters: ListingFilters = {}): Promise<Listi
       .eq("slug", filters.category)
       .maybeSingle();
     if (cat) {
-      const { data: children } = await supabase
-        .from("categories")
-        .select("id")
-        .eq("parent_id", cat.id);
-      const ids = [cat.id, ...(children ?? []).map((c) => c.id)];
-      query = query.in("category_id", ids);
+      // A chosen category shows itself + ALL descendants (max three levels).
+      const { data: ids } = await supabase.rpc("category_descendant_ids", {
+        _root: cat.id,
+      });
+      query = query.in("category_id", (ids ?? [cat.id]) as string[]);
     }
   }
 

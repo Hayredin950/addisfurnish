@@ -39,6 +39,7 @@ import {
   type SavedSearch,
 } from "@/lib/marketplace";
 import { CITIES, CONDITIONS, MATERIALS, ROOM_TYPES, categoryName, haversineKm } from "@/lib/format";
+import { CategoryTreeSelect } from "@/components/category-picker";
 
 type BrowseSearch = {
   q: string;
@@ -231,8 +232,7 @@ function Browse() {
               <FilterControls
                 search={search}
                 set={set}
-                roots={roots}
-                children={children}
+                categories={categories ?? []}
                 activeCount={activeCount}
               />
               <SheetClose asChild>
@@ -247,8 +247,7 @@ function Browse() {
           <FilterControls
             search={search}
             set={set}
-            roots={roots}
-            children={children}
+            categories={categories ?? []}
             activeCount={activeCount}
           />
         </aside>
@@ -424,17 +423,18 @@ function Browse() {
 function FilterControls({
   search,
   set,
-  roots,
-  children,
+  categories,
   activeCount,
 }: {
   search: Partial<BrowseSearch>;
   set: (patch: Partial<BrowseSearch>) => void;
-  roots: Category[];
-  children: Category[];
+  categories: Category[];
   activeCount: number;
 }) {
   const { t, lang } = useLang();
+  const active = (categories ?? []).filter((c) => c.is_active);
+  const currentId = (active ?? []).find((c) => c.slug === (search.category ?? ""))?.id ?? "";
+
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-2 text-sm font-medium">
@@ -472,17 +472,15 @@ function FilterControls({
         />
       </div>
 
-      <FilterSelect
+      <CategoryTreeSelect
+        categories={active}
+        value={currentId}
+        onChange={(id) => {
+          const cat = active.find((c) => c.id === id);
+          set({ category: cat?.slug ?? "" });
+        }}
         label={t("browse.category")}
-        value={search.category ?? ""}
-        onChange={(v) => set({ category: v })}
-        options={[
-          ...roots.map((c) => ({ value: c.slug, label: categoryName(c, lang) })),
-          ...children.map((c) => ({
-            value: c.slug,
-            label: `— ${categoryName(c, lang)}`,
-          })),
-        ]}
+        placeholder={t("browse.categoryPlaceholder")}
       />
       <FilterSelect
         label={t("browse.condition")}

@@ -99,8 +99,9 @@ export default function SellScreen() {
   // pin or use their current location (web parity).
   const [lat, setLat] = useState<number | null>(profile?.latitude ?? null);
   const [lon, setLon] = useState<number | null>(profile?.longitude ?? null);
-  // Category picker: a root category, then an optional child of it.
+  // Category picker: root → level 1 → level 2 (leaf). Level 2 is optional.
   const [rootCategoryId, setRootCategoryId] = useState<string | null>(null);
+  const [subCategoryId, setSubCategoryId] = useState<string | null>(null);
   // Material: pick from the list, or choose "Custom…" to type one.
   const [materialCustom, setMaterialCustom] = useState(false);
 
@@ -136,7 +137,17 @@ export default function SellScreen() {
     setNegotiable(item.negotiable);
     setCondition(item.condition);
     setCategoryId(item.category_id);
-    setCity(item.city);
+     setCity(item.city);
+     // Seed the category cascade from the listing's category, walking up to root.
+     const catId = item.category_id;
+     if (catId) {
+       const all = cats.data ?? [];
+       const cat = all.find((c) => c.id === catId);
+       const sub = cat?.parent_id ? all.find((c) => c.id === cat.parent_id) : undefined;
+       const root = sub?.parent_id ? all.find((c) => c.id === sub.parent_id) : sub;
+       if (root?.parent_id == null) setRootCategoryId(root?.id ?? null);
+       setSubCategoryId(sub?.parent_id === root?.id ? sub?.id ?? null : null);
+     }
     setSubCity(item.sub_city ?? "");
     setMaterial(item.material ?? "");
     setColor(item.color ?? "");
@@ -155,15 +166,6 @@ export default function SellScreen() {
       .sort((a, b) => a.position - b.position)
       .map((img) => ({ uri: img.url, name: `existing-${img.id}.jpg`, isExisting: true }));
     setPhotos(existing);
-    // Seed the root/subcategory pickers from the listing's category.
-    const catId = item.category_id;
-    if (catId) {
-      const cat = (cats.data ?? []).find((c) => c.id === catId);
-      if (cat) {
-        setRootCategoryId(cat.parent_id ?? cat.id);
-        setCategoryId(cat.parent_id ? cat.id : null);
-      }
-    }
   }, [item, editId, cats.data]);
 
   const pickPhotos = async () => {
@@ -278,7 +280,7 @@ export default function SellScreen() {
         sub_city: subCity.trim() || null,
         // A root-only pick is the category itself; when a child is chosen it
         // wins. Never null if the seller picked anything.
-        category_id: categoryId ?? rootCategoryId,
+        category_id: categoryId ?? subCategoryId ?? rootCategoryId,
         delivery_offered: deliveryOffered,
         delivery_fee: deliveryOffered && deliveryFee ? Number(deliveryFee) : null,
         discount_expires_at: discountExpiresAt,
@@ -485,40 +487,54 @@ export default function SellScreen() {
         <View style={styles.card}>
           <Field label={t("title")} value={title} onChange={setTitle} />
 
-          <Text style={styles.label}>{t("category")}</Text>
-          {(() => {
-            const all = cats.data ?? [];
-            const roots = all.filter((c) => !c.parent_id);
-            const children = all.filter((c) => c.parent_id === rootCategoryId);
-            const catName = (c: { id: string; name: string; name_am: string | null }) =>
-              lang === "am" ? (c.name_am ?? c.name) : c.name;
-            return (
-              <>
-                <SelectField
-                  label=""
-                  value={
-                    rootCategoryId ? catName(roots.find((c) => c.id === rootCategoryId)!) : ""
-                  }
-                  placeholder={t("selectRootCategory")}
-                  options={roots.map((c) => ({ value: c.id, label: catName(c) }))}
-                  onChange={(id) => {
-                    setRootCategoryId(id);
-                    // A child was selected under the old root — reset it.
-                    setCategoryId(null);
-                  }}
-                />
-                {children.length > 0 ? (
-                  <SelectField
-                    label=""
-                    value={categoryId ? catName(children.find((c) => c.id === categoryId)!) : ""}
-                    placeholder={t("selectSubCategory")}
-                    options={children.map((c) => ({ value: c.id, label: catName(c) }))}
-                    onChange={setCategoryId}
-                  />
-                ) : null}
-              </>
-            );
-          })()}
+           <Text style={styles.label}>{t("category")}</Text>
+           {(() => {
+             const all = cats.data ?? [];
+             const roots = all.filter((c) => !c.parent_id);
+             const subs = all.filter((c) => c.parent_id === rootCategoryId);
+             const leaves = all.filter((c) => c.parent_id === subCategoryId);
+             const pick = (id: string | null, list: typeof all) =>
+               id ? list.find((c) => c.id === id) : undefined;
+             const catName = (c: { id: string; name: string; name_am: string | null } | undefined) =>
+               c ? (lang === "am" ? (c.name_am ?? c.name) : c.name) : "";
+             return (
+               <>
+                 <SelectField
+                   label=""
+                   value={catName(pick(rootCategoryId, roots))}
+                   placeholder={t("selectRootCategory")}
+                   options={roots.map((c) => ({ value: c.id, label: catName(c) }))}
+                   onChange={(id) => {
+                     setRootCategoryId(id);
+                     setSubCategoryId(null);
+                     setCategoryId(null);
+                   }}
+                 />
+                 {rootCategoryId != null ? (
+                   <SelectField
+                     label=""
+                     value={catName(pick(subCategoryId, subs))}
+                     placeholder={t("selectSubCategory")}
+                     options={subs.map((c) => ({ value: c.id, label: catName(c) }))}
+                     onChange={(id) => {
+                       setSubCategoryId(id);
+                       setCategoryId(null);
+                     }}
+                   />
+                 ) : null}
+                 {subCategoryId != null && leaves.length > 0 ? (
+                   <SelectField
+                     label=""
+                     value={catName(pick(categoryId, leaves))}
+                     placeholder={t("selectLeafCategory")}
+                     options={leaves.map((c) => ({ value: c.id, label: catName(c) }))}
+                     onChange={(id) => setCategoryId(id)}
+                   />
+                 ) : null}
+               </>
+             );
+           })()}
+
 
           <SelectField
             label={t("condition")}

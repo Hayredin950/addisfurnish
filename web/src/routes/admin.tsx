@@ -63,6 +63,7 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
@@ -678,6 +679,8 @@ function CategoriesTab() {
   const [name, setName] = useState("");
   const [parentId, setParentId] = useState("");
   const [icon, setIcon] = useState("");
+  const [description, setDescription] = useState("");
+  const [active, setActive] = useState(true);
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
   const [renameIcon, setRenameIcon] = useState("");
@@ -710,6 +713,8 @@ function CategoriesTab() {
       slug,
       parent_id: parentId || null,
       icon: icon || null,
+      description: description.trim() || null,
+      is_active: active,
       sort_order: 1,
     });
     setBusy(false);
@@ -720,6 +725,8 @@ function CategoriesTab() {
     setName("");
     setParentId("");
     setIcon("");
+    setDescription("");
+    setActive(true);
     toast.success(t("toast.listingLive"));
     invalidate();
   };
@@ -767,6 +774,18 @@ function CategoriesTab() {
     invalidate();
   };
 
+  const toggleActive = async (cat: Category) => {
+    const { error } = await supabase
+      .from("categories")
+      .update({ is_active: !cat.is_active })
+      .eq("id", cat.id);
+    if (error) {
+      toast.error(t("toast.updateFailed"));
+      return;
+    }
+    invalidate();
+  };
+
   const IconSelect = ({
     value,
     onChange,
@@ -798,9 +817,12 @@ function CategoriesTab() {
       .sort((a, b) => a.sort_order - b.sort_order)
       .findIndex((c) => c.id === cat.id);
     const sibs = (categories ?? []).filter((c) => c.parent_id === cat.parent_id);
+    const kids = (categories ?? [])
+      .filter((c) => c.parent_id === cat.id)
+      .sort((a, b) => a.sort_order - b.sort_order);
     return (
       <li
-        className={`flex flex-wrap items-center gap-2 rounded-lg border bg-card p-3 ${depth > 0 ? "ml-6" : ""}`}
+        className={`flex flex-wrap items-center gap-2 rounded-lg border bg-card p-3 ${depth > 0 ? "ml-6" : ""} ${!cat.is_active ? "opacity-60" : ""}`}
       >
         {renamingId === cat.id ? (
           <>
@@ -851,6 +873,15 @@ function CategoriesTab() {
             </div>
             <button
               type="button"
+              aria-label={cat.is_active ? t("admin.deactivate") : t("admin.activate")}
+              title={cat.is_active ? t("admin.deactivate") : t("admin.activate")}
+              onClick={() => void toggleActive(cat)}
+              className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+            >
+              {cat.is_active ? <Eye className="h-3.5 w-3.5" /> : <Ban className="h-3.5 w-3.5" />}
+            </button>
+            <button
+              type="button"
               aria-label="Rename"
               onClick={() => {
                 setRenamingId(cat.id);
@@ -889,6 +920,13 @@ function CategoriesTab() {
             </button>
           </>
         )}
+        {kids.length > 0 ? (
+          <ul className="mt-2 w-full space-y-2">
+            {kids.map((k) => (
+              <Row key={k.id} cat={k} depth={depth + 1} />
+            ))}
+          </ul>
+        ) : null}
       </li>
     );
   };
@@ -897,8 +935,20 @@ function CategoriesTab() {
     <div>
       <div className="rounded-lg border bg-card p-4">
         <p className="text-sm font-medium">{t("admin.addCategory")}</p>
-        <div className="mt-3 grid gap-3 sm:grid-cols-[1fr_160px_160px_auto]">
+        <div className="mt-3 grid gap-3 sm:grid-cols-2">
           <Input placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} />
+          <Input
+            placeholder={t("admin.slug")}
+            value={
+              name
+                ? name
+                    .toLowerCase()
+                    .replace(/[^a-z0-9]+/g, "-")
+                    .replace(/^-|-$/g, "")
+                : ""
+            }
+            readOnly
+          />
           <select
             value={parentId}
             onChange={(e) => setParentId(e.target.value)}
@@ -906,12 +956,27 @@ function CategoriesTab() {
           >
             <option value="">{t("admin.rootCategory")}</option>
             {roots.map((r) => (
-              <option key={r.id} value={r.id}>
-                {r.name}
-              </option>
+              <optgroup key={r.id} label={r.name}>
+                <option value={r.id}>{r.name}</option>
+                {children
+                  .filter((c) => c.parent_id === r.id)
+                  .sort((a, b) => a.sort_order - b.sort_order)
+                  .map((c) => (
+                    <option key={c.id} value={c.id}>{`- ${c.name}`}</option>
+                  ))}
+              </optgroup>
             ))}
           </select>
           <IconSelect value={icon} onChange={setIcon} />
+          <Textarea
+            placeholder={t("admin.description")}
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+          />
+          <div className="mt-2 flex items-center gap-2">
+            <Switch checked={active} onCheckedChange={setActive} aria-label={t("admin.activate")} />
+            <Label className="text-sm">{active ? t("admin.active") : t("admin.inactive")}</Label>
+          </div>
           <Button disabled={!name.trim() || busy} onClick={add}>
             {t("admin.addCategory")}
           </Button>
@@ -920,14 +985,7 @@ function CategoriesTab() {
 
       <ul className="mt-4 space-y-2">
         {roots.map((r) => (
-          <li key={r.id} className="space-y-2">
-            <Row cat={r} depth={0} />
-            {children
-              .filter((c) => c.parent_id === r.id)
-              .map((c) => (
-                <Row key={c.id} cat={c} depth={1} />
-              ))}
-          </li>
+          <Row key={r.id} cat={r} depth={0} />
         ))}
       </ul>
 

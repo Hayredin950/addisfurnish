@@ -11,6 +11,10 @@ class Category {
     this.parentId,
     this.icon,
     required this.sortOrder,
+    this.level = 0,
+    this.isActive = true,
+    this.description,
+    this.imageUrl,
   });
 
   final String id;
@@ -20,6 +24,10 @@ class Category {
   final String? parentId;
   final String? icon;
   final int sortOrder;
+  final int level;
+  final bool isActive;
+  final String? description;
+  final String? imageUrl;
 
   factory Category.fromJson(Map<String, dynamic> json) => Category(
         id: json['id'] as String,
@@ -29,6 +37,10 @@ class Category {
         parentId: json['parent_id'] as String?,
         icon: json['icon'] as String?,
         sortOrder: (json['sort_order'] as num?)?.toInt() ?? 0,
+        level: (json['level'] as num?)?.toInt() ?? 0,
+        isActive: json['is_active'] as bool? ?? true,
+        description: json['description'] as String?,
+        imageUrl: json['image_url'] as String?,
       );
 
   Map<String, dynamic> toJson() => {
@@ -39,6 +51,10 @@ class Category {
         'parent_id': parentId,
         'icon': icon,
         'sort_order': sortOrder,
+        'level': level,
+        'is_active': isActive,
+        'description': description,
+        'image_url': imageUrl,
       };
 }
 
@@ -919,7 +935,7 @@ class AdminUser {
       );
 }
 
-/// Admin category row (id,name,slug,parent,icon,sort).
+/// Admin category row (id,name,slug,parent,level,active,icon,sort).
 class AdminCategory {
   const AdminCategory({
     required this.id,
@@ -928,6 +944,8 @@ class AdminCategory {
     required this.sortOrder,
     this.parentId,
     this.icon,
+    this.level = 0,
+    this.isActive = true,
   });
 
   final String id;
@@ -936,6 +954,8 @@ class AdminCategory {
   final String? parentId;
   final String? icon;
   final int sortOrder;
+  final int level;
+  final bool isActive;
 
   factory AdminCategory.fromJson(Map<String, dynamic> json) => AdminCategory(
         id: json['id'] as String,
@@ -944,6 +964,8 @@ class AdminCategory {
         parentId: json['parent_id'] as String?,
         icon: json['icon'] as String?,
         sortOrder: (json['sort_order'] as num?)?.toInt() ?? 0,
+        level: (json['level'] as num?)?.toInt() ?? 0,
+        isActive: json['is_active'] as bool? ?? true,
       );
 }
 

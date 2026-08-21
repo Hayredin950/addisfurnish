@@ -35,6 +35,8 @@ abstract class AdminRepository {
 
   Future<void> renameCategory(String id, String name, {String? icon});
 
+  Future<void> setCategoryActive(String id, bool isActive);
+
   Future<void> moveCategory(String id, String direction);
 
   Future<Map<String, int>> getCategoryCounts();

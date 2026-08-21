@@ -51,6 +51,10 @@ class AdminRepositoryImpl implements AdminRepository {
       SupabaseApi.renameCategory(id, name, icon: icon);
 
   @override
+  Future<void> setCategoryActive(String id, bool isActive) =>
+      SupabaseApi.setCategoryActive(id, isActive);
+
+  @override
   Future<void> moveCategory(String id, String direction) =>
       SupabaseApi.moveCategory(id, direction);
 

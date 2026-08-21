@@ -8,6 +8,7 @@ import { useLang } from "@/lib/i18n";
 import { RequireAuth } from "@/components/RequireAuth";
 import { LocationPicker, type Coords } from "@/components/LocationPicker";
 import { PhotoPicker, type ExistingPhoto } from "@/components/PhotoPicker";
+import { CategoryPicker } from "@/components/category-picker";
 import { deleteCloudinaryAssets, uploadListingImage, uploadListingVideo } from "@/lib/storage";
 import { categoriesQuery } from "@/lib/marketplace";
 import { CITIES, CONDITIONS, MATERIALS, ROOM_TYPES, SUB_CITY_COORDS } from "@/lib/format";
@@ -371,11 +372,11 @@ function Sell() {
         {/* Category & condition. */}
         <SectionCard title={t("sell.categoryCondition")}>
           <div className="grid gap-4 sm:grid-cols-2">
-            <SelectField
-              label={t("sell.category")}
-              name="category_id"
+            <CategoryPicker
+              categories={categories ?? []}
+              inputName="category_id"
               defaultValue={editing?.category_id ?? ""}
-              options={(categories ?? []).map((c) => ({ value: c.id, label: c.name }))}
+              label={t("sell.category")}
             />
             <SelectField
               label={t("sell.condition")}

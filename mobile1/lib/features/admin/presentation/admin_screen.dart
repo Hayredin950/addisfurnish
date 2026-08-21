@@ -924,6 +924,15 @@ class _CategoriesTabState extends State<CategoriesTab> with AppStateMixin {
     }
   }
 
+  Future<void> _toggleActive(AdminCategory c) async {
+    try {
+      await _repo.setCategoryActive(c.id, !c.isActive);
+      await _load();
+    } catch (e) {
+      _snack(context, '$e');
+    }
+  }
+
   Future<void> _move(AdminCategory c, String direction) async {
     try {
       await _repo.moveCategory(c.id, direction);
@@ -1025,19 +1034,32 @@ class _CategoriesTabState extends State<CategoriesTab> with AppStateMixin {
               icon: const Icon(Icons.keyboard_arrow_down),
               onPressed: idx >= siblings.length - 1 ? null : () => _move(c, 'down'),
             ),
-            IconButton(
-              icon: const Icon(Icons.edit_outlined, size: 18),
-              onPressed: () => setState(() {
-                _renamingId = c.id;
-                _renameValue.text = c.name;
-                _renameIcon = c.icon;
-              }),
-            ),
-            IconButton(
-              icon: Icon(Icons.delete_outline, size: 18,
-                  color: theme.colorScheme.error),
-              onPressed: () => _delete(c, all),
-            ),
+             IconButton(
+               icon: const Icon(Icons.edit_outlined, size: 18),
+               onPressed: () => setState(() {
+                 _renamingId = c.id;
+                 _renameValue.text = c.name;
+                 _renameIcon = c.icon;
+               }),
+             ),
+             IconButton(
+               tooltip: c.isActive
+                   ? AppState.instance.t('admin.deactivate')
+                   : AppState.instance.t('admin.activate'),
+               icon: Icon(
+                 c.isActive ? Icons.power_settings : Icons.power_off,
+                 size: 18,
+                 color: c.isActive
+                     ? theme.colorScheme.primary
+                     : theme.colorScheme.onSurfaceVariant,
+               ),
+               onPressed: () => _toggleActive(c),
+             ),
+             IconButton(
+               icon: Icon(Icons.delete_outline, size: 18,
+                   color: theme.colorScheme.error),
+               onPressed: () => _delete(c, all),
+             ),
           ],
         ],
       ),

@@ -178,15 +178,10 @@ class SupabaseApi {
             .eq('slug', f.category!)
             .maybeSingle();
         if (cat != null) {
-          final children = await _db
-              .from('categories')
-              .select('id')
-              .eq('parent_id', cat['id']);
-          final ids = [
-            cat['id'],
-            ...children.map((c) => c['id']),
-          ].cast<String>();
-          q = q.inFilter('category_id', ids);
+          // Include the chosen category and ALL its descendants (max three levels).
+          final ids = await _db.rpc('category_descendant_ids',
+              params: {'_root': cat['id'] as String});
+          q = q.inFilter('category_id', (ids as List<dynamic>).cast<String>());
         }
       }
 
@@ -1974,13 +1969,21 @@ class SupabaseApi {
     }
   }
 
-  static Future<void> createCategory(String name, {String? parentId, String? icon}) async {
+  static Future<void> createCategory(
+    String name, {
+    String? parentId,
+    String? icon,
+    String? description,
+    bool isActive = true,
+  }) async {
     try {
       await _db.from('categories').insert({
         'name': name.trim(),
         'slug': _toSlug(name),
         'parent_id': parentId,
         'icon': icon,
+        'description': description,
+        'is_active': isActive,
         'sort_order': 1,
       });
     } catch (e) {
@@ -1995,6 +1998,15 @@ class SupabaseApi {
         'slug': _toSlug(name),
         if (icon != null) 'icon': icon,
       }).eq('id', id);
+    } catch (e) {
+      _raise(e);
+    }
+  }
+
+  /// Activate/deactivate a category without deleting it or its listings.
+  static Future<void> setCategoryActive(String id, bool isActive) async {
+    try {
+      await _db.from('categories').update({'is_active': isActive}).eq('id', id);
     } catch (e) {
       _raise(e);
     }

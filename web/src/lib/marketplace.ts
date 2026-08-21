@@ -9,6 +9,10 @@ export type Category = {
   parent_id: string | null;
   icon: string | null;
   sort_order: number;
+  level: number;
+  is_active: boolean;
+  description: string | null;
+  image_url: string | null;
 };
 
 export type SellerSummary = {
@@ -176,18 +180,19 @@ export function listingsQuery(filters: ListingFilters = {}) {
       if (filters.discounted) query = query.not("original_price", "is", null);
       if (filters.featured) query = query.eq("featured", true);
       if (filters.category) {
-        const { data: cat } = await supabase
+        const { data: cat, error: catErr } = await supabase
           .from("categories")
           .select("id")
           .eq("slug", filters.category)
           .maybeSingle();
+        if (catErr) throw catErr;
         if (cat) {
-          const { data: children } = await supabase
-            .from("categories")
-            .select("id")
-            .eq("parent_id", cat.id);
-          const ids = [cat.id, ...(children ?? []).map((c) => c.id)];
-          query = query.in("category_id", ids);
+          // A chosen category shows itself + ALL descendants (up to level 2).
+          const { data: ids, error: idsErr } = await supabase.rpc("category_descendant_ids", {
+            _root: cat.id,
+          });
+          if (idsErr) throw idsErr;
+          query = query.in("category_id", (ids ?? [cat.id]) as string[]);
         }
       }
 
@@ -863,8 +868,12 @@ export function adminStatsQuery() {
           .from("profiles")
           .select("id", { count: "exact", head: true })
           .eq("telegram_blocked", true),
-        supabase.from("telegram_channel_posts").select("listing_id", { count: "exact", head: true }),
-        supabase.from("telegram_processed_updates").select("update_id", { count: "exact", head: true }),
+        supabase
+          .from("telegram_channel_posts")
+          .select("listing_id", { count: "exact", head: true }),
+        supabase
+          .from("telegram_processed_updates")
+          .select("update_id", { count: "exact", head: true }),
       ]);
       const totalViews = (views.data ?? []).reduce(
         (sum: number, l: { view_count: number }) => sum + (l.view_count ?? 0),

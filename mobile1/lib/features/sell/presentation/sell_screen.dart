@@ -71,6 +71,7 @@ class _SellScreenState extends State<SellScreen> with AppStateMixin {
   String? _condition = 'good';
   String? _categoryId;
   String? _rootCategoryId;
+  String? _level1CategoryId;
   List<Category> _categories = const [];
   List<_SellImage> _images = const [];
   String? _discountDate;
@@ -159,10 +160,33 @@ class _SellScreenState extends State<SellScreen> with AppStateMixin {
         _videoExisting = item.videoUrl != null;
         _categoryId = item.categoryId;
         Category? cat;
-        for (final c in _categories) {
-          if (c.id == item.categoryId) cat = c;
+        try {
+          cat = _categories.firstWhere((c) => c.id == item.categoryId);
+        } catch (_) {
+          cat = null;
         }
-        _rootCategoryId = cat?.parentId ?? item.categoryId;
+        // Walk up to root so the cascade reflects the right tier.
+        _rootCategoryId = null;
+        _level1CategoryId = null;
+        if (cat != null) {
+          if (cat.level >= 1 && cat.parentId != null) {
+            _level1CategoryId = cat.parentId;
+            Category? l1;
+            try {
+              l1 = _categories.firstWhere((c) => c.id == cat!.parentId);
+            } catch (_) {
+              l1 = null;
+            }
+            if ((l1?.level ?? 0) >= 1 && l1?.parentId != null) {
+              _rootCategoryId = l1!.parentId;
+            } else {
+              _rootCategoryId = cat.parentId;
+              _level1CategoryId = null;
+            }
+          } else {
+            _rootCategoryId = cat.id;
+          }
+        }
         _images = [
           for (final img in item.images)
             _SellImage(url: img.url, isExisting: true),
@@ -304,7 +328,7 @@ class _SellScreenState extends State<SellScreen> with AppStateMixin {
           lon = c.lng;
         }
       }
-      final categoryId = _categoryId ?? _rootCategoryId;
+      final categoryId = _categoryId ?? _level1CategoryId ?? _rootCategoryId;
 
       if (_isEditMode && _editing) {
         final id = widget.editListingId!;
@@ -390,6 +414,7 @@ class _SellScreenState extends State<SellScreen> with AppStateMixin {
     _condition = 'good';
     _categoryId = null;
     _rootCategoryId = null;
+    _level1CategoryId = null;
     _images = const [];
     _video = null;
     _videoUrl = null;
@@ -587,30 +612,10 @@ class _SellScreenState extends State<SellScreen> with AppStateMixin {
                       CalendarPicker(value: _discountDate, onChange: (v) => setState(() => _discountDate = v)),
                     ],
 
-                    const SizedBox(height: 8),
-                    _label(state.t('sell.category')),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        for (final c in _categories.where((c) => c.parentId == null))
-                          ChoiceChip(
-                            label: Text(c.name),
-                            selected: _rootCategoryId == c.id || (_categoryId != null && _categories.where((cc) => cc.id == _categoryId).any((cc) => cc.parentId == c.id)),
-                            onSelected: (_) => setState(() {
-                              _rootCategoryId = c.id;
-                              _categoryId = null;
-                            }),
-                          ),
-                        if (_rootCategoryId != null)
-                          for (final c in _categories.where((c) => c.parentId == _rootCategoryId))
-                            ChoiceChip(
-                              label: Text(c.name),
-                              selected: _categoryId == c.id,
-                              onSelected: (_) => setState(() => _categoryId = c.id),
-                            ),
-                      ],
-                    ),
+                     const SizedBox(height: 8),
+                     _label(state.t('sell.category')),
+                     _categoryCascade(),
+
 
                     const SizedBox(height: 16),
                     _label(state.t('sell.condition')),
@@ -883,6 +888,78 @@ class _SellScreenState extends State<SellScreen> with AppStateMixin {
           ),
         ],
       ),
+    );
+  }
+
+   Widget _categoryCascade() {
+    final cats = _categories.where((c) => c.isActive).toList();
+    Category? findById(String? id) {
+      if (id == null) return null;
+      for (final c in cats) {
+        if (c.id == id) return c;
+      }
+      return null;
+    }
+    final roots = cats.where((c) => c.parentId == null).toList()
+      ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+    final l1s = _rootCategoryId == null
+        ? <Category>[]
+        : cats.where((c) => c.parentId == _rootCategoryId).toList()
+          ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+    final l2s = _level1CategoryId == null
+        ? <Category>[]
+        : cats.where((c) => c.parentId == _level1CategoryId).toList()
+          ..sort((a, b) => a.sortOrder.compareTo(b.sortOrder));
+
+    // Path from root to the chosen category (for highlight + display).
+    final chosen = findById(_categoryId) ?? findById(_level1CategoryId) ?? findById(_rootCategoryId);
+    final chosenPath = <String>[];
+    var cur = chosen;
+    while (cur != null) {
+      chosenPath.insert(0, cur.id);
+       cur = findById(cur.parentId);
+    }
+    final chosenRootId = chosenPath.isNotEmpty ? chosenPath[0] : null;
+
+    Widget chip(Category c, bool selected) => ChoiceChip(
+          label: Text(c.name),
+          selected: selected,
+          onSelected: (_) {
+            if (c.parentId == null) {
+              setState(() {
+                _rootCategoryId = c.id;
+                _level1CategoryId = null;
+                _categoryId = null;
+              });
+            } else if (c.parentId == _rootCategoryId) {
+              setState(() {
+                _level1CategoryId = c.id;
+                _categoryId = null;
+              });
+            } else {
+              setState(() => _categoryId = c.id);
+            }
+          },
+        );
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Wrap(spacing: 8, runSpacing: 8, children: [
+          for (final c in roots) chip(c, chosenRootId == c.id),
+          if (_rootCategoryId != null)
+            for (final c in l1s)
+              chip(c, chosenPath.length > 1 && chosenPath[1] == c.id),
+          if (_level1CategoryId != null)
+            for (final c in l2s) chip(c, chosenPath.length > 2 && chosenPath[2] == c.id),
+        ]),
+        if (chosenPath.length > 1)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: Text('${AppState.instance.t('sell.category')}: ${chosen!.name}',
+                style: Theme.of(context).textTheme.bodySmall),
+          ),
+      ],
     );
   }
 

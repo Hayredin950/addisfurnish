@@ -268,6 +268,7 @@ const dict = {
     openWebAppHint: "Browse and sell on addisfurnish.vercel.app in your browser",
     selectRootCategory: "Choose a category…",
     selectSubCategory: "Choose a subcategory (optional)…",
+    selectLeafCategory: "Choose a type (optional)…",
     selectMaterial: "Choose a material…",
     materialCustom: "Other / custom material",
     // Admin
@@ -768,6 +769,7 @@ const dict = {
     openWebAppHint: "በaddisfurnish.vercel.app ላይ በአሳሽዎ ይመልከቱ እና ይሽጡ",
     selectRootCategory: "ምድብ ይምረጡ…",
     selectSubCategory: "ንዑስ ምድብ ይምረጡ (አማራጭ)…",
+    selectLeafCategory: "የአቀም አቋም ይምረጡ (አማራጭ)…",
     selectMaterial: "ቁሳቁስ ይምረጡ…",
     materialCustom: "ሌላ / ብጁ ቁሳቁስ",
     dashDeleteConfirm: "ይህን ማስታወቂያ በቋሚነት መሰረዝ ይፈልጋሉ?",

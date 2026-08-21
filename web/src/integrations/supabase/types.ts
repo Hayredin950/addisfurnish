@@ -87,31 +87,49 @@ export type Database = {
       };
       categories: {
         Row: {
+          created_at: string;
+          description: string | null;
           icon: string | null;
           id: string;
+          image_url: string | null;
+          is_active: boolean;
+          level: number;
           name: string;
           name_am: string | null;
           parent_id: string | null;
           slug: string;
           sort_order: number;
+          updated_at: string;
         };
         Insert: {
+          created_at?: string;
+          description?: string | null;
           icon?: string | null;
           id?: string;
+          image_url?: string | null;
+          is_active?: boolean;
+          level?: number;
           name: string;
           name_am?: string | null;
           parent_id?: string | null;
           slug: string;
           sort_order?: number;
+          updated_at?: string;
         };
         Update: {
+          created_at?: string;
+          description?: string | null;
           icon?: string | null;
           id?: string;
+          image_url?: string | null;
+          is_active?: boolean;
+          level?: number;
           name?: string;
           name_am?: string | null;
           parent_id?: string | null;
           slug?: string;
           sort_order?: number;
+          updated_at?: string;
         };
         Relationships: [
           {
@@ -1204,6 +1222,10 @@ export type Database = {
       increment_listing_views: {
         Args: { _listing_id: string };
         Returns: undefined;
+      };
+      category_descendant_ids: {
+        Args: { _root: string };
+        Returns: string[];
       };
     };
     Enums: {
