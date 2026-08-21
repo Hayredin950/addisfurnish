@@ -9,6 +9,10 @@ export type Category = {
   parent_id: string | null;
   icon: string | null;
   sort_order: number;
+  level: number | null;
+  is_active: boolean | null;
+  description: string | null;
+  image_url: string | null;
 };
 
 export type SellerSummary = {

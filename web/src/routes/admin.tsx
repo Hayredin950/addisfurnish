@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -1019,6 +1019,12 @@ function CategoriesTab() {
               <IconComp className="h-4 w-4 text-primary" />
             </span>
             <span className="min-w-0 flex-1 text-sm font-medium">{cat.name}</span>
+            {cat.level != null ? (
+              <span className="rounded bg-secondary px-1.5 py-0.5 text-[10px] text-muted-foreground">L{cat.level}</span>
+            ) : null}
+            {cat.is_active === false ? (
+              <span className="rounded bg-destructive/10 px-1.5 py-0.5 text-[10px] text-destructive">inactive</span>
+            ) : null}
             {n > 0 ? (
               <span
                 title={t("admin.listingsCount", { count: n })}
@@ -1059,6 +1065,24 @@ function CategoriesTab() {
               className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
             >
               <Pencil className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              aria-label="Toggle active"
+              onClick={async () => {
+                await supabase
+                  .from("categories")
+                  .update({ is_active: cat.is_active !== false ? false : true })
+                  .eq("id", cat.id);
+                invalidate();
+              }}
+              className="rounded-md p-1.5 text-muted-foreground transition-colors hover:bg-secondary hover:text-foreground"
+            >
+              {cat.is_active !== false ? (
+                <span className="text-xs">✅</span>
+              ) : (
+                <span className="text-xs">⏸️</span>
+              )}
             </button>
             <button
               type="button"
@@ -1109,6 +1133,17 @@ function CategoriesTab() {
                 {r.name}
               </option>
             ))}
+            {children
+              .filter((c) => {
+                // Level-1 categories can be parents for level-2
+                const parent = roots.find((r) => r.id === c.parent_id);
+                return !!parent;
+              })
+              .map((c) => (
+                <option key={c.id} value={c.id}>
+                  {roots.find((r) => r.id === c.parent_id)?.name} → {c.name}
+                </option>
+              ))}
           </select>
           <IconSelect value={icon} onChange={setIcon} />
           <Button disabled={!name.trim() || busy} onClick={add}>
@@ -1124,7 +1159,15 @@ function CategoriesTab() {
             {children
               .filter((c) => c.parent_id === r.id)
               .map((c) => (
-                <Row key={c.id} cat={c} depth={1} />
+                <Fragment key={c.id}>
+                  <Row cat={c} depth={1} />
+                  {/* Level 2: grandchildren */}
+                  {children
+                    .filter((gc) => gc.parent_id === c.id)
+                    .map((gc) => (
+                      <Row key={gc.id} cat={gc} depth={2} />
+                    ))}
+                </Fragment>
               ))}
           </li>
         ))}

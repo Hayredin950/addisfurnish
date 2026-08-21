@@ -102,7 +102,7 @@ export function SiteHeader() {
             loading="eager"
           />
           <span>
-            Addis<span className="text-primary">Furnish</span>
+            Addis<span className="text-primary">Home</span>
           </span>
         </Link>
 
