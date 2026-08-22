@@ -449,26 +449,70 @@ export default function BrowseScreen() {
                 active={category ? 1 : 0}
                 defaultOpen={!!category || !condition && !city && !room}
               >
-                <View style={styles.chipWrap}>
+                {/* Hierarchical category tree: level 0 → 1 → 2 */}
+                <View style={{ gap: 4 }}>
                   <Pressable
-                    style={[styles.chip, !category && styles.chipActive]}
+                    style={[styles.chip, !category && styles.chipActive, { marginBottom: 6 }]}
                     onPress={() => setCategory("")}
                   >
-                    <Text style={[styles.chipText, !category && styles.chipTextActive]}>All</Text>
+                    <Text style={[styles.chipText, !category && styles.chipTextActive]}>{t("all")}</Text>
                   </Pressable>
-                  {(cats.data ?? []).map((c) => (
-                    <Pressable
-                      key={c.id}
-                      style={[styles.chip, category === c.slug && styles.chipActive]}
-                      onPress={() => setCategory(category === c.slug ? "" : c.slug)}
-                    >
-                      <Text
-                        style={[styles.chipText, category === c.slug && styles.chipTextActive]}
-                      >
-                        {lang === "am" ? (c.name_am ?? c.name) : c.name}
-                      </Text>
-                    </Pressable>
-                  ))}
+                  {(cats.data ?? [])
+                    .filter((c) => (c as { level?: number }).level === 0 || !c.parent_id)
+                    .sort((a, b) => ((a as { sort_order?: number }).sort_order ?? 0) - ((b as { sort_order?: number }).sort_order ?? 0))
+                    .map((root) => {
+                      const children = (cats.data ?? [])
+                        .filter((c) => c.parent_id === root.id)
+                        .sort((a, b) => ((a as { sort_order?: number }).sort_order ?? 0) - ((b as { sort_order?: number }).sort_order ?? 0));
+                      return (
+                        <View key={root.id} style={{ gap: 2 }}>
+                          <Pressable
+                            style={[styles.chip, category === root.slug && styles.chipActive]}
+                            onPress={() => setCategory(category === root.slug ? "" : root.slug)}
+                          >
+                            <Text style={[styles.chipText, category === root.slug && styles.chipTextActive, { fontWeight: "700" }]}>
+                              {lang === "am" ? (root.name_am ?? root.name) : root.name}
+                            </Text>
+                          </Pressable>
+                          {children.length > 0 ? (
+                            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, paddingLeft: 12 }}>
+                              {children.map((child) => {
+                                const grandkids = (cats.data ?? [])
+                                  .filter((c) => c.parent_id === child.id)
+                                  .sort((a, b) => ((a as { sort_order?: number }).sort_order ?? 0) - ((b as { sort_order?: number }).sort_order ?? 0));
+                                return (
+                                  <View key={child.id} style={{ gap: 2 }}>
+                                    <Pressable
+                                      style={[styles.chip, category === child.slug && styles.chipActive]}
+                                      onPress={() => setCategory(category === child.slug ? "" : child.slug)}
+                                    >
+                                      <Text style={[styles.chipText, category === child.slug && styles.chipTextActive]}>
+                                        {lang === "am" ? (child.name_am ?? child.name) : child.name}
+                                      </Text>
+                                    </Pressable>
+                                    {grandkids.length > 0 ? (
+                                      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 4, paddingLeft: 10 }}>
+                                        {grandkids.map((gk) => (
+                                          <Pressable
+                                            key={gk.id}
+                                            style={[styles.chip, category === gk.slug && styles.chipActive, { paddingHorizontal: 8, paddingVertical: 3 }]}
+                                            onPress={() => setCategory(category === gk.slug ? "" : gk.slug)}
+                                          >
+                                            <Text style={[styles.chipText, { fontSize: 11 }, category === gk.slug && styles.chipTextActive]}>
+                                              {lang === "am" ? (gk.name_am ?? gk.name) : gk.name}
+                                            </Text>
+                                          </Pressable>
+                                        ))}
+                                      </View>
+                                    ) : null}
+                                  </View>
+                                );
+                              })}
+                            </View>
+                          ) : null}
+                        </View>
+                      );
+                    })}
                 </View>
               </FilterGroup>
 
@@ -540,7 +584,7 @@ export default function BrowseScreen() {
             </ScrollView>
 
             <View style={styles.modalActions}>
-              <Button title={t("reset")} variant="ghost" onPress={clearFilters} />
+              <Button title={t("resetFilters")} variant="ghost" onPress={clearFilters} />
               <Button title={t("apply")} onPress={applyFilters} />
             </View>
           </View>

@@ -1781,6 +1781,7 @@ const styles = StyleSheet.create({
     backgroundColor: colors.card,
     borderRadius: radius.lg,
     padding: spacing.lg,
+    overflow: "hidden",
     ...shadows.card,
   },
   title: { fontSize: 17, fontWeight: "700", color: colors.text },

@@ -374,7 +374,7 @@ function Messages() {
           ) : null}
         </aside>
 
-        <section className="flex min-h-[420px] flex-col rounded-lg border bg-card p-4">
+        <section className="flex min-h-[420px] flex-col rounded-lg border bg-card p-4" style={{ maxHeight: '80vh', display: 'flex', flexDirection: 'column' }}>
           {counterpart ? (
             <header className="mb-3 flex items-center gap-2 border-b pb-3">
               <UserAvatar name={counterpart.full_name} avatarUrl={counterpart.avatar_url} />
@@ -450,7 +450,7 @@ function Messages() {
             </Link>
           ) : null}
 
-          <div className="flex-1 space-y-3 overflow-y-auto">
+          <div className="flex-1 space-y-3 overflow-y-auto" style={{ minHeight: 0 }}>
             {(messages ?? []).map((m) => {
               const mine = m.sender_id === user?.id;
               const sender = m.profiles;
@@ -567,7 +567,7 @@ function Messages() {
           </div>
           {current ? (
             <form
-              className="mt-4 space-y-2"
+              className="mt-auto pt-4 space-y-2 border-t"
               onSubmit={(e) => {
                 e.preventDefault();
                 if (body.trim() || imageUrl) send.mutate();

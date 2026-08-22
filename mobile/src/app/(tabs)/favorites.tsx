@@ -3,6 +3,7 @@ import { router } from "expo-router";
 import { useAuth } from "../../lib/auth";
 import { useLang } from "../../lib/lang";
 import { useAsync } from "../../hooks/use-async";
+import { useFavorites } from "../../hooks/use-favorites";
 import { fetchFavorites } from "../../lib/api";
 import { ListingCard } from "../../components/ListingCard";
 import { EmptyState } from "../../components/EmptyState";
@@ -10,14 +11,26 @@ import { Button } from "../../components/Button";
 import { colors, spacing } from "../../lib/theme";
 
 export default function FavoritesScreen() {
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const { t, lang } = useLang();
+  const favs = useFavorites();
 
   const { data, loading, error, refetch } = useAsync(
     () => fetchFavorites(user?.id ?? ""),
     [user?.id],
     !!user,
   );
+
+  // Restoring the persisted session is async. Rendering the "not signed in"
+  // prompt while it is still in flight made the login screen flash for
+  // already-signed-in users on every launch (and on every OTA reload).
+  if (authLoading) {
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
 
   // Guests can reach this tab now that browsing is public, and favourites are
   // per-account — so prompt instead of showing a permanently empty list.
@@ -50,8 +63,23 @@ export default function FavoritesScreen() {
           numColumns={2}
           columnWrapperStyle={{ gap: 12 }}
           contentContainerStyle={{ padding: spacing.lg, paddingBottom: 40, gap: 12 }}
-          renderItem={({ item }) => <ListingCard listing={item} lang={lang} />}
-          onRefresh={refetch}
+          renderItem={({ item }) => (
+            <ListingCard
+              listing={item}
+              lang={lang}
+              isFav={favs.isFav(item.id)}
+              onToggleFav={async (id, wasFav) => {
+                await favs.toggle(id, wasFav);
+                // Un-favouriting from this screen must drop the card, not just
+                // empty the heart — the list IS the favourites.
+                refetch();
+              }}
+            />
+          )}
+          onRefresh={() => {
+            refetch();
+            void favs.reload();
+          }}
           refreshing={loading && !!data}
         />
       )}

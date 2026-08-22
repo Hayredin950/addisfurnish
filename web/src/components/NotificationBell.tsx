@@ -95,7 +95,7 @@ export function NotificationBell() {
         >
           <Bell className="h-4 w-4" />
           {unread > 0 ? (
-            <span className="absolute -right-1 -top-1 grid h-4 min-w-4 place-items-center rounded-full bg-destructive px-1 text-[10px] font-semibold text-destructive-foreground">
+            <span className="absolute -right-1.5 -top-1.5 grid h-5 min-w-5 place-items-center rounded-full bg-destructive px-1 text-[10px] font-bold text-destructive-foreground shadow-sm">
               {unread}
             </span>
           ) : null}

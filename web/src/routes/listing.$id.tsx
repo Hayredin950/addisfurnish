@@ -101,13 +101,16 @@ function ListingDetail() {
   const { data: listing, isLoading } = useQuery(listingQuery(id));
   const { data: history } = useQuery(priceHistoryQuery(id));
   const { data: reviews } = useQuery(reviewsQuery(listing?.seller_id ?? ""));
+  const avgRating = reviews && reviews.length > 0
+    ? reviews.reduce((s, r) => s + r.rating, 0) / reviews.length
+    : 0;
   const { data: videoUrl } = useImageUrl(listing?.video_url ?? null);
   const [rating, setRating] = useState(0);
   const [comment, setComment] = useState("");
   const messageBoxRef = useRef<HTMLTextAreaElement>(null);
   const { data: similar } = useQuery(
     listingsQuery(
-      listing?.categories?.slug ? { category: listing.categories.slug, limit: 4 } : { limit: 4 },
+      listing?.categories?.slug ? { category: listing.categories.slug, limit: 12 } : { limit: 12 },
     ),
   );
   const [message, setMessage] = useState("");
@@ -115,6 +118,7 @@ function ListingDetail() {
   const [offerOpen, setOfferOpen] = useState(false);
   const [offerAmount, setOfferAmount] = useState("");
   const [offerMessage, setOfferMessage] = useState("");
+  const [showAllReviews, setShowAllReviews] = useState(false);
 
   // Refs let the view effect read the latest values without re-running (the
   // effect must run exactly once per page visit to avoid double counts).
@@ -399,15 +403,17 @@ function ListingDetail() {
         </Link>
         <div className="flex items-center gap-2">
           <ShareButton />
-          <ReportDialog
-            listingId={listing.id}
-            sellerId={listing.seller_id}
-            trigger={
-              <Button variant="ghost" size="sm">
-                {t("listing.report")}
-              </Button>
-            }
-          />
+          {listing.seller_id !== user?.id ? (
+            <ReportDialog
+              listingId={listing.id}
+              sellerId={listing.seller_id}
+              trigger={
+                <Button variant="ghost" size="sm">
+                  {t("listing.report")}
+                </Button>
+              }
+            />
+          ) : null}
         </div>
       </div>
 
@@ -457,6 +463,63 @@ function ListingDetail() {
           {history && history.length > 1 ? (
             <div className="mt-8 rounded-lg border bg-card p-5">
               <h2 className="font-display text-lg font-semibold">{t("listing.priceHistory")}</h2>
+              {/* Simple SVG bar chart */}
+              {(() => {
+                const prices = history.map((h) => h.price);
+                const maxPrice = Math.max(...prices);
+                const minPrice = Math.min(...prices);
+                const range = maxPrice - minPrice || 1;
+                const barWidth = Math.max(28, Math.floor(400 / history.length));
+                const chartHeight = 120;
+                const svgWidth = history.length * barWidth + 60;
+                return (
+                  <div className="mt-3 overflow-x-auto">
+                    <svg
+                      viewBox={`0 0 ${svgWidth} ${chartHeight + 40}`}
+                      className="w-full max-w-md"
+                      aria-label={t("listing.priceHistory")}
+                    >
+                      {history.map((h, i) => {
+                        const x = i * barWidth + 40;
+                        const barH = ((h.price - minPrice) / range) * (chartHeight - 10) + 10;
+                        const y = chartHeight - barH;
+                        return (
+                          <g key={i}>
+                            <rect
+                              x={x}
+                              y={y}
+                              width={barWidth - 8}
+                              height={barH}
+                              rx={3}
+                              className="fill-primary/80"
+                            />
+                            <text
+                              x={x + (barWidth - 8) / 2}
+                              y={chartHeight + 14}
+                              textAnchor="middle"
+                              className="fill-muted-foreground"
+                              fontSize={10}
+                            >
+                              {new Date(h.changed_at).toLocaleDateString(undefined, { month: "short", day: "numeric" })}
+                            </text>
+                            <text
+                              x={x + (barWidth - 8) / 2}
+                              y={y - 4}
+                              textAnchor="middle"
+                              className="fill-foreground"
+                              fontSize={9}
+                              fontWeight={600}
+                            >
+                              {(h.price / 1000).toFixed(h.price >= 10000 ? 0 : 1)}k
+                            </text>
+                          </g>
+                        );
+                      })}
+                    </svg>
+                  </div>
+                );
+              })()}
+              {/* Also keep a compact list below for detail */}
               <ul className="mt-3 space-y-1 text-sm text-muted-foreground">
                 {history.map((h, i) => (
                   <li key={i} className="flex justify-between">
@@ -574,6 +637,13 @@ function ListingDetail() {
                     <BadgeCheck className="h-4 w-4 shrink-0 text-primary" />
                   ) : null}
                 </span>
+                {avgRating > 0 ? (
+                  <span className="ml-auto flex items-center gap-1 text-xs text-muted-foreground">
+                    <Star className="h-3 w-3 fill-primary text-primary" />
+                    {avgRating.toFixed(1)}
+                    <span className="text-[10px]">({reviews?.length ?? 0})</span>
+                  </span>
+                ) : null}
               </div>
               <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
                 {online ? (
@@ -774,8 +844,9 @@ function ListingDetail() {
             <Star className="h-5 w-5 text-primary" /> {t("shop.reviews")}
           </h2>
           {reviews && reviews.length > 0 ? (
+            <>
             <ul className="mt-5 space-y-5">
-              {reviews.map((r) => {
+              {(showAllReviews ? reviews : reviews.slice(0, 5)).map((r) => {
                 const mine = !!user && r.author_id === user.id;
                 return (
                   <li key={r.id} className="border-b pb-5 last:border-0">
@@ -823,6 +894,16 @@ function ListingDetail() {
                 );
               })}
             </ul>
+            {showAllReviews && reviews.length > 5 ? null : reviews.length > 5 ? (
+              <button
+                type="button"
+                className="mt-3 text-sm font-medium text-primary hover:underline"
+                onClick={() => setShowAllReviews(true)}
+              >
+                {t("shop.seeAllReviews")} ({reviews.length})
+              </button>
+            ) : null}
+            </>
           ) : (
             <p className="mt-5 text-sm text-muted-foreground">{t("shop.noReviews")}</p>
           )}
@@ -873,12 +954,14 @@ function ListingDetail() {
       {similar && similar.length > 1 ? (
         <section className="mt-16">
           <h2 className="font-display text-2xl font-semibold">{t("listing.similar")}</h2>
-          <div className="mt-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <div className="mt-6 flex gap-4 overflow-x-auto pb-4 snap-x snap-mandatory" style={{ scrollbarWidth: 'thin' }}>
             {similar
               .filter((s) => s.id !== listing.id)
-              .slice(0, 4)
+              .slice(0, 8)
               .map((s) => (
-                <ListingCard key={s.id} listing={s} />
+                <div key={s.id} className="w-64 shrink-0 snap-start lg:w-56">
+                  <ListingCard listing={s} />
+                </div>
               ))}
           </div>
         </section>

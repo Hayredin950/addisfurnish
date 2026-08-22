@@ -254,6 +254,39 @@ export function shopQuery(slug: string) {
   });
 }
 
+export function categoryAttributesQuery(categoryId: string) {
+  return queryOptions({
+    queryKey: ["category-attributes", categoryId],
+    enabled: !!categoryId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("category_attributes")
+        .select("id, attribute_id, is_required, is_filterable, sort_order, attributes(id, name, name_am, slug, type, unit)")
+        .eq("category_id", categoryId)
+        .order("sort_order");
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+}
+
+export function attributeOptionsQuery(attributeId: string) {
+  return queryOptions({
+    queryKey: ["attribute-options", attributeId],
+    enabled: !!attributeId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("attribute_options")
+        .select("id, value, label, sort_order")
+        .eq("attribute_id", attributeId)
+        .eq("is_active", true)
+        .order("sort_order");
+      if (error) throw error;
+      return data ?? [];
+    },
+  });
+}
+
 export function priceHistoryQuery(listingId: string) {
   return queryOptions({
     queryKey: ["price-history", listingId],

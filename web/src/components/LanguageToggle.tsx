@@ -22,7 +22,7 @@ export function LanguageToggle() {
         persistLanguage(user?.id, v as "en" | "am");
       }}
     >
-      <SelectTrigger className="h-9 w-[92px]" aria-label="Language">
+      <SelectTrigger className="h-9 w-[108px]" aria-label="Language">
         <Globe className="mr-1 h-3.5 w-3.5" />
         <SelectValue />
       </SelectTrigger>

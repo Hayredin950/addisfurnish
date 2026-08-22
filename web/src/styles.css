@@ -144,6 +144,16 @@
     -webkit-font-smoothing: antialiased;
   }
 
+  /* Interactive elements should always show a pointer cursor. */
+  button, a, [role="button"], label[for], select, input[type="checkbox"], input[type="radio"] {
+    cursor: pointer;
+  }
+
+  /* Primary button hover: brighten instead of darkening for better contrast. */
+  .bg-primary:hover, .bg-primary:focus-visible {
+    filter: brightness(1.15);
+  }
+
   h1,
   h2,
   h3,

@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 import * as Updates from "expo-updates";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Stack, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -103,26 +104,55 @@ function usePushNotifications() {
  * result of that automatic check: when a new bundle is flagged we start the
  * download, and the moment it's staged (`isUpdatePending`) we reload so the
  * new version is live immediately. No user action needed; the app simply
- * restarts on the new code. The 30-minute cooldown guards against reload
- * loops, and dev builds never auto-reload.
+ * restarts on the new code.
+ *
+ * The cooldown MUST be persisted, not held in a ref. `reloadAsync()` restarts
+ * the JS runtime, so a `useRef` cooldown is reset by the very reload it was
+ * meant to rate-limit: if the update was still reported pending after the
+ * restart the app reloaded again, and again. Each reload remounts AuthProvider
+ * with `loading: true, user: null`, which is what made the login screen flash
+ * in and out — the "auth flicker" that appeared right after an OTA update.
+ * AsyncStorage survives the reload, so the window is now honoured.
+ *
+ * Dev builds never auto-reload (`Updates.isEmbeddedLaunch` is irrelevant in
+ * Expo Go; `__DEV__` is the reliable guard).
  */
+const UPDATE_COOLDOWN_KEY = "lastUpdateApply";
+const UPDATE_COOLDOWN_MS = 30 * 60 * 1000;
+
 function useAutoUpdate() {
   const { isUpdatePending, isUpdateAvailable, isDownloading } = Updates.useUpdates();
-  const lastApply = useRef(0);
+  const applying = useRef(false);
 
   // The automatic check only flags availability — start the download.
   useEffect(() => {
+    if (__DEV__) return;
     if (isUpdateAvailable && !isDownloading) {
       void Updates.fetchUpdateAsync().catch(() => {});
     }
   }, [isUpdateAvailable, isDownloading]);
 
-  // Downloaded and staged: apply it now.
+  // Downloaded and staged: apply it, at most once per cooldown window.
   useEffect(() => {
-    if (!isUpdatePending) return;
-    if (Date.now() - lastApply.current < 30 * 60 * 1000) return;
-    lastApply.current = Date.now();
-    void Updates.reloadAsync();
+    if (__DEV__ || !isUpdatePending || applying.current) return;
+    applying.current = true;
+    void (async () => {
+      try {
+        const raw = await AsyncStorage.getItem(UPDATE_COOLDOWN_KEY);
+        const last = raw ? Number(raw) : 0;
+        if (Number.isFinite(last) && Date.now() - last < UPDATE_COOLDOWN_MS) {
+          // Already reloaded recently — leave this bundle for the next launch
+          // rather than risking a restart loop.
+          return;
+        }
+        // Written BEFORE reloading: the reload kills this JS context, so
+        // anything after it never runs.
+        await AsyncStorage.setItem(UPDATE_COOLDOWN_KEY, String(Date.now()));
+        await Updates.reloadAsync();
+      } catch {
+        applying.current = false;
+      }
+    })();
   }, [isUpdatePending]);
 }
 

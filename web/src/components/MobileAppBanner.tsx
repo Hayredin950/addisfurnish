@@ -3,7 +3,7 @@ import { Download, X } from "lucide-react";
 import { useLang } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
 
-const DISMISS_KEY = "addisfurnish-app-banner-dismissed";
+const DISMISS_KEY = "addishome-app-banner-dismissed";
 
 /**
  * The button links to /api/latest-apk, which 302-redirects to the newest
@@ -36,10 +36,8 @@ export function MobileAppBanner() {
           <p className="truncate text-xs text-muted-foreground">{t("footer.tagline")}</p>
         </div>
         <div className="flex items-center gap-2">
-          <Button asChild size="sm" variant="outline">
-            <a href="https://play.google.com/store" target="_blank" rel="noopener noreferrer">
-              <Download className="mr-1.5 h-3.5 w-3.5" /> Google Play
-            </a>
+          <Button size="sm" variant="outline" disabled title="Coming soon — app is not yet on Google Play">
+            <Download className="mr-1.5 h-3.5 w-3.5" /> Google Play
           </Button>
           <Button asChild size="sm" className="hidden sm:inline-flex">
             <a href={ANDROID_APK_URL} target="_blank" rel="noopener noreferrer">

@@ -359,7 +359,7 @@ export default function AuthScreen() {
             />
           </View>
           <Text style={styles.title}>
-            Addis<Text style={{ color: colors.primary }}>Furnish</Text>
+            Addis<Text style={{ color: colors.primary }}>Home</Text>
           </Text>
           <Text style={styles.subtitle}>{t("welcome")}</Text>
         </View>
