@@ -21,13 +21,16 @@ export function LanguageToggle() {
         persistLanguage(user?.id, v as "en" | "am");
       }}
     >
-      {/* Full label from `sm`; below that only the globe fits a 360px header
-          alongside logo, bell, avatar and burger without horizontal scroll. */}
+      {/* Phones show the Flutter-app-style short label ("En"/"አማ"); `sm` and
+          up show the full name. */}
       <SelectTrigger
-        className="h-9 gap-1 px-2 sm:w-[110px] sm:px-2.5"
+        className="h-9 gap-1 px-2.5 sm:w-[110px] sm:px-2.5"
         aria-label="Language"
       >
-        <SelectValue />
+        <span className="sm:hidden">{lang === "am" ? "አማ" : "En"}</span>
+        <span className="hidden sm:inline-flex">
+          <SelectValue />
+        </span>
       </SelectTrigger>
       <SelectContent>
         <SelectItem value="en">English</SelectItem>
