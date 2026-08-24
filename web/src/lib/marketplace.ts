@@ -159,12 +159,13 @@ export type ListingFilters = {
   sellerId?: string;
   limit?: number;
   /**
-   * Phase 6 (§6): dynamic attribute filters. Maps an attribute slug to the
+   * Phase 6 (§14): dynamic attribute filters. Maps an attribute slug to the
    * values to match. Single/multi-select values are option values (e.g.
-   * "wood","leather"); number/range attributes take a 2-tuple [min,max]. Every
-   * supplied attribute is ANDed; values within one attribute OR.
+   * "wood","leather"); number/range attributes take a 2-tuple [min,max] with
+   * null bounds open-ended; text matches case-insensitively; booleans pass
+   * true/false. Every supplied attribute is ANDed; values within one OR.
    */
-  attributes?: Record<string, (string | [number, number])[]>;
+  attributes?: Record<string, (string | boolean | [number | null, number | null])[]>;
 };
 
 export function listingsQuery(filters: ListingFilters = {}) {
@@ -172,6 +173,19 @@ export function listingsQuery(filters: ListingFilters = {}) {
     queryKey: ["listings", filters],
     queryFn: async () => {
       let query = supabase.from("listings").select(LISTING_SELECT).neq("status", "draft");
+
+      // Phase 6 (§14): dynamic attribute filters resolve server-side through
+      // the attribute_matching_listing_ids RPC, then narrow by listing id.
+      if (filters.attributes && Object.keys(filters.attributes).length > 0) {
+        const { data: matches, error: rpcError } = await supabase.rpc(
+          "attribute_matching_listing_ids",
+          { p_attrs: filters.attributes },
+        );
+        if (rpcError) throw rpcError;
+        const ids = ((matches ?? []) as { listing_id: string }[]).map((r) => r.listing_id);
+        if (!ids.length) return [];
+        query = query.in("id", ids);
+      }
 
       if (filters.q)
         query = query.or(`title.ilike.%${filters.q}%,description.ilike.%${filters.q}%`);
@@ -895,8 +909,12 @@ export function adminStatsQuery() {
           .from("profiles")
           .select("id", { count: "exact", head: true })
           .eq("telegram_blocked", true),
-        supabase.from("telegram_channel_posts").select("listing_id", { count: "exact", head: true }),
-        supabase.from("telegram_processed_updates").select("update_id", { count: "exact", head: true }),
+        supabase
+          .from("telegram_channel_posts")
+          .select("listing_id", { count: "exact", head: true }),
+        supabase
+          .from("telegram_processed_updates")
+          .select("update_id", { count: "exact", head: true }),
       ]);
       const totalViews = (views.data ?? []).reduce(
         (sum: number, l: { view_count: number }) => sum + (l.view_count ?? 0),

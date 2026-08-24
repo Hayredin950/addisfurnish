@@ -19,7 +19,7 @@ import {
   type CategoryAttributeDef,
   type ListingAttributeValueRow,
 } from "@/lib/attributes";
-import { CITIES, CONDITIONS, MATERIALS, ROOM_TYPES, SUB_CITY_COORDS } from "@/lib/format";
+import { ADDIS_SUB_CITIES, CITIES, CONDITIONS, SUB_CITY_COORDS } from "@/lib/format";
 import { announceListing, syncListingChannel } from "@/lib/telegram";
 import { ChevronDown, Video } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -131,6 +131,18 @@ function Sell() {
     [profile?.latitude, profile?.longitude],
   );
   const [coords, setCoords] = useState<Coords | null>(null);
+  // City drives the sub-city control: a dropdown for Addis Ababa, free text
+  // elsewhere. Seeded once the listing/profile arrives.
+  const [city, setCity] = useState("");
+  const seededCity = useRef(false);
+  useEffect(() => {
+    if (seededCity.current) return;
+    const seed = editing?.city ?? (editId ? "" : (profile?.city ?? ""));
+    if (seed) {
+      seededCity.current = true;
+      setCity(seed);
+    }
+  }, [editing, editId, profile?.city]);
   // `profile`/`editing` arrive after the first render. Seed once, preferring the
   // listing's own pin over the shop default.
   const seeded = useRef(false);
@@ -175,10 +187,6 @@ function Sell() {
         original_price: form.get("original_price") ? Number(form.get("original_price")) : null,
         negotiable: form.get("negotiable") === "on",
         condition: String(form.get("condition")),
-        material: (form.get("material") as string) || null,
-        color: (form.get("color") as string) || null,
-        room_type: (form.get("room_type") as string) || null,
-        brand: (form.get("brand") as string) || null,
         city: String(form.get("city")),
         sub_city: subCity,
         category_id: (form.get("category_id") as string) || null,
@@ -511,44 +519,41 @@ function Sell() {
               label={t("sell.city")}
               name="city"
               required
-              defaultValue={editing?.city ?? profile?.city ?? ""}
+              value={city}
+              onChange={setCity}
               options={CITIES.map((c) => ({ value: c, label: c }))}
             />
+          </div>
+          {city === "Addis Ababa" ? (
+            <SelectField
+              label={t("sell.subCity")}
+              name="sub_city"
+              defaultValue={
+                editing?.sub_city &&
+                (ADDIS_SUB_CITIES as readonly string[]).includes(editing.sub_city)
+                  ? editing.sub_city
+                  : ""
+              }
+              options={ADDIS_SUB_CITIES.map((s) => ({ value: s, label: s }))}
+            />
+          ) : (
             <Field
               label={t("sell.subCity")}
               name="sub_city"
               defaultValue={editing?.sub_city ?? profile?.shop_address ?? ""}
             />
-          </div>
+          )}
           <div className="space-y-2">
             <Label>{t("loc.pin")}</Label>
             <LocationPicker value={coords} onChange={setCoords} shopLocation={shopLocation} />
           </div>
         </SectionCard>
 
-        {/* Attributes — material, room, colour, brand. */}
+        {/* Dynamic attributes for the selected category (spec §15) — loaded
+            from the backend, so admin changes appear here without a release. */}
         <SectionCard title={t("sell.attributes")}>
-          <div className="grid gap-4 sm:grid-cols-2">
-            <SelectField
-              label={t("sell.material")}
-              name="material"
-              defaultValue={editing?.material ?? ""}
-              options={MATERIALS.map((c) => ({ value: c, label: c }))}
-            />
-            <SelectField
-              label={t("sell.room")}
-              name="room_type"
-              defaultValue={editing?.room_type ?? ""}
-              options={ROOM_TYPES.map((c) => ({ value: c, label: c }))}
-            />
-            <Field label={t("sell.colour")} name="color" defaultValue={editing?.color ?? ""} />
-            <Field label={t("sell.brand")} name="brand" defaultValue={editing?.brand ?? ""} />
-          </div>
-
-          {/* Dynamic attributes for the selected category (spec §15) — loaded
-              from the backend, so admin changes appear here without a release. */}
           {attrDefs?.length ? (
-            <div className="space-y-4 border-t pt-4">
+            <div className="space-y-4">
               <p className="text-xs text-muted-foreground">{t("sell.attrHint")}</p>
               <div className="grid gap-4 sm:grid-cols-2">
                 {attrDefs.map((def) => (
@@ -560,7 +565,11 @@ function Sell() {
                 ))}
               </div>
             </div>
-          ) : null}
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              {t("sell.select")} {t("sell.category").toLowerCase()}
+            </p>
+          )}
         </SectionCard>
 
         <div className="flex gap-2">
@@ -661,12 +670,17 @@ function SelectField({
   options,
   required,
   defaultValue = "",
+  value,
+  onChange,
 }: {
   label: string;
   name: string;
   options: { value: string; label: string }[];
   required?: boolean;
   defaultValue?: string;
+  /** Controlled mode: when `value` is given the select is fully managed. */
+  value?: string;
+  onChange?: (v: string) => void;
 }) {
   const { t } = useLang();
   return (
@@ -676,7 +690,9 @@ function SelectField({
         id={name}
         name={name}
         required={required}
-        defaultValue={defaultValue}
+        {...(value !== undefined
+          ? { value, onChange: (e) => onChange?.(e.target.value) }
+          : { defaultValue })}
         className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm capitalize"
       >
         <option value="">{t("sell.select")}</option>

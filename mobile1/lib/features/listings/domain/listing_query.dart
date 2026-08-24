@@ -38,6 +38,7 @@ class ListingQuery {
       f.featured,
       f.sort,
       f.sellerId,
+      f.attributes?.toString(),
       page,
       limit,
     ].join('|');

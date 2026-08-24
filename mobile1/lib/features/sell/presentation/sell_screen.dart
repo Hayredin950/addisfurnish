@@ -16,6 +16,7 @@ import '../../../core/widgets/draggable_pin_map.dart';
 import '../../../core/widgets/section_header.dart';
 import '../../listings/domain/listings_repository.dart';
 import '../../profile/domain/profile_repository.dart';
+import '../domain/listing_attributes.dart';
 import '../domain/sell_repository.dart';
 
 /// A listing photo shown in the form. In edit mode existing photos keep their
@@ -55,13 +56,23 @@ class _SellScreenState extends State<SellScreen> with AppStateMixin {
   final _description = TextEditingController();
   final _price = TextEditingController();
   final _originalPrice = TextEditingController();
-  final _material = TextEditingController();
-  final _room = TextEditingController();
-  final _color = TextEditingController();
-  final _brand = TextEditingController();
-  final _city = TextEditingController(text: 'Addis Ababa');
   final _subCity = TextEditingController();
   final _deliveryFee = TextEditingController();
+
+  /// Cities offered in the sell form's city dropdown.
+  static const _cities = [
+    'Addis Ababa',
+    'Adama',
+    'Bahir Dar',
+    'Hawassa',
+    'Mekelle',
+    'Dire Dawa',
+    'Gondar',
+  ];
+
+  String? _cityDropdown = 'Addis Ababa';
+  /// Selected sub-city when the city is Addis Ababa (dropdown mode).
+  String? _subCityValue;
 
   // Shop setup controller
   final _shopNameCtrl = TextEditingController();
@@ -83,6 +94,15 @@ class _SellScreenState extends State<SellScreen> with AppStateMixin {
   bool _busy = false;
   bool _uploaded = false;
 
+  // Dynamic category attributes (spec §15): definitions load live for the
+  // selected category; the maps hold the seller's current selections.
+  List<CategoryAttributeDef> _attrDefs = const [];
+  List<ListingAttributeValue> _existingAttrValues = const [];
+  final Map<String, TextEditingController> _attrText = {};
+  final Map<String, String?> _attrSingle = {};
+  final Map<String, Set<String>> _attrMulti = {};
+  final Map<String, bool> _attrBool = {};
+
   static const _conditions = ['like new', 'good', 'fair', 'poor'];
 
   bool get _isEditMode => widget.editListingId != null;
@@ -96,8 +116,8 @@ class _SellScreenState extends State<SellScreen> with AppStateMixin {
       if (p.latitude != null && p.longitude != null) {
         _location = LatLng(p.latitude!, p.longitude!);
       }
-      if (_city.text == 'Addis Ababa' && p.city != null && p.city!.isNotEmpty) {
-        _city.text = p.city!;
+      if (p.city != null && p.city!.isNotEmpty && _cities.contains(p.city)) {
+        _cityDropdown = p.city;
       }
     }
     if (_isEditMode) _loadForEdit();
@@ -109,15 +129,102 @@ class _SellScreenState extends State<SellScreen> with AppStateMixin {
     _description.dispose();
     _price.dispose();
     _originalPrice.dispose();
-    _material.dispose();
-    _room.dispose();
-    _color.dispose();
-    _brand.dispose();
-    _city.dispose();
     _subCity.dispose();
     _deliveryFee.dispose();
     _shopNameCtrl.dispose();
+    for (final c in _attrText.values) {
+      c.dispose();
+    }
     super.dispose();
+  }
+
+  /// The most specific selected category — attributes resolve against it.
+  String? get _effectiveCategoryId => _categoryId ?? _rootCategoryId;
+
+  Future<void> _loadAttrDefs({bool prefill = false}) async {
+    final id = _effectiveCategoryId;
+    if (id == null) {
+      setState(() => _attrDefs = const []);
+      return;
+    }
+    try {
+      final defs = await _repo.fetchCategoryAttributes(id);
+      if (!mounted) return;
+      // Seed empty selection state for the new definitions.
+      for (final d in defs) {
+        if (d.type == 'text' || d.type == 'number' || d.type == 'range') {
+          _attrText.putIfAbsent(d.attributeId, TextEditingController.new);
+        } else if (d.type == 'single_select') {
+          _attrSingle.putIfAbsent(d.attributeId, () => null);
+        } else if (d.type == 'multi_select') {
+          _attrMulti.putIfAbsent(d.attributeId, () => <String>{});
+        } else if (d.type == 'boolean') {
+          _attrBool.putIfAbsent(d.attributeId, () => false);
+        }
+      }
+      if (prefill && _existingAttrValues.isNotEmpty) _seedAttrSelections(defs);
+      setState(() => _attrDefs = defs);
+    } catch (_) {
+      // Attribute loading is best-effort; required ones are still enforced
+      // by the backend at publish time.
+    }
+  }
+
+  void _seedAttrSelections(List<CategoryAttributeDef> defs) {
+    for (final def in defs) {
+      final rows =
+          _existingAttrValues.where((r) => r.attributeId == def.attributeId);
+      if (rows.isEmpty) continue;
+      if (def.type == 'text') {
+        _attrText[def.attributeId]?.text = rows.first.valueText ?? '';
+      } else if (def.type == 'number' || def.type == 'range') {
+        final n = rows.first.valueNumber;
+        _attrText[def.attributeId]?.text =
+            n == null ? '' : n.toStringAsFixed(0);
+      } else if (def.type == 'boolean') {
+        _attrBool[def.attributeId] = rows.first.valueBoolean ?? false;
+      } else if (def.type == 'single_select') {
+        _attrSingle[def.attributeId] = rows.first.optionId;
+      } else if (def.type == 'multi_select') {
+        _attrMulti[def.attributeId] = {
+          for (final r in rows)
+            if (r.optionId != null) r.optionId!,
+        };
+      }
+    }
+  }
+
+  /// Build value rows from the current selections and collect the names of
+  /// required attributes that are still empty (spec §12).
+  ({List<ListingAttributeValue> rows, List<String> missing}) _collectAttrValues() {
+    final rows = <ListingAttributeValue>[];
+    final missing = <String>[];
+    for (final def in _attrDefs) {
+      final id = def.attributeId;
+      switch (def.type) {
+        case 'text':
+          final t = _attrText[id]?.text.trim() ?? '';
+          if (t.isNotEmpty) rows.add(ListingAttributeValue(attributeId: id, valueText: t));
+          if (def.isRequired && t.isEmpty) missing.add(def.name);
+        case 'number' || 'range':
+          final n = double.tryParse(_attrText[id]?.text.trim() ?? '');
+          if (n != null) rows.add(ListingAttributeValue(attributeId: id, valueNumber: n));
+          if (def.isRequired && n == null) missing.add(def.name);
+        case 'boolean':
+          rows.add(ListingAttributeValue(attributeId: id, valueBoolean: _attrBool[id] ?? false));
+        case 'single_select':
+          final o = _attrSingle[id];
+          if (o != null) rows.add(ListingAttributeValue(attributeId: id, optionId: o));
+          if (def.isRequired && o == null) missing.add(def.name);
+        case 'multi_select':
+          final sel = _attrMulti[id] ?? const <String>{};
+          for (final o in sel) {
+            rows.add(ListingAttributeValue(attributeId: id, optionId: o));
+          }
+          if (def.isRequired && sel.isEmpty) missing.add(def.name);
+      }
+    }
+    return (rows: rows, missing: missing);
   }
 
   Future<void> _loadCategories() async {
@@ -143,12 +250,14 @@ class _SellScreenState extends State<SellScreen> with AppStateMixin {
         _originalPrice.text = item.originalPrice?.toStringAsFixed(0) ?? '';
         _negotiable = item.negotiable;
         _condition = item.condition.isNotEmpty ? item.condition : _condition;
-        _city.text = item.city.isNotEmpty ? item.city : _city.text;
-        _subCity.text = item.subCity ?? '';
-        _material.text = item.material ?? '';
-        _room.text = item.roomType ?? '';
-        _color.text = item.color ?? '';
-        _brand.text = item.brand ?? '';
+        if (_cities.contains(item.city)) _cityDropdown = item.city;
+        // Keep a stored sub-city only if it matches the dropdown options.
+        final sc = item.subCity ?? '';
+        _subCityValue =
+            SupabaseApi.addisSubCities.any((s) => s.toLowerCase() == sc.toLowerCase())
+                ? SupabaseApi.addisSubCities
+                    .firstWhere((s) => s.toLowerCase() == sc.toLowerCase())
+                : null;
         _delivery = item.deliveryOffered;
         _deliveryFee.text = item.deliveryFee?.toStringAsFixed(0) ?? '';
         _discountDate = item.discountExpiresAt?.toIso8601String();
@@ -168,6 +277,14 @@ class _SellScreenState extends State<SellScreen> with AppStateMixin {
             _SellImage(url: img.url, isExisting: true),
         ];
       });
+      // Load existing attribute values, then resolve the category's
+      // definitions and prefill the dynamic fields from them.
+      try {
+        final vals = await _repo.fetchListingAttributeValues(id);
+        if (!mounted) return;
+        _existingAttrValues = vals;
+      } catch (_) {}
+      await _loadAttrDefs(prefill: true);
     } catch (_) {
       // Seed failure keeps the form in create mode; the seller can retype.
     } finally {
@@ -274,6 +391,18 @@ class _SellScreenState extends State<SellScreen> with AppStateMixin {
     }
     final status = asDraft ? 'draft' : 'active';
 
+    // Dynamic category attributes (spec §12): required ones must be provided
+    // before publishing. Drafts may omit them.
+    List<ListingAttributeValue> attrRows = const [];
+    if (_attrDefs.isNotEmpty) {
+      final collected = _collectAttrValues();
+      if (!asDraft && collected.missing.isNotEmpty) {
+        _snack('${state.t('sell.attrMissing')}: ${collected.missing.join(', ')}');
+        return;
+      }
+      attrRows = collected.rows;
+    }
+
     setState(() => _busy = true);
     try {
       final uploadedPaths = <String>[];
@@ -296,7 +425,9 @@ class _SellScreenState extends State<SellScreen> with AppStateMixin {
 
       var lat = _location?.latitude;
       var lon = _location?.longitude;
-      final subCity = _subCity.text.trim();
+      final subCity = _cityDropdown == 'Addis Ababa'
+          ? (_subCityValue ?? '')
+          : _subCity.text.trim();
       if (lat == null && lon == null && subCity.isNotEmpty) {
         final c = SupabaseApi.coordsForSubCity(subCity);
         if (c != null) {
@@ -308,6 +439,10 @@ class _SellScreenState extends State<SellScreen> with AppStateMixin {
 
       if (_isEditMode && _editing) {
         final id = widget.editListingId!;
+        // Values are saved first: updating the row re-fires the backend
+        // required-attribute check, so a category switch must already have
+        // its values in place.
+        await _repo.saveListingAttributeValues(id, _attrDefs, attrRows);
         await _repo.updateListing(id, {
           'title': _title.text.trim(),
           'description': _description.text.trim(),
@@ -315,11 +450,7 @@ class _SellScreenState extends State<SellScreen> with AppStateMixin {
           'original_price': _originalPrice.text.trim().isEmpty ? null : double.tryParse(_originalPrice.text),
           'negotiable': _negotiable,
           'condition': _condition ?? 'good',
-          'material': _material.text.trim().isEmpty ? null : _material.text.trim(),
-          'color': _color.text.trim().isEmpty ? null : _color.text.trim(),
-          'room_type': _room.text.trim().isEmpty ? null : _room.text.trim(),
-          'brand': _brand.text.trim().isEmpty ? null : _brand.text.trim(),
-          'city': _city.text.trim().isEmpty ? 'Addis Ababa' : _city.text.trim(),
+          'city': _cityDropdown ?? 'Addis Ababa',
           'sub_city': subCity.isEmpty ? null : subCity,
           'category_id': categoryId,
           'delivery_offered': _delivery,
@@ -334,7 +465,9 @@ class _SellScreenState extends State<SellScreen> with AppStateMixin {
         if (!mounted) return;
         _snack(state.t(asDraft ? 'sell.draftUpdated' : 'sell.updated'));
       } else {
-        await _repo.createListing(
+        // Draft → values → activate, so the backend's publish-time check sees
+        // the attribute values when the listing goes live.
+        final newId = await _repo.createListing(
           sellerId: profile.id,
           title: _title.text.trim(),
           description: _description.text.trim(),
@@ -342,11 +475,7 @@ class _SellScreenState extends State<SellScreen> with AppStateMixin {
           originalPrice: _originalPrice.text.trim().isEmpty ? null : double.tryParse(_originalPrice.text),
           negotiable: _negotiable,
           condition: _condition ?? 'good',
-          material: _material.text.trim().isEmpty ? null : _material.text.trim(),
-          roomType: _room.text.trim().isEmpty ? null : _room.text.trim(),
-          color: _color.text.trim().isEmpty ? null : _color.text.trim(),
-          brand: _brand.text.trim().isEmpty ? null : _brand.text.trim(),
-          city: _city.text.trim().isEmpty ? 'Addis Ababa' : _city.text.trim(),
+          city: _cityDropdown ?? 'Addis Ababa',
           subCity: subCity.isEmpty ? null : subCity,
           categoryId: categoryId,
           deliveryOffered: _delivery,
@@ -356,8 +485,12 @@ class _SellScreenState extends State<SellScreen> with AppStateMixin {
           discountExpiresAt: _discountDate != null ? DateTime.tryParse(_discountDate!) : null,
           videoUrl: videoUrl,
           imagePaths: uploadedPaths,
-          status: status,
+          status: 'draft',
         );
+        await _repo.saveListingAttributeValues(newId, _attrDefs, attrRows);
+        if (!asDraft) {
+          await _repo.updateListing(newId, {'status': 'active'});
+        }
         if (!mounted) return;
         _snack(state.t(asDraft ? 'sell.draftSaved' : 'sell.saved'));
       }
@@ -381,10 +514,6 @@ class _SellScreenState extends State<SellScreen> with AppStateMixin {
     _description.clear();
     _price.clear();
     _originalPrice.clear();
-    _material.clear();
-    _room.clear();
-    _color.clear();
-    _brand.clear();
     _subCity.clear();
     _deliveryFee.clear();
     _condition = 'good';
@@ -398,6 +527,20 @@ class _SellScreenState extends State<SellScreen> with AppStateMixin {
     _location = null;
     _negotiable = true;
     _delivery = false;
+    _cityDropdown = 'Addis Ababa';
+    _subCityValue = null;
+    _attrDefs = const [];
+    _existingAttrValues = const [];
+    for (final c in _attrText.values) {
+      c.clear();
+    }
+    _attrSingle.clear();
+    for (final s in _attrMulti.values) {
+      s.clear();
+    }
+    for (final k in _attrBool.keys.toList()) {
+      _attrBool[k] = false;
+    }
   }
 
   void _snack(String msg) {
@@ -597,17 +740,23 @@ class _SellScreenState extends State<SellScreen> with AppStateMixin {
                           ChoiceChip(
                             label: Text(c.name),
                             selected: _rootCategoryId == c.id || (_categoryId != null && _categories.where((cc) => cc.id == _categoryId).any((cc) => cc.parentId == c.id)),
-                            onSelected: (_) => setState(() {
-                              _rootCategoryId = c.id;
-                              _categoryId = null;
-                            }),
+                            onSelected: (_) {
+                              setState(() {
+                                _rootCategoryId = c.id;
+                                _categoryId = null;
+                              });
+                              _loadAttrDefs();
+                            },
                           ),
                         if (_rootCategoryId != null)
                           for (final c in _categories.where((c) => c.parentId == _rootCategoryId))
                             ChoiceChip(
                               label: Text(c.name),
                               selected: _categoryId == c.id,
-                              onSelected: (_) => setState(() => _categoryId = c.id),
+                              onSelected: (_) {
+                                setState(() => _categoryId = c.id);
+                                _loadAttrDefs();
+                              },
                             ),
                       ],
                     ),
@@ -627,56 +776,59 @@ class _SellScreenState extends State<SellScreen> with AppStateMixin {
                     ),
 
                     const SizedBox(height: 16),
+
+                    // Dynamic attributes for the selected category (spec §15) —
+                    // loaded from the backend, so admin changes appear here
+                    // without a release.
+                    if (_attrDefs.isNotEmpty) ...[
+                      _label(state.t('sell.attrHint')),
+                      for (final def in _attrDefs)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: _attrField(theme, def),
+                        ),
+                      const SizedBox(height: 4),
+                    ],
+
+                    const SizedBox(height: 8),
                     Row(
                       children: [
                         Expanded(
-                          child: TextField(
-                            controller: _material,
-                            decoration: InputDecoration(labelText: state.t('sell.material')),
+                          child: DropdownButtonFormField<String>(
+                            initialValue: _cityDropdown,
+                            isExpanded: true,
+                            decoration:
+                                InputDecoration(labelText: state.t('sell.city')),
+                            items: [
+                              for (final c in _cities)
+                                DropdownMenuItem(value: c, child: Text(c)),
+                            ],
+                            onChanged: (v) => setState(() {
+                              _cityDropdown = v;
+                              if (v != 'Addis Ababa') _subCityValue = null;
+                            }),
                           ),
                         ),
                         const SizedBox(width: 12),
                         Expanded(
-                          child: TextField(
-                            controller: _color,
-                            decoration: InputDecoration(labelText: state.t('sell.color')),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: _room,
-                            decoration: InputDecoration(labelText: state.t('sell.room')),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: TextField(
-                            controller: _brand,
-                            decoration: InputDecoration(labelText: state.t('sell.brand')),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      children: [
-                        Expanded(
-                          child: TextField(
-                            controller: _city,
-                            decoration: InputDecoration(labelText: state.t('sell.city')),
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: TextField(
-                            controller: _subCity,
-                            decoration: InputDecoration(labelText: state.t('sell.subCity')),
-                          ),
+                          child: _cityDropdown == 'Addis Ababa'
+                              ? DropdownButtonFormField<String>(
+                                  initialValue: _subCityValue,
+                                  isExpanded: true,
+                                  decoration: InputDecoration(
+                                      labelText: state.t('sell.subCity')),
+                                  items: [
+                                    for (final s in SupabaseApi.addisSubCities)
+                                      DropdownMenuItem(value: s, child: Text(s)),
+                                  ],
+                                  onChanged: (v) =>
+                                      setState(() => _subCityValue = v),
+                                )
+                              : TextField(
+                                  controller: _subCity,
+                                  decoration: InputDecoration(
+                                      labelText: state.t('sell.subCity')),
+                                ),
                         ),
                       ],
                     ),
@@ -890,4 +1042,79 @@ class _SellScreenState extends State<SellScreen> with AppStateMixin {
         padding: const EdgeInsets.only(bottom: 8),
         child: Text(text, style: Theme.of(context).textTheme.titleSmall),
       );
+
+  /// One dynamically-configured attribute input (spec §15). The control
+  /// matches the attribute's type; selections live in the per-attribute maps
+  /// that [_collectAttrValues] reads at publish time.
+  Widget _attrField(ThemeData theme, CategoryAttributeDef def) {
+    final id = def.attributeId;
+    final label =
+        '${AppState.instance.lang == 'am' && def.nameAm != null ? def.nameAm! : def.name}'
+        '${def.unit != null ? ' (${def.unit})' : ''}'
+        '${def.isRequired ? ' *' : ''}';
+
+    switch (def.type) {
+      case 'boolean':
+        return SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          dense: true,
+          title: Text(label),
+          value: _attrBool[id] ?? false,
+          onChanged: (v) => setState(() => _attrBool[id] = v),
+        );
+      case 'single_select':
+        return DropdownButtonFormField<String>(
+          initialValue: _attrSingle[id],
+          isExpanded: true,
+          decoration: InputDecoration(labelText: label),
+          items: [
+            for (final o in def.options)
+              DropdownMenuItem(
+                value: o.id,
+                child: Text(
+                  AppState.instance.lang == 'am' && o.labelAm != null
+                      ? o.labelAm!
+                      : o.label,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+          ],
+          onChanged: (v) => setState(() => _attrSingle[id] = v),
+        );
+      case 'multi_select':
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(label, style: theme.textTheme.bodyMedium),
+            const SizedBox(height: 4),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final o in def.options)
+                  FilterChip(
+                    label: Text(
+                      AppState.instance.lang == 'am' && o.labelAm != null
+                          ? o.labelAm!
+                          : o.label,
+                    ),
+                    selected: _attrMulti[id]?.contains(o.id) ?? false,
+                    onSelected: (sel) => setState(() {
+                      final set = _attrMulti.putIfAbsent(id, () => <String>{});
+                      sel ? set.add(o.id) : set.remove(o.id);
+                    }),
+                  ),
+              ],
+            ),
+          ],
+        );
+      default: // text / number / range
+        return TextField(
+          controller: _attrText[id],
+          keyboardType:
+              def.type == 'text' ? TextInputType.text : TextInputType.number,
+          decoration: InputDecoration(labelText: label),
+        );
+    }
+  }
 }

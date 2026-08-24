@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart' show XFile;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../models/models.dart';
+import '../../features/sell/domain/listing_attributes.dart';
 import 'env.dart';
 import 'supabase_client.dart';
 
@@ -105,6 +106,22 @@ class SupabaseApi {
     'Lemi Kura': (lat: 9.0357, lng: 38.7918),
   };
 
+  /// Official Addis Ababa sub-cities, offered as a dropdown on the sell form
+  /// when the selected city is Addis Ababa.
+  static const List<String> addisSubCities = [
+    'Bole',
+    'Yeka',
+    'Arada',
+    'Kirkos',
+    'Lideta',
+    'Addis Ketema',
+    'Nifas Silk-Lafto',
+    'Kolfe Keranio',
+    'Gulele',
+    'Akaki Kality',
+    'Lemi Kura',
+  ];
+
   /// Centre coordinates of a known Addis Ababa sub-city, or null if unknown.
   static ({double lat, double lng})? coordsForSubCity(String? subCity) {
     if (subCity == null) return null;
@@ -171,6 +188,21 @@ class SupabaseApi {
       if (f.max != null && f.max! > 0) q = q.lte('price', f.max!);
       if (f.discounted) q = q.not('original_price', 'is', null);
       if (f.featured) q = q.eq('featured', true);
+
+      // Phase 6 (§14): dynamic attribute filters resolve server-side through
+      // the attribute_matching_listing_ids RPC, then narrow by listing id.
+      final attrs = f.attributes;
+      if (attrs != null && attrs.isNotEmpty) {
+        final matches = await _db.rpc(
+          'attribute_matching_listing_ids',
+          params: {'p_attrs': attrs},
+        );
+        final ids =
+            matches.map((r) => r['listing_id'] as String).toList(growable: false);
+        if (ids.isEmpty) return const [];
+        q = q.inFilter('id', ids);
+      }
+
       if (f.category != null) {
         final cat = await _db
             .from('categories')
@@ -1175,6 +1207,87 @@ class SupabaseApi {
     }
   }
 
+  /// Attribute definitions configured for a category (spec §14/§15), resolved
+  /// through the `category_attribute_set` RPC so attributes attached at a
+  /// parent category are inherited. Active options are merged in for select
+  /// types. Loaded live so admin changes reach the form without a release.
+  static Future<List<CategoryAttributeDef>> fetchCategoryAttributes(
+      String categoryId) async {
+    try {
+      final data = await _db
+          .rpc('category_attribute_set', params: {'_category_id': categoryId});
+      final defs = (data as List)
+          .map((r) => CategoryAttributeDef.fromRow(Map<String, dynamic>.from(r as Map)))
+          .toList();
+      final selectIds = defs.where((d) => d.isSelect).map((d) => d.attributeId).toList();
+      if (selectIds.isEmpty) return defs;
+      final opts = await _db
+          .from('attribute_options')
+          .select('id,attribute_id,value,label,label_am')
+          .inFilter('attribute_id', selectIds)
+          .eq('is_active', true)
+          .order('sort_order');
+      final byAttr = <String, List<AttributeOption>>{};
+      for (final o in opts) {
+        final attrId = o['attribute_id'] as String;
+        byAttr.putIfAbsent(attrId, () => []).add(AttributeOption.fromRow(Map<String, dynamic>.from(o)));
+      }
+      return [
+        for (final d in defs)
+          CategoryAttributeDef(
+            attributeId: d.attributeId,
+            slug: d.slug,
+            name: d.name,
+            nameAm: d.nameAm,
+            type: d.type,
+            unit: d.unit,
+            isRequired: d.isRequired,
+            sortOrder: d.sortOrder,
+            options: byAttr[d.attributeId] ?? const [],
+          ),
+      ];
+    } catch (e) {
+      _raise(e);
+    }
+  }
+
+  /// Existing seller-provided attribute values for a listing (edit prefill).
+  static Future<List<ListingAttributeValue>> fetchListingAttributeValues(
+      String listingId) async {
+    try {
+      final data = await _db
+          .from('listing_attribute_values')
+          .select('attribute_id,value_text,value_number,value_boolean,option_id')
+          .eq('listing_id', listingId);
+      return (data as List)
+          .map((r) => ListingAttributeValue.fromRow(Map<String, dynamic>.from(r as Map)))
+          .toList(growable: false);
+    } catch (e) {
+      _raise(e);
+    }
+  }
+
+  /// Persist the seller's attribute values (spec §11): replaces the values of
+  /// every attribute in [defs]; empty attributes are simply absent — the
+  /// backend enforces required ones when the listing goes active.
+  static Future<void> saveListingAttributeValues(
+    String listingId,
+    List<CategoryAttributeDef> defs,
+    List<ListingAttributeValue> values,
+  ) async {
+    if (defs.isEmpty) return;
+    final defIds = defs.map((d) => d.attributeId).toList();
+    await _db
+        .from('listing_attribute_values')
+        .delete()
+        .eq('listing_id', listingId)
+        .inFilter('attribute_id', defIds);
+    if (values.isEmpty) return;
+    await _db
+        .from('listing_attribute_values')
+        .insert([for (final v in values) v.toRow(listingId)]);
+  }
+
   static Future<List<Listing>> fetchMyListings(String sellerId) async {
     try {
       final data = await _db
@@ -2146,6 +2259,7 @@ class ListingFilters {
     this.sort,
     this.sellerId,
     this.limit,
+    this.attributes,
   });
 
   final String? q;
@@ -2162,6 +2276,12 @@ class ListingFilters {
   final String? sellerId;
   final int? limit;
 
+  /// Phase 6 (§14): dynamic attribute filters keyed by attribute SLUG.
+  /// Values are option values ("wood") for selects, true/false for booleans,
+  /// free text for text attributes, or a [min, max] pair (null bound open)
+  /// for number/range attributes. Attributes AND; values within one OR.
+  final Map<String, List<Object>>? attributes;
+
   bool get hasActiveFilters =>
       q != null ||
       condition != null ||
@@ -2169,7 +2289,8 @@ class ListingFilters {
       room != null ||
       city != null ||
       min != null ||
-      max != null;
+      max != null ||
+      (attributes != null && attributes!.isNotEmpty);
 
   ListingFilters copyWith({
     String? q,
@@ -2185,6 +2306,7 @@ class ListingFilters {
     String? sort,
     String? sellerId,
     int? limit,
+    Map<String, List<Object>>? attributes,
     bool clear = false,
   }) {
     return ListingFilters(
@@ -2201,6 +2323,7 @@ class ListingFilters {
       sort: clear ? null : (sort ?? this.sort),
       sellerId: clear ? null : (sellerId ?? this.sellerId),
       limit: limit ?? this.limit,
+      attributes: clear ? null : (attributes ?? this.attributes),
     );
   }
 }

@@ -1,6 +1,6 @@
 {
-    "name": "HabeshaHome",
-    "short_name": "HabeshaHome",
+    "name": "AddisHome",
+    "short_name": "AddisHome",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

@@ -115,6 +115,21 @@ export const SUB_CITY_COORDS: Record<string, { latitude: number; longitude: numb
   "Addis Ababa": { latitude: 9.03, longitude: 38.74 },
 };
 
+/** Official Addis Ababa sub-cities, shown as a dropdown when the city is Addis Ababa. */
+export const ADDIS_SUB_CITIES = [
+  "Bole",
+  "Yeka",
+  "Arada",
+  "Kirkos",
+  "Lideta",
+  "Addis Ketema",
+  "Nifas Silk-Lafto",
+  "Kolfe Keranio",
+  "Gulele",
+  "Akaki Kality",
+  "Lemi Kura",
+] as const;
+
 export const CONDITIONS = ["like new", "good", "fair", "needs repair"] as const;
 export const MATERIALS = [
   "wood",

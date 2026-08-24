@@ -1,9 +1,26 @@
 import 'package:image_picker/image_picker.dart';
 
 import '../../../core/models/models.dart';
+import 'listing_attributes.dart';
 
 /// Contract for the sell feature (seller listing management).
 abstract class SellRepository {
+  /// Attribute definitions configured for a category, loaded live so admin
+  /// changes reach the form without a rebuild (spec §15).
+  Future<List<CategoryAttributeDef>> fetchCategoryAttributes(String categoryId);
+
+  /// Existing attribute values on a listing (edit mode prefill).
+  Future<List<ListingAttributeValue>> fetchListingAttributeValues(
+      String listingId);
+
+  /// Persist attribute values; required ones are enforced by the backend at
+  /// publish time (spec §12).
+  Future<void> saveListingAttributeValues(
+    String listingId,
+    List<CategoryAttributeDef> defs,
+    List<ListingAttributeValue> values,
+  );
+
   Future<String> createListing({
     required String sellerId,
     required String title,

@@ -12,10 +12,11 @@ import '../../../core/state/app_state.dart';
 import '../../../core/state/app_state_mixin.dart';
 import '../../../core/widgets/listing_grid.dart';
 import '../../../core/widgets/section_header.dart';
-import '../../../core/network/supabase_api.dart' show ListingFilters;
+import '../../../core/network/supabase_api.dart' show ListingFilters, SupabaseApi;
 import '../../profile/domain/profile_repository.dart';
 import '../domain/listing_query.dart';
 import '../domain/listings_repository.dart';
+import '../../sell/domain/listing_attributes.dart';
 
 /// Full listing browser with search, filters and sorting (mirrors `/browse`).
 class SearchScreen extends StatefulWidget {
@@ -484,14 +485,14 @@ class _SearchScreenState extends State<SearchScreen> with AppStateMixin {
         q: _filters.q,
         category: result['category'] as String? ?? _filters.category,
         condition: result['condition'] as String?,
-        material: result['material'] as String?,
-        room: result['room'] as String?,
         city: result['city'] as String?,
         min: (result['min'] as num?)?.toDouble(),
         max: (result['max'] as num?)?.toDouble(),
         // "Nearest" needs a location; _locate() applies it only on success.
         sort: newSort == 'nearest' ? _filters.sort : newSort,
         discounted: result['discounted'] as bool? ?? false,
+        attributes: (result['attributes'] as Map<String, List<Object>>?) ??
+            _filters.attributes,
       );
     });
     if (newSort == 'nearest' && _location == null) {
@@ -514,36 +515,173 @@ class _FilterSheet extends StatefulWidget {
 }
 
 class _FilterSheetState extends State<_FilterSheet> {
-  static const _roomKeys = {
-    'Living Room': 'living',
-    'Bedroom': 'bedroom',
-    'Kitchen': 'kitchen',
-    'Office': 'office',
-    'Dining': 'dining',
-  };
-
   String? _category;
   String? _condition;
-  String? _material;
-  String? _room;
   String? _city;
   String? _sort;
   double? _min;
   double? _max;
   bool _discounted = false;
 
+  // Phase 6 (§14): dynamic attribute filters for the selected category.
+  List<CategoryAttributeDef> _attrDefs = const [];
+  final Map<String, String?> _attrSingle = {};
+  final Map<String, Set<String>> _attrMulti = {};
+  final Map<String, bool> _attrBool = {};
+  final Map<String, TextEditingController> _attrText = {};
+  final Map<String, TextEditingController> _attrRangeMin = {};
+  final Map<String, TextEditingController> _attrRangeMax = {};
+
   @override
   void initState() {
     super.initState();
     _category = widget.filters.category;
     _condition = widget.filters.condition;
-    _material = widget.filters.material;
-    _room = widget.filters.room;
     _city = widget.filters.city;
     _sort = widget.filters.sort;
     _min = widget.filters.min;
     _max = widget.filters.max;
     _discounted = widget.filters.discounted;
+    // Seed the dynamic selections from the active filters, then resolve the
+    // category's attribute definitions.
+    _seedAttrSelections(widget.filters.attributes ?? const {});
+    _loadAttrDefs();
+  }
+
+  @override
+  void dispose() {
+    for (final c in _attrText.values) {
+      c.dispose();
+    }
+    for (final c in _attrRangeMin.values) {
+      c.dispose();
+    }
+    for (final c in _attrRangeMax.values) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  String? get _categoryId {
+    final slug = _category;
+    if (slug == null) return null;
+    for (final c in widget.categories ?? const <Category>[]) {
+      if (c.slug == slug) return c.id;
+    }
+    return null;
+  }
+
+  Future<void> _loadAttrDefs() async {
+    final id = _categoryId;
+    if (id == null) {
+      if (mounted) setState(() => _attrDefs = const []);
+      return;
+    }
+    try {
+      final defs = await SupabaseApi.fetchCategoryAttributes(id);
+      for (final d in defs) {
+        if (d.type == 'text') {
+          _attrText.putIfAbsent(d.attributeId, TextEditingController.new);
+        } else if (d.type == 'number' || d.type == 'range') {
+          _attrRangeMin.putIfAbsent(d.attributeId, TextEditingController.new);
+          _attrRangeMax.putIfAbsent(d.attributeId, TextEditingController.new);
+        } else if (d.type == 'single_select') {
+          _attrSingle.putIfAbsent(d.attributeId, () => null);
+        } else if (d.type == 'multi_select') {
+          _attrMulti.putIfAbsent(d.attributeId, () => <String>{});
+        } else if (d.type == 'boolean') {
+          _attrBool.putIfAbsent(d.attributeId, () => false);
+        }
+      }
+      if (!mounted) return;
+      setState(() => _attrDefs = defs);
+      _applySeeds(defs);
+    } catch (_) {
+      // Best-effort: without definitions the sheet just shows static filters.
+    }
+  }
+
+  void _seedAttrSelections(Map<String, List<Object>> attrs) {
+    // Values arrive keyed by SLUG; the definitions carry the ids, so seeding
+    // happens once the definitions load (see _applySeeds).
+    _pendingSeed = attrs;
+  }
+
+  Map<String, List<Object>>? _pendingSeed;
+
+  void _applySeeds(List<CategoryAttributeDef> defs) {
+    final seed = _pendingSeed;
+    if (seed == null || seed.isEmpty) return;
+    for (final def in defs) {
+      final values = seed[def.slug];
+      if (values == null || values.isEmpty) continue;
+      switch (def.type) {
+        case 'single_select':
+          final opt = def.options.where((o) => values.contains(o.value)).toList();
+          if (opt.isNotEmpty) _attrSingle[def.attributeId] = opt.first.id;
+        case 'multi_select':
+          _attrMulti[def.attributeId] = {
+            for (final o in def.options)
+              if (values.contains(o.value)) o.id,
+          };
+        case 'boolean':
+          _attrBool[def.attributeId] = values.first == true || values.first == 'true';
+        case 'number' || 'range':
+          if (values.first is List) {
+            final pair = values.first as List;
+            _attrRangeMin[def.attributeId]?.text =
+                pair[0] == null ? '' : (pair[0] as num).toString();
+            _attrRangeMax[def.attributeId]?.text =
+                pair[1] == null ? '' : (pair[1] as num).toString();
+          }
+        default: // text
+          _attrText[def.attributeId]?.text = '${values.first}';
+      }
+    }
+    _pendingSeed = null;
+  }
+
+  /// Build the attributes payload for the saved filters (spec §14 semantics:
+  /// attributes AND, values within one attribute OR). Empty selections are
+  /// omitted so they don't filter anything out.
+  Map<String, List<Object>>? _collectAttributes() {
+    final out = <String, List<Object>>{};
+    for (final def in _attrDefs) {
+      final id = def.attributeId;
+      switch (def.type) {
+        case 'single_select':
+          final v = _attrSingle[id];
+          if (v != null) {
+            for (final o in def.options) {
+              if (o.id == v) {
+                out[def.slug] = [o.value];
+                break;
+              }
+            }
+          }
+        case 'multi_select':
+          final sel = _attrMulti[id] ?? const <String>{};
+          final vals = [
+            for (final o in def.options)
+              if (sel.contains(o.id)) o.value,
+          ];
+          if (vals.isNotEmpty) out[def.slug] = vals;
+        case 'boolean':
+          out[def.slug] = [_attrBool[id] ?? false];
+        case 'number' || 'range':
+          final lo = double.tryParse(_attrRangeMin[id]?.text ?? '');
+          final hi = double.tryParse(_attrRangeMax[id]?.text ?? '');
+          if (lo != null || hi != null) {
+            out[def.slug] = [
+              [lo, hi],
+            ];
+          }
+        default: // text
+          final t = _attrText[id]?.text.trim() ?? '';
+          if (t.isNotEmpty) out[def.slug] = [t];
+      }
+    }
+    return out.isEmpty ? null : out;
   }
 
   @override
@@ -600,13 +738,19 @@ class _FilterSheetState extends State<_FilterSheet> {
               ChoiceChip(
                 label: Text(state.t('browse.allItems')),
                 selected: _category == null,
-                onSelected: (_) => setState(() => _category = null),
+                onSelected: (_) {
+                  setState(() => _category = null);
+                  _loadAttrDefs();
+                },
               ),
               for (final c in parents)
                 ChoiceChip(
                   label: Text(c.name),
                   selected: _category == c.slug,
-                  onSelected: (_) => setState(() => _category = c.slug),
+                  onSelected: (_) {
+                    setState(() => _category = c.slug);
+                    _loadAttrDefs();
+                  },
                 ),
             ],
           ),
@@ -626,34 +770,6 @@ class _FilterSheetState extends State<_FilterSheet> {
           ),
           const SizedBox(height: 20),
 
-          _label(state.t('browse.material')),
-          Wrap(
-            spacing: 8,
-            children: [
-              for (final m in const ['wood', 'metal', 'fabric', 'glass', 'leather', 'plastic'])
-                ChoiceChip(
-                  label: Text(state.t('browse.mat.$m')),
-                  selected: _material == m,
-                  onSelected: (sel) => setState(() => _material = sel ? m : null),
-                ),
-            ],
-          ),
-          const SizedBox(height: 20),
-
-          _label(state.t('browse.room')),
-          Wrap(
-            spacing: 8,
-            children: [
-              for (final r in _FilterSheetState._roomKeys.entries)
-                ChoiceChip(
-                  label: Text(state.t('browse.room.${r.value}')),
-                  selected: _room == r.key,
-                  onSelected: (sel) => setState(() => _room = sel ? r.key : null),
-                ),
-            ],
-          ),
-          const SizedBox(height: 20),
-
           _label(state.t('browse.priceRange')),
           Row(
             children: [
@@ -662,6 +778,18 @@ class _FilterSheetState extends State<_FilterSheet> {
               Expanded(child: TextField(controller: maxCtrl, keyboardType: TextInputType.number, decoration: InputDecoration(labelText: state.t('browse.max')))),
             ],
           ),
+
+          // Phase 6 (§14): dynamic attribute filters — only the attributes
+          // the selected category configures appear, loaded live.
+          if (_attrDefs.isNotEmpty) ...[
+            const SizedBox(height: 20),
+            for (final def in _attrDefs)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 16),
+                child: _attrField(state, def),
+              ),
+          ],
+
           const SizedBox(height: 8),
           SwitchListTile(
             contentPadding: EdgeInsets.zero,
@@ -674,13 +802,12 @@ class _FilterSheetState extends State<_FilterSheet> {
             onPressed: () => Navigator.of(context).pop({
               'category': _category,
               'condition': _condition,
-              'material': _material,
-              'room': _room,
               'city': _city,
               'sort': _sort,
               'min': double.tryParse(minCtrl.text),
               'max': double.tryParse(maxCtrl.text),
               'discounted': _discounted,
+              'attributes': _collectAttributes(),
             }),
             child: Text(state.t('common.save')),
           ),
@@ -693,4 +820,105 @@ class _FilterSheetState extends State<_FilterSheet> {
         padding: const EdgeInsets.only(bottom: 8),
         child: Text(text, style: Theme.of(context).textTheme.titleSmall),
       );
+
+  /// One dynamically-configured attribute filter control (spec §14). The
+  /// control matches the attribute's type; selections live in the
+  /// per-attribute maps that [_collectAttributes] reads on save.
+  Widget _attrField(AppState state, CategoryAttributeDef def) {
+    final theme = Theme.of(context);
+    final id = def.attributeId;
+    final label =
+        '${state.lang == 'am' && def.nameAm != null ? def.nameAm! : def.name}'
+        '${def.unit != null ? ' (${def.unit})' : ''}';
+
+    switch (def.type) {
+      case 'boolean':
+        return SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          dense: true,
+          title: Text(label),
+          value: _attrBool[id] ?? false,
+          onChanged: (v) => setState(() => _attrBool[id] = v),
+        );
+      case 'single_select':
+        return DropdownButtonFormField<String>(
+          initialValue: _attrSingle[id],
+          isExpanded: true,
+          decoration: InputDecoration(labelText: label),
+          hint: Text(label),
+          items: [
+            for (final o in def.options)
+              DropdownMenuItem(
+                value: o.id,
+                child: Text(
+                  state.lang == 'am' && o.labelAm != null ? o.labelAm! : o.label,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+          ],
+          onChanged: (v) => setState(() => _attrSingle[id] = v),
+        );
+      case 'multi_select':
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(label, style: theme.textTheme.titleSmall),
+            const SizedBox(height: 4),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                for (final o in def.options)
+                  FilterChip(
+                    label: Text(
+                      state.lang == 'am' && o.labelAm != null
+                          ? o.labelAm!
+                          : o.label,
+                    ),
+                    selected: _attrMulti[id]?.contains(o.id) ?? false,
+                    onSelected: (sel) => setState(() {
+                      final set = _attrMulti.putIfAbsent(id, () => <String>{});
+                      sel ? set.add(o.id) : set.remove(o.id);
+                    }),
+                  ),
+              ],
+            ),
+          ],
+        );
+      case 'number' || 'range':
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(label, style: theme.textTheme.titleSmall),
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _attrRangeMin[id],
+                    keyboardType: TextInputType.number,
+                    decoration:
+                        InputDecoration(labelText: state.t('browse.min')),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: TextField(
+                    controller: _attrRangeMax[id],
+                    keyboardType: TextInputType.number,
+                    decoration:
+                        InputDecoration(labelText: state.t('browse.max')),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        );
+      default: // text
+        return TextField(
+          controller: _attrText[id],
+          decoration: InputDecoration(labelText: label),
+        );
+    }
+  }
 }

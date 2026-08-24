@@ -1488,6 +1488,12 @@ export type Database = {
           from_level: number;
         }[];
       };
+      attribute_matching_listing_ids: {
+        Args: { p_attrs?: Json; p_listing_ids?: string[] | null };
+        Returns: {
+          listing_id: string;
+        }[];
+      };
     };
     Enums: {
       app_role: "admin" | "moderator" | "user";

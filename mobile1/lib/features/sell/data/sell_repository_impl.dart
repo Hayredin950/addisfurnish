@@ -6,6 +6,7 @@ import '../../../core/models/models.dart';
 import '../../../core/network/connectivity.dart';
 import '../../../core/network/supabase_api.dart';
 import '../../../core/state/app_state.dart';
+import '../domain/listing_attributes.dart';
 import '../domain/sell_repository.dart';
 
 /// Sell repository. Listing creation is queued offline and uploaded once the
@@ -19,6 +20,30 @@ class SellRepositoryImpl implements SellRepository {
   final ConnectivityService _connectivity;
 
   static const _myKey = 'cache:my_listings:';
+
+  @override
+  Future<List<CategoryAttributeDef>> fetchCategoryAttributes(
+      String categoryId) {
+    if (!_connectivity.isOnline) throw const NetworkFailure('offline');
+    return SupabaseApi.fetchCategoryAttributes(categoryId);
+  }
+
+  @override
+  Future<List<ListingAttributeValue>> fetchListingAttributeValues(
+      String listingId) {
+    if (!_connectivity.isOnline) throw const NetworkFailure('offline');
+    return SupabaseApi.fetchListingAttributeValues(listingId);
+  }
+
+  @override
+  Future<void> saveListingAttributeValues(
+    String listingId,
+    List<CategoryAttributeDef> defs,
+    List<ListingAttributeValue> values,
+  ) {
+    if (!_connectivity.isOnline) throw const NetworkFailure('offline');
+    return SupabaseApi.saveListingAttributeValues(listingId, defs, values);
+  }
 
   @override
   Future<String> createListing({

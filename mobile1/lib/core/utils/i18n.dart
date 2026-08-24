@@ -6,7 +6,7 @@ class I18n {
   I18n._();
 
   static const Map<String, String> en = {
-    'app.name': 'HabeshaHome',
+    'app.name': 'AddisHome',
     'app.tagline':
         "Ethiopia's marketplace for quality second-hand furniture. Free to browse, free to list.",
 
@@ -142,7 +142,7 @@ class I18n {
     'shop.notFound': 'Shop not found',
     'shop.reviewCount': '{count} reviews',
 
-    'auth.title': 'Welcome to HabeshaHome',
+    'auth.title': 'Welcome to AddisHome',
     'auth.subtitle': 'One account to buy, sell and message.',
     'auth.google': 'Continue with Google',
     'auth.phoneTab': 'Phone',
@@ -187,7 +187,7 @@ class I18n {
     'auth.backToSignIn': 'Back to sign in',
 
     'setup.title': 'Set up your profile',
-    'setup.subtitle': 'Four quick steps to get the most out of HabeshaHome.',
+    'setup.subtitle': 'Four quick steps to get the most out of AddisHome.',
     'setup.step': 'Step',
     'setup.basics': 'Basic info',
     'setup.basicsHint': 'Who you are — name, city, and a phone buyers can reach you on.',
@@ -255,6 +255,8 @@ class I18n {
     'sell.negotiable': 'Price is negotiable',
     'sell.category': 'Category',
     'sell.condition': 'Condition',
+    'sell.attrHint': 'Details for the selected category. * = required',
+    'sell.attrMissing': 'Please fill the required details',
     'sell.material': 'Material',
     'sell.room': 'Room',
     'sell.city': 'City',
@@ -500,7 +502,7 @@ class I18n {
     'safetyCheckBody': 'Look for the verified badge — it means the shop uploaded valid documents.',
     'safetyReportTitle': 'Report suspicious activity',
     'safetyReportBody': 'If something feels off, use the report button. We review every case.',
-    'safetySellerNote': 'Sellers: never share your OTP or passwords. HabeshaHome will never ask for them.',
+    'safetySellerNote': 'Sellers: never share your OTP or passwords. AddisHome will never ask for them.',
 
     // Map
     'dragPinHint': 'Tap or drag the pin to set the location',
@@ -692,7 +694,7 @@ class I18n {
     'auth.backToSignIn': 'ወደ መግቢያ ተመለስ',
 
     'setup.title': 'መገለጫዎን ያዘጋጁ',
-    'setup.subtitle': 'ከHabeshaHome ምርጥ ተጠቃሚ ለመሆን 4 ፈጣን ደረጃዎች።',
+    'setup.subtitle': 'ከAddisHome ምርጥ ተጠቃሚ ለመሆን 4 ፈጣን ደረጃዎች።',
     'setup.step': 'ደረጃ',
     'setup.basics': 'መሰረታዊ መረጃ',
     'setup.basicsHint': 'እርስዎ ማን እንደሆኑ — ስም፣ ከተማ እና ገዢዎች ሊደርሱበት የሚችሉት ስልክ።',
@@ -759,6 +761,8 @@ class I18n {
     'sell.negotiable': 'ዋጋው ሊደራደር ይችላል',
     'sell.category': 'ምድብ',
     'sell.condition': 'ሁኔታ',
+    'sell.attrHint': 'ለተመረጠው ምድብ ዝርዝሮች። * = ግዴታ',
+    'sell.attrMissing': 'እባክዎ ግዴታ ያሉ ዝርዝሮችን ይሙሉ',
     'sell.material': 'ቁሳቁስ',
     'sell.room': 'ክፍል',
     'sell.city': 'ከተማ',
@@ -1004,7 +1008,7 @@ class I18n {
     'safetyCheckBody': 'የተረጋገጠ ምልክት ያለው ሱቅ ትክክለኛ ሰነዶች ያስገባ ማለት ነው።',
     'safetyReportTitle': 'አጠራጣሪ እንቅስቃሴ ያሳውቁ',
     'safetyReportBody': 'ነገሮች ስህተት ከተሰማዎት የሪፖርት ቁልፉን ይጠቀሙ።',
-    'safetySellerNote': 'ሻጮች፡ ኦቲፒ ወይም የይለፍ ቃላትዎን ፈጽሞ አያጋሩ። HabeshaHome ፈጽሞ አይጠይቃቸውም።',
+    'safetySellerNote': 'ሻጮች፡ ኦቲፒ ወይም የይለፍ ቃላትዎን ፈጽሞ አያጋሩ። AddisHome ፈጽሞ አይጠይቃቸውም።',
 
     // Map
     'dragPinHint': 'ቦታ ለማስቀመጥ ፒኑን ይንኩ ወይም ያንቀሳቅሱት',

@@ -10,8 +10,8 @@ import 'core/theme/app_theme.dart';
 import 'features/shell/presentation/main_tabs.dart';
 
 /// Root widget: app-wide theme + offline banner + auth gate.
-class HabeshaHomeApp extends StatelessWidget {
-  const HabeshaHomeApp({super.key});
+class AddisHomeApp extends StatelessWidget {
+  const AddisHomeApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -19,7 +19,7 @@ class HabeshaHomeApp extends StatelessWidget {
       listenable: AppState.instance,
       builder: (context, _) {
         return MaterialApp(
-          title: 'HabeshaHome',
+          title: 'AddisHome',
           debugShowCheckedModeBanner: false,
           theme: AppTheme.light(),
           darkTheme: AppTheme.dark(),

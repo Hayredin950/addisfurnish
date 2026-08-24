@@ -309,7 +309,9 @@ function Messages() {
     <div className="mx-auto max-w-5xl px-4 py-12">
       <h1 className="font-display text-3xl font-semibold">{t("nav.messages")}</h1>
       <div className="mt-8 grid gap-6 md:grid-cols-[260px_1fr]">
-        <aside className="space-y-2">
+        {/* Phones: one pane at a time — picking a conversation swaps the list
+            for the chat, and the back arrow returns to the inbox. */}
+        <aside className={`space-y-2 ${activeId ? "hidden md:block" : ""}`}>
           {(conversations ?? []).map((c) => {
             const unread = unreadRows?.get(c.id) ?? 0;
             return (
@@ -362,7 +364,7 @@ function Messages() {
                   type="button"
                   title={t("msg.deleteConversation")}
                   onClick={() => removeConversation.mutate(c.id)}
-                  className="absolute right-1.5 top-1.5 rounded-full p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-secondary hover:text-destructive group-hover:opacity-100"
+                  className="absolute right-1.5 top-1.5 rounded-full p-1 text-muted-foreground transition-opacity hover:bg-secondary hover:text-destructive md:opacity-0 md:group-hover:opacity-100"
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </button>
@@ -375,6 +377,15 @@ function Messages() {
         </aside>
 
         <section className="flex min-h-[420px] flex-col rounded-lg border bg-card p-4">
+          {activeId ? (
+            <button
+              type="button"
+              onClick={() => setActiveId(null)}
+              className="mb-2 inline-flex items-center gap-1 text-sm text-muted-foreground md:hidden"
+            >
+              ← {t("listing.back")}
+            </button>
+          ) : null}
           {counterpart ? (
             <header className="mb-3 flex items-center gap-2 border-b pb-3">
               <UserAvatar name={counterpart.full_name} avatarUrl={counterpart.avatar_url} />
@@ -514,7 +525,11 @@ function Messages() {
                         }`}
                       >
                         {!deleted && m.image_url ? (
-                          <img src={m.image_url} alt="" className="mb-1 max-h-48 rounded-md object-cover" />
+                          <img
+                            src={m.image_url}
+                            alt=""
+                            className="mb-1 max-h-48 rounded-md object-cover"
+                          />
                         ) : null}
                         {deleted ? t("msg.deletedPlaceholder") : m.body}
                       </div>
@@ -538,8 +553,10 @@ function Messages() {
                           )}
                         </span>
                       ) : null}
+                      {/* Touch devices have no hover: actions stay visible;
+                          on md+ they reveal on hover to keep the inbox tidy. */}
                       {mine && !deleted && !isEditing ? (
-                        <span className="hidden gap-1 group-hover:inline-flex">
+                        <span className="inline-flex gap-1 md:opacity-0 md:transition-opacity md:group-hover:opacity-100">
                           <button
                             type="button"
                             className="hover:text-foreground"
@@ -576,33 +593,63 @@ function Messages() {
               {pendingImage ? (
                 <div className="flex items-center gap-2 rounded-md border p-2">
                   <img src={pendingImage} alt="" className="h-12 w-12 rounded object-cover" />
-                  <span className="flex-1 text-xs text-muted-foreground">{t("msg.imageAttached")}</span>
-                  <button type="button" onClick={() => { setPendingImage(null); setImageUrl(null); }} className="text-muted-foreground hover:text-foreground">
+                  <span className="flex-1 text-xs text-muted-foreground">
+                    {t("msg.imageAttached")}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setPendingImage(null);
+                      setImageUrl(null);
+                    }}
+                    className="text-muted-foreground hover:text-foreground"
+                  >
                     ×
                   </button>
                 </div>
               ) : null}
               <div className="flex gap-2">
                 <label className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-md border bg-background hover:bg-accent">
-                  <input type="file" accept="image/*" className="hidden" onChange={async (e) => {
-                    const file = e.target.files?.[0];
-                    if (!file || !user) return;
-                    setPendingImage(URL.createObjectURL(file));
-                    const form = new FormData();
-                    form.append("file", file);
-                    // Upload via Cloudinary sign (reuse listing image upload for chat)
-                    const { data: sign } = await supabase.functions.invoke("cloudinary-sign", { body: { scope: "listing" } });
-                    if (sign?.signature) {
-                      form.append("api_key", sign.api_key);
-                      form.append("timestamp", sign.timestamp);
-                      form.append("signature", sign.signature);
-                      form.append("folder", sign.folder);
-                      const res = await fetch(sign.upload_url, { method: "POST", body: form });
-                      const json = await res.json();
-                      if (json.secure_url) setImageUrl(json.secure_url);
-                    }
-                  }} />
-                  <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"/></svg>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file || !user) return;
+                      setPendingImage(URL.createObjectURL(file));
+                      const form = new FormData();
+                      form.append("file", file);
+                      // Upload via Cloudinary sign (reuse listing image upload for chat)
+                      const { data: sign } = await supabase.functions.invoke("cloudinary-sign", {
+                        body: { scope: "listing" },
+                      });
+                      if (sign?.signature) {
+                        form.append("api_key", sign.api_key);
+                        form.append("timestamp", sign.timestamp);
+                        form.append("signature", sign.signature);
+                        form.append("folder", sign.folder);
+                        const res = await fetch(sign.upload_url, { method: "POST", body: form });
+                        const json = await res.json();
+                        if (json.secure_url) setImageUrl(json.secure_url);
+                      }
+                    }}
+                  />
+                  <svg
+                    xmlns="http://www.w3.org/2000/svg"
+                    width="18"
+                    height="18"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <rect width="18" height="18" x="3" y="3" rx="2" ry="2" />
+                    <circle cx="9" cy="9" r="2" />
+                    <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
+                  </svg>
                 </label>
                 <Input
                   value={body}

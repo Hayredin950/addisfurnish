@@ -38,6 +38,7 @@ import {
   type ListingFilters,
   type SavedSearch,
 } from "@/lib/marketplace";
+import { categoryAttributesQuery, type CategoryAttributeDef } from "@/lib/attributes";
 import { CITIES, CONDITIONS, MATERIALS, ROOM_TYPES, categoryName, haversineKm } from "@/lib/format";
 
 type BrowseSearch = {
@@ -50,7 +51,25 @@ type BrowseSearch = {
   min: number;
   max: number;
   sort: string;
+  /** Phase 6 (§14): JSON-encoded dynamic attribute filters (slug → values). */
+  attr: string;
 };
+
+/** URL shape of the dynamic attribute filters (slug → values). */
+type AttrFilterMap = NonNullable<ListingFilters["attributes"]>;
+
+/** Parse the URL's encoded attribute filters safely. */
+export function parseAttrFilters(raw: string | undefined): AttrFilterMap {
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as AttrFilterMap)
+      : {};
+  } catch {
+    return {};
+  }
+}
 
 const ANY = "any";
 
@@ -65,6 +84,7 @@ export const Route = createFileRoute("/browse")({
     min: Number(search["min"]) > 0 ? Number(search["min"]) : 0,
     max: Number(search["max"]) > 0 ? Number(search["max"]) : 0,
     sort: typeof search["sort"] === "string" ? search["sort"] : "newest",
+    attr: typeof search["attr"] === "string" ? search["attr"] : "",
   }),
   head: () => ({
     meta: [
@@ -96,6 +116,16 @@ function Browse() {
 
   const isNearest = search.sort === "nearest";
 
+  // Phase 6 (§14): the selected category's filterable attributes drive both
+  // the dynamic filter controls and the server-side attribute narrowing.
+  const attrFilters = useMemo(() => parseAttrFilters(search.attr), [search.attr]);
+  const categoryId = useMemo(
+    () => (categories ?? []).find((c) => c.slug === search.category)?.id ?? null,
+    [categories, search.category],
+  );
+  const { data: attrDefs } = useQuery(categoryAttributesQuery(categoryId));
+  const filterableDefs = useMemo(() => (attrDefs ?? []).filter((d) => d.is_filterable), [attrDefs]);
+
   // Fetch more when sorting by distance — the server sort doesn't know the
   // user's location, so we re-sort client-side.
   const filters: ListingFilters = {};
@@ -107,6 +137,7 @@ function Browse() {
   if (search.city) filters.city = search.city;
   if (search.min && search.min > 0) filters.min = search.min;
   if (search.max && search.max > 0) filters.max = search.max;
+  if (Object.keys(attrFilters).length > 0) filters.attributes = attrFilters;
   if (isNearest) filters.limit = 200;
   else if (search.sort) filters.sort = search.sort;
 
@@ -196,7 +227,23 @@ function Browse() {
       Boolean,
     ).length +
     (search.min ? 1 : 0) +
-    (search.max ? 1 : 0);
+    (search.max ? 1 : 0) +
+    Object.keys(attrFilters).length;
+
+  /** Merge a patch into the URL-encoded attribute filter state. */
+  const setAttr = (patch: Record<string, unknown>) => {
+    navigate({
+      search: (prev) => {
+        const next = { ...parseAttrFilters(prev.attr), ...patch };
+        for (const k of Object.keys(next)) {
+          const v = (next as Record<string, unknown>)[k];
+          if (v == null || (Array.isArray(v) && v.length === 0)) delete next[k];
+          else if (Array.isArray(v) && v.length === 2 && v.every((x) => x == null)) delete next[k];
+        }
+        return { ...prev, attr: Object.keys(next).length ? JSON.stringify(next) : "" };
+      },
+    });
+  };
 
   const roots = (categories ?? []).filter((c) => !c.parent_id);
   const children = (categories ?? []).filter((c) => c.parent_id);
@@ -231,9 +278,11 @@ function Browse() {
               <FilterControls
                 search={search}
                 set={set}
+                setAttr={setAttr}
                 roots={roots}
                 children={children}
                 activeCount={activeCount}
+                attrDefs={filterableDefs}
               />
               <SheetClose asChild>
                 <Button className="mt-6 w-full">{t("browse.done")}</Button>
@@ -247,9 +296,11 @@ function Browse() {
           <FilterControls
             search={search}
             set={set}
+            setAttr={setAttr}
             roots={roots}
             children={children}
             activeCount={activeCount}
+            attrDefs={filterableDefs}
           />
         </aside>
 
@@ -363,7 +414,7 @@ function Browse() {
                       type="button"
                       aria-label="Remove"
                       onClick={() => onRemoveSearch(s)}
-                      className="rounded p-1 text-muted-foreground opacity-0 transition-opacity hover:bg-destructive/10 hover:text-destructive group-hover:opacity-100"
+                      className="rounded p-1 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive md:opacity-0 md:group-hover:opacity-100"
                     >
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
@@ -424,17 +475,22 @@ function Browse() {
 function FilterControls({
   search,
   set,
+  setAttr,
   roots,
   children,
   activeCount,
+  attrDefs,
 }: {
   search: Partial<BrowseSearch>;
   set: (patch: Partial<BrowseSearch>) => void;
+  setAttr: (patch: Record<string, unknown>) => void;
   roots: Category[];
   children: Category[];
   activeCount: number;
+  attrDefs: CategoryAttributeDef[];
 }) {
   const { t, lang } = useLang();
+  const attr = useMemo(() => parseAttrFilters(search.attr), [search.attr]);
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-2 text-sm font-medium">
@@ -454,6 +510,7 @@ function FilterControls({
                 min: 0,
                 max: 0,
                 sort: "newest",
+                attr: "",
               })
             }
           >
@@ -528,6 +585,102 @@ function FilterControls({
           />
         </div>
       </div>
+
+      {/* Phase 6 (§14): dynamic attribute filters — only the attributes the
+          selected category configures appear, loaded live from the backend. */}
+      {attrDefs.length ? (
+        <div className="space-y-4 border-t pt-4">
+          {attrDefs.map((def) => {
+            const current = attr[def.slug];
+            if (def.type === "single_select" || def.type === "multi_select") {
+              const selValue = typeof current === "string" ? current : "";
+              return (
+                <FilterSelect
+                  key={def.attribute_id}
+                  label={`${lang === "am" && def.name_am ? def.name_am : def.name}${def.is_required ? " *" : ""}`}
+                  value={selValue}
+                  onChange={(v) => setAttr({ [def.slug]: v ? [v] : [] })}
+                  options={def.options.map((o) => ({
+                    value: o.value,
+                    label: lang === "am" && o.label_am ? o.label_am : o.label,
+                  }))}
+                />
+              );
+            }
+            if (def.type === "boolean") {
+              const first = Array.isArray(current) ? current[0] : null;
+              const boolStr = first === true ? "true" : first === false ? "false" : "";
+              return (
+                <FilterSelect
+                  key={def.attribute_id}
+                  label={lang === "am" && def.name_am ? def.name_am : def.name}
+                  value={boolStr}
+                  onChange={(v) => setAttr({ [def.slug]: v ? [v === "true"] : [] })}
+                  options={[
+                    { value: "true", label: t("browse.yes") },
+                    { value: "false", label: t("browse.no") },
+                  ]}
+                />
+              );
+            }
+            if (def.type === "number" || def.type === "range") {
+              const tuple = Array.isArray(current) ? current : null;
+              const lo = typeof tuple?.[0] === "number" ? tuple[0] : "";
+              const hi = typeof tuple?.[1] === "number" ? tuple[1] : "";
+              return (
+                <div key={def.attribute_id} className="space-y-2">
+                  <Label>
+                    {lang === "am" && def.name_am ? def.name_am : def.name}
+                    {def.unit ? ` (${def.unit})` : ""}
+                  </Label>
+                  <div className="flex items-center gap-2">
+                    <Input
+                      type="number"
+                      value={lo}
+                      placeholder={t("browse.min")}
+                      onChange={(e) =>
+                        setAttr({
+                          [def.slug]: [
+                            [
+                              e.target.value ? Number(e.target.value) : null,
+                              typeof tuple?.[1] === "number" ? tuple[1] : null,
+                            ],
+                          ],
+                        })
+                      }
+                    />
+                    <Input
+                      type="number"
+                      value={hi}
+                      placeholder={t("browse.max")}
+                      onChange={(e) =>
+                        setAttr({
+                          [def.slug]: [
+                            [
+                              typeof tuple?.[0] === "number" ? tuple[0] : null,
+                              e.target.value ? Number(e.target.value) : null,
+                            ],
+                          ],
+                        })
+                      }
+                    />
+                  </div>
+                </div>
+              );
+            }
+            // text
+            return (
+              <div key={def.attribute_id} className="space-y-2">
+                <Label>{lang === "am" && def.name_am ? def.name_am : def.name}</Label>
+                <Input
+                  value={typeof current === "string" ? current : ""}
+                  onChange={(e) => setAttr({ [def.slug]: e.target.value ? [e.target.value] : [] })}
+                />
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
     </div>
   );
 }
