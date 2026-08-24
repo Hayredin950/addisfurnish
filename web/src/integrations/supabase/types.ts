@@ -870,6 +870,127 @@ export type Database = {
           },
         ];
       };
+      disputes: {
+        Row: {
+          id: string;
+          listing_id: string | null;
+          conversation_id: string | null;
+          buyer_id: string;
+          seller_id: string;
+          opened_by: string | null;
+          reason: string;
+          description: string | null;
+          status: string;
+          deadline_at: string;
+          resolution: string | null;
+          resolved_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          listing_id?: string | null;
+          conversation_id?: string | null;
+          buyer_id: string;
+          seller_id: string;
+          opened_by?: string | null;
+          reason: string;
+          description?: string | null;
+          status?: string;
+          deadline_at?: string;
+          resolution?: string | null;
+          resolved_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          listing_id?: string | null;
+          conversation_id?: string | null;
+          buyer_id?: string;
+          seller_id?: string;
+          opened_by?: string | null;
+          reason?: string;
+          description?: string | null;
+          status?: string;
+          deadline_at?: string;
+          resolution?: string | null;
+          resolved_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "disputes_listing_id_fkey";
+            columns: ["listing_id"];
+            isOneToOne: false;
+            referencedRelation: "listings";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "disputes_conversation_id_fkey";
+            columns: ["conversation_id"];
+            isOneToOne: false;
+            referencedRelation: "conversations";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "disputes_buyer_id_fkey";
+            columns: ["buyer_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "disputes_seller_id_fkey";
+            columns: ["seller_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      admin_audit_log: {
+        Row: {
+          id: string;
+          admin_user_id: string;
+          action: string;
+          entity_type: string;
+          entity_id: string | null;
+          old_value: unknown;
+          new_value: unknown;
+          reason: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          admin_user_id: string;
+          action: string;
+          entity_type: string;
+          entity_id?: string | null;
+          old_value?: unknown;
+          new_value?: unknown;
+          reason?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          action?: string;
+          entity_type?: string;
+          entity_id?: string | null;
+          old_value?: unknown;
+          new_value?: unknown;
+          reason?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "admin_audit_log_admin_user_id_fkey";
+            columns: ["admin_user_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       buyer_preferences: {
         Row: {
           category_ids: string[];
@@ -1406,6 +1527,10 @@ export type Database = {
       };
     };
     Functions: {
+      admin_health_stats: {
+        Args: Record<string, never>;
+        Returns: Json;
+      };
       mint_telegram_link_token: {
         Args: Record<string, never>;
         Returns: string | null;

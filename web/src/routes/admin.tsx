@@ -3,6 +3,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Activity,
+  AlertTriangle,
   BadgeCheck,
   Ban,
   BarChart3,
@@ -14,11 +15,15 @@ import {
   FileText,
   Flag,
   FolderTree,
+  Gavel,
+  Globe,
   LayoutList,
   LogOut,
   Mail,
   MessageSquare,
   Pencil,
+  Radio,
+  ScrollText,
   Send,
   ShieldCheck,
   Star,
@@ -61,6 +66,7 @@ import { DocumentViewer } from "@/components/admin/DocumentViewer";
 import { deleteCloudinaryAssets, useImageUrl } from "@/lib/storage";
 import { timeAgo, formatBirr } from "@/lib/format";
 import { syncListingChannel } from "@/lib/telegram";
+import { logAdminAction } from "@/lib/admin-audit";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -97,7 +103,7 @@ function AdminPage() {
   const { user } = useAuth();
   const { t } = useLang();
   const { data: isAdmin, isLoading: checking } = useQuery(isAdminQuery(user?.id));
-  const [tab, setTab] = useState("reports");
+  const [tab, setTab] = useState("dashboard");
   const [drill, setDrill] = useState<"all" | "sellers" | null>(null);
 
   if (checking) {
@@ -124,22 +130,37 @@ function AdminPage() {
 
       <Tabs value={tab} onValueChange={setTab} className="mt-8">
         <TabsList className="flex-wrap">
-          <TabsTrigger value="reports">{t("admin.reports")}</TabsTrigger>
+          <TabsTrigger value="dashboard">{t("admin.dashboard")}</TabsTrigger>
+          <TabsTrigger value="listings">
+            <LayoutList className="mr-1.5 h-3.5 w-3.5" /> Listings
+          </TabsTrigger>
           <TabsTrigger value="users">{t("admin.users")}</TabsTrigger>
           <TabsTrigger value="verification">
             <ClipboardCheck className="mr-1.5 h-3.5 w-3.5" /> {t("admin.verification")}
           </TabsTrigger>
+          <TabsTrigger value="moderation">
+            <Gavel className="mr-1.5 h-3.5 w-3.5" /> {t("admin.moderation")}
+          </TabsTrigger>
           <TabsTrigger value="categories">
             <FolderTree className="mr-1.5 h-3.5 w-3.5" /> {t("nav.categories")}
           </TabsTrigger>
-          <TabsTrigger value="listings">
-            <LayoutList className="mr-1.5 h-3.5 w-3.5" /> Listings
+          <TabsTrigger value="analytics">
+            <Globe className="mr-1.5 h-3.5 w-3.5" /> {t("admin.analytics")}
           </TabsTrigger>
-          <TabsTrigger value="stats">{t("admin.stats")}</TabsTrigger>
+          <TabsTrigger value="audit">
+            <ScrollText className="mr-1.5 h-3.5 w-3.5" /> {t("admin.auditLog")}
+          </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="reports" className="mt-6">
-          <ReportsTab />
+        <TabsContent value="dashboard" className="mt-6">
+          <DashboardTab
+            onOpenUsers={(f) => {
+              setDrill(f);
+              setTab("users");
+            }}
+            onOpenListings={() => setTab("listings")}
+            onOpenQueue={(q) => setTab(q)}
+          />
         </TabsContent>
         <TabsContent value="users" className="mt-6">
           <UsersTab drillFilter={drill} />
@@ -147,23 +168,636 @@ function AdminPage() {
         <TabsContent value="verification" className="mt-6">
           <VerificationTab />
         </TabsContent>
+        <TabsContent value="moderation" className="mt-6">
+          <ModerationTab />
+        </TabsContent>
         <TabsContent value="categories" className="mt-6">
           <CategoriesTab />
         </TabsContent>
         <TabsContent value="listings" className="mt-6">
           <ListingsTab />
         </TabsContent>
-        <TabsContent value="stats" className="mt-6">
-          <StatsTab
-            onOpenUsers={(f) => {
-              setDrill(f);
-              setTab("users");
-            }}
-            onOpenListings={() => setTab("listings")}
-          />
+        <TabsContent value="analytics" className="mt-6">
+          <AnalyticsTab />
+        </TabsContent>
+        <TabsContent value="audit" className="mt-6">
+          <AuditLogTab />
         </TabsContent>
       </Tabs>
     </div>
+  );
+}
+
+type HealthStats = {
+  sell_through: { d7: number; d30: number; d60: number };
+  median_days_to_sale: number | null;
+  seller_response: {
+    rate_pct: number | null;
+    avg_minutes: number | null;
+    median_minutes: number | null;
+  };
+  funnel: {
+    published: number;
+    viewed: number;
+    inquiries: number;
+    responded: number;
+    deals: number;
+    sales: number;
+  };
+};
+
+/**
+ * Dashboard (spec §6-§9): four tiers — Action Required, Marketplace Health,
+ * Category Intelligence, then the volume/trend view from the old stats tab.
+ */
+function DashboardTab({
+  onOpenUsers,
+  onOpenListings,
+  onOpenQueue,
+}: {
+  onOpenUsers: (f: "all" | "sellers") => void;
+  onOpenListings: () => void;
+  onOpenQueue: (q: "moderation" | "verification") => void;
+}) {
+  const { t } = useLang();
+
+  const { data: actions } = useQuery({
+    queryKey: ["admin-action-required"],
+    queryFn: async () => {
+      const [reports, flagged, disputes, verifications] = await Promise.all([
+        supabase
+          .from("reports")
+          .select("id", { count: "exact", head: true })
+          .eq("status", "pending"),
+        supabase
+          .from("reports")
+          .select("id", { count: "exact", head: true })
+          .eq("status", "pending")
+          .not("listing_id", "is", null),
+        supabase
+          .from("disputes")
+          .select("id", { count: "exact", head: true })
+          .in("status", ["pending", "investigating", "escalated"]),
+        supabase
+          .from("seller_verification_documents")
+          .select("id", { count: "exact", head: true })
+          .eq("status", "pending"),
+      ]);
+      return {
+        reports: reports.count ?? 0,
+        flagged: flagged.count ?? 0,
+        disputes: disputes.count ?? 0,
+        verifications: verifications.count ?? 0,
+      };
+    },
+  });
+
+  const { data: health } = useQuery({
+    queryKey: ["admin-health-stats"],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("admin_health_stats");
+      if (error) throw error;
+      return (data ?? null) as unknown as HealthStats | null;
+    },
+  });
+
+  // Tier 3 — category performance: root-category rollup of supply vs demand.
+  const { data: catPerf } = useQuery({
+    queryKey: ["admin-category-performance"],
+    queryFn: async () => {
+      const [cats, listings, convs] = await Promise.all([
+        supabase.from("categories").select("id,name,parent_id"),
+        supabase
+          .from("listings")
+          .select("id,category_id,status,view_count")
+          .not("category_id", "is", null),
+        supabase.from("conversations").select("listing_id"),
+      ]);
+      const roots = (cats.data ?? []).filter((c) => !c.parent_id);
+      const childOf = new Map<string, string>();
+      for (const c of cats.data ?? []) {
+        if (c.parent_id) childOf.set(c.id, c.parent_id);
+      }
+      const inquiryByListing = new Set((convs.data ?? []).map((c) => c.listing_id as string));
+      type Perf = {
+        name: string;
+        listings: number;
+        views: number;
+        inquiries: number;
+        sold: number;
+      };
+      const perf = new Map<string, Perf>(
+        roots.map((r) => [r.id, { name: r.name, listings: 0, views: 0, inquiries: 0, sold: 0 }]),
+      );
+      for (const l of listings.data ?? []) {
+        const rootId = childOf.get(l.category_id as string) ?? (l.category_id as string);
+        const row = perf.get(rootId);
+        if (!row) continue;
+        row.listings += 1;
+        row.views += l.view_count ?? 0;
+        if (inquiryByListing.has(l.id)) row.inquiries += 1;
+        if (l.status === "sold") row.sold += 1;
+      }
+      return [...perf.values()].sort((a, b) => b.listings - a.listings).slice(0, 8);
+    },
+  });
+
+  const funnelStages: {
+    key: "published" | "viewed" | "inquiries" | "responded" | "deals" | "sales";
+    value: number;
+  }[] = health?.funnel
+    ? [
+        { key: "published", value: health.funnel.published },
+        { key: "viewed", value: health.funnel.viewed },
+        { key: "inquiries", value: health.funnel.inquiries },
+        { key: "responded", value: health.funnel.responded },
+        { key: "deals", value: health.funnel.deals },
+        { key: "sales", value: health.funnel.sales },
+      ]
+    : [];
+  const funnelMax = Math.max(1, ...funnelStages.map((s) => s.value));
+
+  return (
+    <div className="space-y-8">
+      {/* ── Tier 1 · Action required ─────────────────────────────────── */}
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <ActionCard
+          label={t("admin.pendingDisputes")}
+          value={actions?.disputes}
+          tone="bg-destructive"
+          icon={<Gavel className="h-4 w-4" />}
+          onClick={() => onOpenQueue("moderation")}
+        />
+        <ActionCard
+          label={t("admin.pendingVerification")}
+          value={actions?.verifications}
+          tone="bg-amber-500"
+          icon={<ClipboardCheck className="h-4 w-4" />}
+          onClick={() => onOpenQueue("verification")}
+        />
+        <ActionCard
+          label={t("admin.pendingReports")}
+          value={actions?.reports}
+          tone="bg-orange-500"
+          icon={<Flag className="h-4 w-4" />}
+          onClick={() => onOpenQueue("moderation")}
+        />
+        <ActionCard
+          label={t("admin.flaggedListings")}
+          value={actions?.flagged}
+          tone="bg-violet-500"
+          icon={<AlertTriangle className="h-4 w-4" />}
+          onClick={() => onOpenListings()}
+        />
+      </div>
+
+      {/* ── Tier 2 · Marketplace health ──────────────────────────────── */}
+      <div className="rounded-xl border bg-card p-5">
+        <PanelTitle
+          icon={<Activity className="h-5 w-5 text-primary" />}
+          title={t("admin.marketplaceHealth")}
+          accent="bg-emerald-500"
+        />
+        {!health ? (
+          <p className="mt-3 text-sm text-muted-foreground">{t("browse.loading")}</p>
+        ) : (
+          <>
+            <div className="mt-4 grid grid-cols-2 gap-4 lg:grid-cols-4">
+              {(
+                [
+                  ["d7", 7],
+                  ["d30", 30],
+                  ["d60", 60],
+                ] as const
+              ).map(([key, d]) => (
+                <div key={key} className="rounded-lg bg-secondary/50 p-4">
+                  <p className="text-xs text-muted-foreground">
+                    {t("admin.sellThrough", { days: d })}
+                  </p>
+                  <p className="mt-1 font-display text-2xl font-semibold text-primary">
+                    {health.sell_through[key]}%
+                  </p>
+                </div>
+              ))}
+              <div className="rounded-lg bg-secondary/50 p-4">
+                <p className="text-xs text-muted-foreground">{t("admin.medianDaysToSale")}</p>
+                <p className="mt-1 font-display text-2xl font-semibold">
+                  {health.median_days_to_sale ?? "—"}{" "}
+                  <span className="text-sm font-normal text-muted-foreground">
+                    {health.median_days_to_sale != null ? t("admin.daysUnit") : ""}
+                  </span>
+                </p>
+              </div>
+            </div>
+            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
+              <div className="rounded-lg border p-3">
+                <p className="text-xs text-muted-foreground">{t("admin.responseRate")}</p>
+                <p className="mt-0.5 text-xl font-semibold">
+                  {health.seller_response.rate_pct ?? 0}%
+                </p>
+              </div>
+              <div className="rounded-lg border p-3">
+                <p className="text-xs text-muted-foreground">{t("admin.avgResponse")}</p>
+                <p className="mt-0.5 text-xl font-semibold">
+                  {health.seller_response.avg_minutes != null
+                    ? `${health.seller_response.avg_minutes} ${t("admin.minutesShort")}`
+                    : "—"}
+                </p>
+              </div>
+              <div className="rounded-lg border p-3">
+                <p className="text-xs text-muted-foreground">{t("admin.medianResponse")}</p>
+                <p className="mt-0.5 text-xl font-semibold">
+                  {health.seller_response.median_minutes != null
+                    ? `${health.seller_response.median_minutes} ${t("admin.minutesShort")}`
+                    : "—"}
+                </p>
+              </div>
+            </div>
+
+            {/* Funnel — conversion through the marketplace pipeline. */}
+            <p className="mt-6 flex items-center gap-2 text-sm font-semibold">
+              <TrendingUp className="h-4 w-4 text-primary" /> {t("admin.funnelTitle")}
+            </p>
+            <ul className="mt-3 space-y-2">
+              {funnelStages.map((s, i) => (
+                <li key={s.key} className="flex items-center gap-3 text-sm">
+                  <span className="w-40 shrink-0 truncate text-muted-foreground">
+                    {t(`admin.funnel.${s.key}`)}
+                  </span>
+                  <span className="relative h-6 min-w-0 flex-1 overflow-hidden rounded-md bg-secondary">
+                    <span
+                      className="absolute inset-y-0 left-0 rounded-md bg-primary/80"
+                      style={{
+                        width: `${Math.max((s.value / funnelMax) * 100, s.value > 0 ? 2 : 0)}%`,
+                      }}
+                    />
+                  </span>
+                  <span className="w-24 shrink-0 text-right tabular-nums">
+                    {s.value.toLocaleString()}
+                    {i > 0 && (funnelStages[i - 1]?.value ?? 0) > 0 ? (
+                      <span className="ml-1 text-xs text-muted-foreground">
+                        ({Math.round((s.value / funnelStages[i - 1]!.value) * 100)}%)
+                      </span>
+                    ) : null}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+      </div>
+
+      {/* ── Tier 3 · Category performance ────────────────────────────── */}
+      <div className="rounded-xl border bg-card p-5">
+        <PanelTitle
+          icon={<BarChart3 className="h-5 w-5 text-primary" />}
+          title={t("admin.categoryPerformance")}
+          accent="bg-sky-500"
+        />
+        {!catPerf || catPerf.length === 0 ? (
+          <p className="mt-3 text-sm text-muted-foreground">{t("browse.loading")}</p>
+        ) : (
+          <div className="mt-3 overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr className="border-b text-xs uppercase tracking-wide text-muted-foreground">
+                  <th className="py-2 pr-4">—</th>
+                  <th className="px-2 py-2">{t("admin.cat.listings")}</th>
+                  <th className="px-2 py-2">{t("admin.cat.views")}</th>
+                  <th className="px-2 py-2">{t("admin.cat.inquiries")}</th>
+                  <th className="px-2 py-2">{t("admin.cat.sold")}</th>
+                  <th className="px-2 py-2">{t("admin.cat.sellThrough")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {catPerf.map((row) => (
+                  <tr key={row.name} className="border-b last:border-0">
+                    <td className="py-2 pr-4 font-medium">{row.name}</td>
+                    <td className="px-2 py-2 tabular-nums">{row.listings}</td>
+                    <td className="px-2 py-2 tabular-nums">{row.views.toLocaleString()}</td>
+                    <td className="px-2 py-2 tabular-nums">{row.inquiries}</td>
+                    <td className="px-2 py-2 tabular-nums">{row.sold}</td>
+                    <td className="px-2 py-2 tabular-nums">
+                      {row.listings > 0 ? `${Math.round((row.sold / row.listings) * 100)}%` : "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+
+      {/* ── Tier 4 · Volume & trends (the old stats view) ─────────────── */}
+      <StatsTab onOpenUsers={onOpenUsers} onOpenListings={onOpenListings} />
+    </div>
+  );
+}
+
+/** Clickable Tier-1 card that routes to its queue. */
+function ActionCard({
+  label,
+  value,
+  tone,
+  icon,
+  onClick,
+}: {
+  label: string;
+  value: number | undefined;
+  tone: string;
+  icon: React.ReactNode;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="card-lift rounded-xl border bg-card p-4 text-left shadow-soft transition-colors hover:border-primary"
+    >
+      <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <span
+          className={`inline-flex h-6 w-6 items-center justify-center rounded-full text-white ${tone}`}
+        >
+          {icon}
+        </span>
+        {label}
+      </p>
+      <p className="mt-2 font-display text-3xl font-semibold">{value ?? "…"}</p>
+    </button>
+  );
+}
+
+/**
+ * Moderation center (spec §10): reports and disputes in one place, each a
+ * dedicated queue so time-sensitive disputes are not buried.
+ */
+function ModerationTab() {
+  const { t } = useLang();
+  const [queue, setQueue] = useState<"reports" | "disputes">("reports");
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2">
+        <Button
+          size="sm"
+          variant={queue === "reports" ? "default" : "outline"}
+          onClick={() => setQueue("reports")}
+        >
+          <Flag className="mr-1.5 h-3.5 w-3.5" /> {t("admin.reports")}
+        </Button>
+        <Button
+          size="sm"
+          variant={queue === "disputes" ? "default" : "outline"}
+          onClick={() => setQueue("disputes")}
+        >
+          <Gavel className="mr-1.5 h-3.5 w-3.5" /> {t("admin.disputes")}
+        </Button>
+      </div>
+      {queue === "reports" ? <ReportsTab /> : <DisputesTab />}
+    </div>
+  );
+}
+
+type DisputeRow = {
+  id: string;
+  reason: string;
+  description: string | null;
+  status: string;
+  deadline_at: string;
+  resolution: string | null;
+  created_at: string;
+  conversation_id: string | null;
+  listing_id: string | null;
+  listings: { id: string; title: string } | null;
+  buyer: { full_name: string | null; shop_name: string | null } | null;
+  seller: { full_name: string | null; shop_name: string | null } | null;
+};
+
+/** Dedicated dispute queue with deadline visibility (spec §12). */
+function DisputesTab() {
+  const { t } = useLang();
+  const queryClient = useQueryClient();
+  const [resolving, setResolving] = useState<{ id: string; status: string } | null>(null);
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  const { data: disputes } = useQuery({
+    queryKey: ["admin-disputes"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("disputes")
+        .select(
+          "id,reason,description,status,deadline_at,resolution,created_at,conversation_id,listing_id," +
+            "listings(id,title)," +
+            "buyer:profiles!disputes_buyer_id_fkey(full_name,shop_name)," +
+            "seller:profiles!disputes_seller_id_fkey(full_name,shop_name)",
+        )
+        .order("created_at", { ascending: false })
+        .limit(100);
+      if (error) throw error;
+      return ((data ?? []) as unknown as DisputeRow[]).sort((a, b) => {
+        const open = (s: string) =>
+          s === "pending" || s === "investigating" || s === "escalated" ? 0 : 1;
+        return open(a.status) - open(b.status);
+      });
+    },
+  });
+
+  const setStatus = async (id: string, status: string, resolution?: string) => {
+    setBusy(true);
+    const me = await supabase.auth.getUser();
+    const { error } = await supabase
+      .from("disputes")
+      .update({
+        status,
+        resolution: resolution ?? null,
+        resolved_by: me.data.user?.id ?? null,
+      })
+      .eq("id", id);
+    setBusy(false);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    void logAdminAction({
+      action:
+        status === "resolved"
+          ? "dispute_resolved"
+          : status === "dismissed"
+            ? "report_dismissed"
+            : `dispute_${status}`,
+      entityType: "dispute",
+      entityId: id,
+      newValue: { status, resolution: resolution ?? null },
+    });
+    setResolving(null);
+    setNote("");
+    toast.success(t("toast.listingUpdated"));
+    queryClient.invalidateQueries({ queryKey: ["admin-disputes"] });
+    queryClient.invalidateQueries({ queryKey: ["admin-action-required"] });
+  };
+
+  if (!disputes || disputes.length === 0) {
+    return <p className="text-sm text-muted-foreground">{t("admin.noDisputes")}</p>;
+  }
+
+  return (
+    <ul className="space-y-3">
+      {disputes.map((d) => {
+        const open =
+          d.status === "pending" || d.status === "investigating" || d.status === "escalated";
+        const remainingMs = new Date(d.deadline_at).getTime() - Date.now();
+        const overdue = open && remainingMs <= 0;
+        const remaining =
+          remainingMs > 0
+            ? `${Math.floor(remainingMs / 3600000)}h ${Math.floor((remainingMs % 3600000) / 60000)}m`
+            : null;
+        const partyName = (p: DisputeRow["buyer"]) => p?.shop_name ?? p?.full_name ?? "—";
+        return (
+          <li key={d.id} className="rounded-lg border bg-card p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="flex flex-wrap items-center gap-1.5 text-sm font-medium">
+                  <Gavel className="h-3.5 w-3.5 text-destructive" />
+                  {d.listings?.title ?? d.reason}
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-xs capitalize ${
+                      open
+                        ? overdue
+                          ? "bg-destructive/10 text-destructive"
+                          : "bg-amber-500/15 text-amber-700"
+                        : "bg-secondary text-muted-foreground"
+                    }`}
+                  >
+                    {open && overdue
+                      ? t("admin.deadlinePassed")
+                      : d.status === "pending"
+                        ? (t("admin.pendingReports").split(" ")[1]?.toLowerCase() ?? d.status)
+                        : d.status === "investigating"
+                          ? t("admin.statusInvestigating")
+                          : d.status === "escalated"
+                            ? t("admin.statusEscalated")
+                            : d.status}
+                  </span>
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {t("admin.disputeBuyer")}: {partyName(d.buyer)} · {t("admin.disputeSeller")}:{" "}
+                  {partyName(d.seller)} · {t("report.reason")}: {d.reason} · {timeAgo(d.created_at)}
+                </p>
+                {open && remaining ? (
+                  <p className="mt-1 text-xs font-medium text-amber-700">
+                    {t("admin.deadlineRemaining", { time: remaining })}
+                  </p>
+                ) : null}
+                {d.description ? (
+                  <p className="mt-1 text-sm text-muted-foreground">{d.description}</p>
+                ) : null}
+                {d.resolution ? (
+                  <p className="mt-1 text-sm italic text-muted-foreground">“{d.resolution}”</p>
+                ) : null}
+                <div className="mt-1 flex gap-3">
+                  {d.listings ? (
+                    <Link
+                      to="/listing/$id"
+                      params={{ id: d.listings.id }}
+                      className="text-xs text-primary"
+                    >
+                      {t("listing.back")}
+                    </Link>
+                  ) : null}
+                  {d.conversation_id ? (
+                    <Link
+                      to="/messages"
+                      search={{ conv: d.conversation_id }}
+                      className="text-xs text-primary"
+                    >
+                      {t("admin.viewConversation")}
+                    </Link>
+                  ) : null}
+                </div>
+              </div>
+
+              {open && resolving?.id !== d.id ? (
+                <div className="flex shrink-0 flex-wrap gap-2">
+                  {d.status === "pending" ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={busy}
+                      onClick={() => setStatus(d.id, "investigating")}
+                    >
+                      {t("admin.investigate")}
+                    </Button>
+                  ) : null}
+                  {d.status !== "escalated" ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={busy}
+                      onClick={() => setStatus(d.id, "escalated")}
+                    >
+                      {t("admin.escalate")}
+                    </Button>
+                  ) : null}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={busy}
+                    onClick={() => setStatus(d.id, "dismissed")}
+                  >
+                    {t("admin.dismissDispute")}
+                  </Button>
+                  <Button
+                    size="sm"
+                    disabled={busy}
+                    onClick={() => {
+                      setResolving({ id: d.id, status: "resolved" });
+                      setNote("");
+                    }}
+                  >
+                    {t("admin.resolveDispute")}
+                  </Button>
+                </div>
+              ) : null}
+            </div>
+
+            {resolving?.id === d.id ? (
+              <div className="mt-3 rounded-md border border-primary/30 bg-primary/5 p-3">
+                <Label htmlFor={`resolution-${d.id}`} className="text-xs font-medium">
+                  {t("admin.resolutionNote")}
+                </Label>
+                <Textarea
+                  id={`resolution-${d.id}`}
+                  value={note}
+                  onChange={(e) => setNote(e.target.value)}
+                  rows={2}
+                  placeholder={t("admin.resolutionPlaceholder")}
+                  className="mt-2"
+                />
+                <div className="mt-2 flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={busy}
+                    onClick={() => setResolving(null)}
+                  >
+                    {t("report.cancel")}
+                  </Button>
+                  <Button
+                    size="sm"
+                    disabled={busy || note.trim().length < 3}
+                    onClick={() =>
+                      resolving && setStatus(resolving.id, resolving.status, note.trim())
+                    }
+                  >
+                    {t("admin.resolveDispute")}
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 
@@ -191,7 +825,15 @@ function ReportsTab() {
       });
     }
     toast.success(t("admin.reporterNotified"));
+    void logAdminAction({
+      action: status === "reviewed" ? "report_resolved" : "report_dismissed",
+      entityType: "report",
+      entityId: id,
+      oldValue: { status: report?.status },
+      newValue: { status },
+    });
     queryClient.invalidateQueries({ queryKey: ["admin-reports"] });
+    queryClient.invalidateQueries({ queryKey: ["admin-action-required"] });
   };
 
   if (!reports || reports.length === 0) {
@@ -242,13 +884,19 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
   const { t } = useLang();
   const queryClient = useQueryClient();
   const { user } = useAuth();
-  const [filter, setFilter] = useState<"all" | "sellers" | "buyers">("all");
+  const [filter, setFilter] = useState<"all" | "sellers" | "buyers" | "suspended" | "business">(
+    "all",
+  );
   // Stats-tab drill-down: "Verified sellers" opens this tab pre-filtered.
   useEffect(() => {
     if (drillFilter) setFilter(drillFilter);
   }, [drillFilter]);
   const [search, setSearch] = useState("");
-  const { data: users } = useQuery(adminAllUsersQuery(filter));
+  // Suspended / Business are client-side views over the full list — the RPC
+  // only narrows by seller flag.
+  const { data: users } = useQuery(
+    adminAllUsersQuery(filter === "suspended" || filter === "business" ? "all" : filter),
+  );
   const [banTarget, setBanTarget] = useState<{ id: string; name: string } | null>(null);
   const [roleTarget, setRoleTarget] = useState<{
     id: string;
@@ -259,13 +907,17 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
   const [busy, setBusy] = useState(false);
 
   const term = search.trim().toLowerCase();
-  const visible = (users ?? []).filter((u) =>
-    !term
-      ? true
-      : [u.full_name, u.shop_name, u.phone, u.city, u.email]
-          .filter(Boolean)
-          .some((v) => v!.toLowerCase().includes(term)),
-  );
+  const visible = (users ?? [])
+    .filter((u) =>
+      filter === "suspended" ? !!u.banned_until && new Date(u.banned_until) > new Date() : true,
+    )
+    .filter((u) =>
+      !term
+        ? true
+        : [u.full_name, u.shop_name, u.phone, u.city, u.email]
+            .filter(Boolean)
+            .some((v) => v!.toLowerCase().includes(term)),
+    );
 
   const confirmBan = async (hours: number, reason: string) => {
     if (!banTarget) return;
@@ -277,6 +929,12 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
       return;
     }
     toast.success(t("admin.banned"));
+    void logAdminAction({
+      action: "user_suspended",
+      entityType: "user",
+      entityId: banTarget.id,
+      newValue: { hours, reason },
+    });
     setBanTarget(null);
     queryClient.invalidateQueries({ queryKey: ["admin-all-users"] });
   };
@@ -288,6 +946,7 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
       return;
     }
     toast.success(t("admin.unbanned"));
+    void logAdminAction({ action: "user_restored", entityType: "user", entityId: id });
     queryClient.invalidateQueries({ queryKey: ["admin-all-users"] });
   };
 
@@ -298,6 +957,7 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
       return;
     }
     toast.success(t("admin.sessionsRevoked"));
+    void logAdminAction({ action: "sessions_revoked", entityType: "user", entityId: id });
   };
 
   const [roleCodeSent, setRoleCodeSent] = useState(false);
@@ -358,13 +1018,19 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
     setRoleTarget(null);
     setRoleCodeSent(false);
     setRoleCode("");
+    void logAdminAction({
+      action: roleTarget.action === "promote" ? "admin_promoted" : "admin_demoted",
+      entityType: "user",
+      entityId: roleTarget.id,
+      newValue: { role: "admin", confirmedViaEmailCode: true },
+    });
     queryClient.invalidateQueries({ queryKey: ["admin-all-users"] });
   };
 
   return (
     <>
       <div className="flex flex-wrap items-center gap-2">
-        {(["all", "sellers", "buyers"] as const).map((f) => (
+        {(["all", "sellers", "buyers", "suspended"] as const).map((f) => (
           <Button
             key={f}
             size="sm"
@@ -375,9 +1041,20 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
               ? t("admin.users")
               : f === "sellers"
                 ? t("admin.roleSeller")
-                : t("admin.roleBuyer")}
+                : f === "buyers"
+                  ? t("admin.roleBuyer")
+                  : t("admin.suspendedSegment")}
           </Button>
         ))}
+        {/* Spec §2: business sellers stay a placeholder this phase. */}
+        <Button
+          size="sm"
+          variant={filter === "business" ? "default" : "outline"}
+          className="text-muted-foreground"
+          onClick={() => setFilter("business")}
+        >
+          {t("admin.businessSellers")} · {t("admin.comingSoon")}
+        </Button>
         <Input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -386,7 +1063,16 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
         />
       </div>
 
-      {visible.length === 0 ? (
+      {filter === "business" ? (
+        <p className="mt-6 rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+          {t("admin.businessSellers")}
+          <span className="mx-2 rounded-full bg-secondary px-2 py-0.5 text-xs">
+            {t("admin.comingSoon")}
+          </span>
+          <br />
+          {t("admin.businessSellersSoon")}
+        </p>
+      ) : visible.length === 0 ? (
         <p className="mt-6 text-sm text-muted-foreground">{t("admin.noUsers")}</p>
       ) : (
         <ul className="mt-4 space-y-2">
@@ -617,6 +1303,12 @@ function VerificationTab() {
       return;
     }
     toast.success(action === "approved" ? t("admin.verifiedOk") : t("admin.rejectedOk"));
+    void logAdminAction({
+      action: action === "approved" ? "seller_verified" : "seller_rejected",
+      entityType: "verification_document",
+      entityId: documentId,
+      newValue: { action, reason: reason ?? null },
+    });
     setRejecting(null);
     setRejectReason("");
     invalidate();
@@ -920,6 +1612,11 @@ function CategoriesTab() {
     setParentId("");
     setIcon("");
     toast.success(t("toast.listingLive"));
+    void logAdminAction({
+      action: "category_created",
+      entityType: "category",
+      newValue: { name: name.trim(), slug, parent_id: parentId || null },
+    });
     invalidate();
   };
 
@@ -938,6 +1635,12 @@ function CategoriesTab() {
       toast.error(t("toast.updateFailed"));
       return;
     }
+    void logAdminAction({
+      action: "category_changed",
+      entityType: "category",
+      entityId: id,
+      newValue: { name: renameValue.trim(), slug },
+    });
     invalidate();
   };
 
@@ -963,6 +1666,7 @@ function CategoriesTab() {
       return;
     }
     toast.success(t("toast.listingUpdated"));
+    void logAdminAction({ action: "category_deleted", entityType: "category", entityId: id });
     invalidate();
   };
 
@@ -1020,10 +1724,14 @@ function CategoriesTab() {
             </span>
             <span className="min-w-0 flex-1 text-sm font-medium">{cat.name}</span>
             {cat.level != null ? (
-              <span className="rounded bg-secondary px-1.5 py-0.5 text-[10px] text-muted-foreground">L{cat.level}</span>
+              <span className="rounded bg-secondary px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                L{cat.level}
+              </span>
             ) : null}
             {cat.is_active === false ? (
-              <span className="rounded bg-destructive/10 px-1.5 py-0.5 text-[10px] text-destructive">inactive</span>
+              <span className="rounded bg-destructive/10 px-1.5 py-0.5 text-[10px] text-destructive">
+                inactive
+              </span>
             ) : null}
             {n > 0 ? (
               <span
@@ -1215,6 +1923,15 @@ function ListingsTab() {
   const { data: listings } = useQuery(adminListingsQuery());
   const [pendingDelete, setPendingDelete] = useState<{ id: string; title: string } | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+
+  const filtered = (listings ?? []).filter((l) =>
+    statusFilter === "all"
+      ? true
+      : statusFilter === "other"
+        ? !["active", "reserved", "sold"].includes(l.status)
+        : l.status === statusFilter,
+  );
 
   const toggleFeatured = async (id: string, featured: boolean) => {
     const { error } = await supabase.from("listings").update({ featured }).eq("id", id);
@@ -1223,6 +1940,12 @@ function ListingsTab() {
       return;
     }
     toast.success(t("toast.listingUpdated"));
+    void logAdminAction({
+      action: featured ? "listing_featured" : "listing_unfeatured",
+      entityType: "listing",
+      entityId: id,
+      newValue: { featured },
+    });
     queryClient.invalidateQueries({ queryKey: ["admin-listings"] });
     queryClient.invalidateQueries({ queryKey: ["listings"] });
   };
@@ -1242,6 +1965,7 @@ function ListingsTab() {
       return;
     }
     toast.success(t("toast.listingUpdated"));
+    void logAdminAction({ action: "listing_removed", entityType: "listing", entityId: id });
     queryClient.invalidateQueries({ queryKey: ["admin-listings"] });
     // Cloudinary photos + showcase videos leave with the listing.
     void deleteCloudinaryAssets(urls);
@@ -1249,52 +1973,91 @@ function ListingsTab() {
 
   return (
     <>
-      <ul className="space-y-2">
-        {(listings ?? []).map((l) => (
-          <li
-            key={l.id}
-            className="flex flex-wrap items-center gap-3 rounded-lg border bg-card p-3"
+      {/* Status sub-tabs (spec §5) — client-side over the fetched page. */}
+      <div className="mb-4 flex flex-wrap gap-2">
+        {(["all", "active", "reserved", "sold", "other"] as const).map((s) => (
+          <Button
+            key={s}
+            size="sm"
+            variant={statusFilter === s ? "default" : "outline"}
+            onClick={() => setStatusFilter(s)}
           >
-            <Link
-              to="/listing/$id"
-              params={{ id: l.id }}
-              className="flex min-w-0 flex-1 items-center gap-3"
-            >
-              {/* The listing's cover image — the list used to be text-only. */}
-              <ListingThumb
-                images={
-                  (l as { listing_images?: { url: string; position: number }[] }).listing_images
-                }
-              />
-              <span className="min-w-0">
-                <span className="block truncate text-sm font-medium">{l.title}</span>
-                <span className="text-xs text-muted-foreground">
-                  {formatBirr(l.price)} · {t("dash.statsViews")}: {l.view_count} ·{" "}
-                  {timeAgo(l.created_at)}
-                </span>
-              </span>
-            </Link>
-            <span className="rounded-full bg-secondary px-2.5 py-0.5 text-xs capitalize">
-              {l.status}
-            </span>
-            <Button
-              size="sm"
-              variant={l.featured ? "default" : "outline"}
-              onClick={() => toggleFeatured(l.id, !l.featured)}
-            >
-              <Star className={`mr-1.5 h-3.5 w-3.5 ${l.featured ? "fill-current" : ""}`} />
-              {l.featured ? "Featured" : "Feature"}
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => setPendingDelete({ id: l.id, title: l.title })}
-              className="text-destructive"
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-            </Button>
-          </li>
+            {s === "all"
+              ? t("admin.allStatuses")
+              : s === "active"
+                ? t("admin.statusActive")
+                : s === "sold"
+                  ? t("admin.statusSold")
+                  : s === "reserved"
+                    ? t("listing.statusReserved")
+                    : t("admin.statusOther")}
+          </Button>
         ))}
+      </div>
+      <ul className="space-y-2">
+        {filtered.map((l) => {
+          // Listing health dot (spec §13): green = fresh/active interest,
+          // yellow = low views, orange = stale with no traction.
+          const ageDays = (Date.now() - new Date(l.created_at).getTime()) / 86400000;
+          const health =
+            ageDays < 14 || l.view_count >= 20
+              ? "#22c55e"
+              : l.view_count > 0
+                ? "#eab308"
+                : "#f97316";
+          return (
+            <li
+              key={l.id}
+              className="flex flex-wrap items-center gap-3 rounded-lg border bg-card p-3"
+            >
+              <Link
+                to="/listing/$id"
+                params={{ id: l.id }}
+                className="flex min-w-0 flex-1 items-center gap-3"
+              >
+                {/* The listing's cover image — the list used to be text-only. */}
+                <ListingThumb
+                  images={
+                    (l as { listing_images?: { url: string; position: number }[] }).listing_images
+                  }
+                />
+                <span className="min-w-0">
+                  <span className="flex items-center gap-1.5">
+                    <span
+                      aria-hidden
+                      className="inline-block h-2 w-2 shrink-0 rounded-full"
+                      style={{ backgroundColor: health }}
+                    />
+                    <span className="truncate text-sm font-medium">{l.title}</span>
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {formatBirr(l.price)} · {t("dash.statsViews")}: {l.view_count} ·{" "}
+                    {timeAgo(l.created_at)}
+                  </span>
+                </span>
+              </Link>
+              <span className="rounded-full bg-secondary px-2.5 py-0.5 text-xs capitalize">
+                {l.status}
+              </span>
+              <Button
+                size="sm"
+                variant={l.featured ? "default" : "outline"}
+                onClick={() => toggleFeatured(l.id, !l.featured)}
+              >
+                <Star className={`mr-1.5 h-3.5 w-3.5 ${l.featured ? "fill-current" : ""}`} />
+                {l.featured ? "Featured" : "Feature"}
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setPendingDelete({ id: l.id, title: l.title })}
+                className="text-destructive"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </Button>
+            </li>
+          );
+        })}
       </ul>
 
       <ConfirmDialog
@@ -1334,6 +2097,127 @@ function ListingThumb({ images }: { images: { url: string; position: number }[] 
     <span className="grid h-11 w-11 shrink-0 place-items-center rounded-md bg-muted text-lg">
       🛋️
     </span>
+  );
+}
+
+/** Acquisition analytics (spec §8.2, §26): activity per source. */
+function AnalyticsTab() {
+  const { t } = useLang();
+  const { data: sources } = useQuery({
+    queryKey: ["admin-acquisition"],
+    queryFn: async () => {
+      // Signups are recorded as analytics events by the auth flow; listings
+      // carry their creation event too. Group client-side — volumes are small.
+      const { data, error } = await supabase
+        .from("analytics_events")
+        .select("event_name,source")
+        .gte("created_at", new Date(Date.now() - 90 * 86400000).toISOString())
+        .limit(5000);
+      if (error) throw error;
+      type Row = { signups: number; listings: number };
+      const map = new Map<string, Row>();
+      for (const e of data ?? []) {
+        const src = e.source || "direct";
+        const row = map.get(src) ?? { signups: 0, listings: 0 };
+        if (e.event_name === "signup" || e.event_name === "user_signed_up") row.signups += 1;
+        if (e.event_name === "listing_created" || e.event_name === "listing_published")
+          row.listings += 1;
+        map.set(src, row);
+      }
+      return [...map.entries()]
+        .map(([source, v]) => ({ source, ...v }))
+        .sort((a, b) => b.signups + b.listings - (a.signups + a.listings));
+    },
+  });
+
+  return (
+    <div className="rounded-xl border bg-card p-5">
+      <PanelTitle
+        icon={<Globe className="h-5 w-5 text-primary" />}
+        title={t("admin.acquisitionSources")}
+        accent="bg-violet-500"
+      />
+      <p className="mt-1 text-xs text-muted-foreground">{t("admin.acquisitionHint")}</p>
+      {!sources ? (
+        <p className="mt-3 text-sm text-muted-foreground">{t("browse.loading")}</p>
+      ) : sources.length === 0 ? (
+        <p className="mt-3 text-sm text-muted-foreground">{t("admin.noSourceData")}</p>
+      ) : (
+        <table className="mt-3 w-full max-w-lg text-left text-sm">
+          <thead>
+            <tr className="border-b text-xs uppercase tracking-wide text-muted-foreground">
+              <th className="py-2 pr-4">{t("admin.sourceCol")}</th>
+              <th className="px-2 py-2">{t("admin.signupsCol")}</th>
+              <th className="px-2 py-2">{t("admin.listingsCol")}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {sources.map((s) => (
+              <tr key={s.source} className="border-b last:border-0">
+                <td className="py-2 pr-4 font-medium capitalize">{s.source}</td>
+                <td className="px-2 py-2 tabular-nums">{s.signups}</td>
+                <td className="px-2 py-2 tabular-nums">{s.listings}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+/** Read-only accountability trail (spec §21). */
+function AuditLogTab() {
+  const { t } = useLang();
+  const { data: entries } = useQuery({
+    queryKey: ["admin-audit-log"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("admin_audit_log")
+        .select("id,action,entity_type,entity_id,reason,created_at,profiles(full_name)")
+        .order("created_at", { ascending: false })
+        .limit(100);
+      if (error) throw error;
+      return (data ?? []) as unknown as {
+        id: string;
+        action: string;
+        entity_type: string;
+        entity_id: string | null;
+        reason: string | null;
+        created_at: string;
+        profiles: { full_name: string | null } | null;
+      }[];
+    },
+  });
+
+  if (!entries || entries.length === 0) {
+    return <p className="text-sm text-muted-foreground">{t("admin.auditLogEmpty")}</p>;
+  }
+
+  return (
+    <ul className="space-y-2">
+      {entries.map((e) => (
+        <li
+          key={e.id}
+          className="flex flex-wrap items-center justify-between gap-2 rounded-lg border bg-card px-4 py-3 text-sm"
+        >
+          <div className="min-w-0">
+            <p className="font-medium capitalize">
+              {e.action.replaceAll("_", " ")}
+              <span className="ml-2 rounded-full bg-secondary px-2 py-0.5 text-xs font-normal text-muted-foreground">
+                {e.entity_type}
+              </span>
+            </p>
+            {e.reason ? (
+              <p className="mt-0.5 truncate text-xs text-muted-foreground">“{e.reason}”</p>
+            ) : null}
+          </div>
+          <p className="shrink-0 text-xs text-muted-foreground">
+            {t("admin.by")} {e.profiles?.full_name ?? "—"} · {timeAgo(e.created_at)}
+          </p>
+        </li>
+      ))}
+    </ul>
   );
 }
 
