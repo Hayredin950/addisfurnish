@@ -37,8 +37,8 @@ import { NotificationBell } from "@/components/NotificationBell";
 /** Neutral person silhouette — used for guests, who have no profile picture. */
 function DefaultAvatar() {
   return (
-    <span className="grid h-10 w-10 place-items-center rounded-full bg-secondary">
-      <User className="h-5 w-5 text-muted-foreground" />
+    <span className="grid h-9 w-9 place-items-center rounded-full bg-secondary">
+      <User className="h-4 w-4 text-muted-foreground" />
     </span>
   );
 }
@@ -256,13 +256,13 @@ export function SiteHeader() {
                     variant="outline"
                     size="icon"
                     aria-label={t("nav.accountMenu")}
-                    className="h-10 w-10 overflow-hidden rounded-full p-0"
+                    className="overflow-hidden rounded-full p-0"
                   >
                     {profile?.shop_logo_url || profile?.avatar_url ? (
                       <UserAvatar
                         name={profile.shop_name ?? profile.full_name}
                         avatarUrl={profile.shop_logo_url ?? profile.avatar_url}
-                        size={40}
+                        size={36}
                       />
                     ) : (
                       <DefaultAvatar />

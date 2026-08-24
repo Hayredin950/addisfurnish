@@ -5,6 +5,7 @@ import {
   SelectContent,
   SelectItem,
   SelectTrigger,
+  SelectValue,
 } from "@/components/ui/select";
 
 /** Compact English/አማርኛ language switcher for the header. */
@@ -20,9 +21,16 @@ export function LanguageToggle() {
         persistLanguage(user?.id, v as "en" | "am");
       }}
     >
-      {/* Short Flutter-style label everywhere: "En" / "አማ". */}
-      <SelectTrigger className="h-8 gap-0.5 rounded-md px-2 text-xs" aria-label="Language">
-        {lang === "am" ? "አማ" : "En"}
+      {/* Like the Flutter app: compact "En"/"አማ" chip on phones, full
+          "English/አማርኛ" selector from tablet size up. */}
+      <SelectTrigger
+        className="h-8 gap-0.5 rounded-md px-2 text-xs sm:h-9 sm:w-[110px] sm:gap-1.5 sm:px-2.5 sm:text-sm"
+        aria-label="Language"
+      >
+        <span className="sm:hidden">{lang === "am" ? "አማ" : "En"}</span>
+        <span className="hidden sm:inline-flex">
+          <SelectValue />
+        </span>
       </SelectTrigger>
       <SelectContent>
         <SelectItem value="en">English</SelectItem>
