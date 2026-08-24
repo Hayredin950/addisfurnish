@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { BadgeCheck, MapPin, Star, Flag, Pencil, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { useLang } from "@/lib/i18n";
+import { friendlyError } from "@/lib/friendly-error";
 import { useAuth } from "@/lib/auth";
 import {
   deleteReview,
@@ -70,7 +71,7 @@ function Shop() {
       toast.success(t("toast.reviewDeleted"));
       queryClient.invalidateQueries({ queryKey: ["reviews", shop?.id] });
     },
-    onError: (error: Error) => toast.error(error.message),
+    onError: (error: Error) => toast.error(friendlyError(error, t)),
   });
 
   if (!shop) {

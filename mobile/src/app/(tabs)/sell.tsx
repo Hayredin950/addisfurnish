@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import {
   Image,
+  ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -18,12 +19,14 @@ import { useAuth } from "../../lib/auth";
 import { useLang } from "../../lib/lang";
 import { useAsync } from "../../hooks/use-async";
 import {
+  announceListing,
   createListing,
   deleteCloudinaryAssets,
   fetchCategories,
   fetchListingForEdit,
   replaceListingImages,
   updateListing,
+  updateListingStatus,
   updateProfile,
   uploadListingImage,
   uploadListingVideo,
@@ -34,36 +37,36 @@ import { DraggablePinMap } from "../../components/DraggablePinMap";
 import { useToast } from "../../components/Toast";
 import { EmptyState } from "../../components/EmptyState";
 import { colors, radius, spacing, shadows } from "../../lib/theme";
+import {
+  attrLabel,
+  attrStateFromRows,
+  buildAttributeRows,
+  emptyAttrValue,
+  fetchCategoryAttributes,
+  fetchListingAttributeValues,
+  nativeFacetValues,
+  optionLabel,
+  saveListingAttributeValues,
+  COLOR_SWATCHES,
+  type AttrState,
+  type AttrValue,
+  type CategoryAttributeDef,
+} from "../../lib/attributes";
 import { coordsForSubCity } from "../../lib/format";
+import type { DictKey } from "../../lib/i18n";
 import { imageSource } from "../../lib/storage";
 import { uniqueShopSlug } from "../../lib/slug";
 
 const CONDITIONS = ["New", "Used - Like New", "Used - Good", "Used - Fair"];
 const ROOM_TYPES = ["Living Room", "Bedroom", "Dining", "Office", "Outdoor", "Kitchen"];
 const CITIES = ["Addis Ababa", "Dire Dawa", "Hawassa", "Bahir Dar", "Mekelle", "Adama", "Gondar"];
-const MATERIALS = [
-  "Wood",
-  "Oak",
-  "Mahogany",
-  "Pine",
-  "MDF",
-  "Metal",
-  "Iron",
-  "Steel",
-  "Leather",
-  "Fabric",
-  "Rattan",
-  "Bamboo",
-  "Glass",
-  "Plastic",
-];
 
 type Photo = { uri: string; name: string; isExisting?: boolean };
 
 export default function SellScreen() {
   const params = useLocalSearchParams<{ edit?: string }>();
   const editId = typeof params.edit === "string" && params.edit ? params.edit : undefined;
-  const { user, profile, refreshProfile } = useAuth();
+  const { user, profile, refreshProfile, loading: authLoading } = useAuth();
   const { t, lang } = useLang();
   const toast = useToast();
   const cats = useAsync(fetchCategories, []);
@@ -81,11 +84,7 @@ export default function SellScreen() {
   const [categoryId, setCategoryId] = useState<string | null>(null);
   const [city, setCity] = useState(CITIES[0]!);
   const [subCity, setSubCity] = useState("");
-  const [material, setMaterial] = useState("");
-  const [color, setColor] = useState("");
-  const [roomType, setRoomType] = useState(ROOM_TYPES[0]!);
-  const [brand, setBrand] = useState("");
-  const [deliveryOffered, setDeliveryOffered] = useState(false);
+  const [roomType, setRoomType] = useState(ROOM_TYPES[0]!);  const [deliveryOffered, setDeliveryOffered] = useState(false);
   const [deliveryFee, setDeliveryFee] = useState("");
   // Discount expiry — picked from a calendar, not typed.
   const [discountDate, setDiscountDate] = useState<string | null>(null);
@@ -101,8 +100,27 @@ export default function SellScreen() {
   const [lon, setLon] = useState<number | null>(profile?.longitude ?? null);
   // Category picker: a root category, then an optional child of it.
   const [rootCategoryId, setRootCategoryId] = useState<string | null>(null);
-  // Material: pick from the list, or choose "Custom…" to type one.
-  const [materialCustom, setMaterialCustom] = useState(false);
+
+  // The category whose attributes apply — a chosen child wins over its root.
+  const pickedCategoryId = categoryId ?? rootCategoryId;
+  // Attribute definitions come from the backend (inherited from the parent
+  // categories by the RPC), so an admin adding a field reaches the form without
+  // an app release. Material/colour/brand are among them: they used to be
+  // hardcoded inputs shown on every listing, which is why a sofa was asked for
+  // its brand.
+  const attrDefs = useAsync(
+    () => fetchCategoryAttributes(pickedCategoryId),
+    [pickedCategoryId],
+    !!pickedCategoryId,
+  );
+  const defs = attrDefs.data ?? [];
+  const [attrValues, setAttrValues] = useState<AttrState>({});
+  // Edit mode: values already saved for this listing.
+  const existingAttrs = useAsync(
+    () => (editId ? fetchListingAttributeValues(editId) : Promise.resolve([])),
+    [editId],
+    !!editId,
+  );
 
   const isSeller = !!profile?.is_seller;
 
@@ -138,10 +156,7 @@ export default function SellScreen() {
     setCategoryId(item.category_id);
     setCity(item.city);
     setSubCity(item.sub_city ?? "");
-    setMaterial(item.material ?? "");
-    setColor(item.color ?? "");
     setRoomType(item.room_type ?? ROOM_TYPES[0]!);
-    setBrand(item.brand ?? "");
     setDeliveryOffered(item.delivery_offered);
     setDeliveryFee(item.delivery_fee != null ? String(item.delivery_fee) : "");
     setDiscountDate(item.discount_expires_at ?? null);
@@ -150,7 +165,6 @@ export default function SellScreen() {
     setVideo(
       item.video_url ? { uri: item.video_url, name: "existing-video.mp4", isExisting: true } : null,
     );
-    if (item.material) setMaterialCustom(!MATERIALS.includes(item.material));
     const existing = [...(item.listing_images ?? [])]
       .sort((a, b) => a.position - b.position)
       .map((img) => ({ uri: img.url, name: `existing-${img.id}.jpg`, isExisting: true }));
@@ -165,6 +179,29 @@ export default function SellScreen() {
       }
     }
   }, [item, editId, cats.data]);
+
+  // Seed each attribute the first time it appears in the form: from the saved
+  // value rows, or — for a listing written before these were dynamic — from the
+  // matching `listings` column. Values the seller has already touched are kept,
+  // so switching category and back doesn't wipe an entry.
+  useEffect(() => {
+    const list = attrDefs.data ?? [];
+    if (!list.length) return;
+    const seeded = attrStateFromRows(list, existingAttrs.data ?? [], {
+      material: item?.material ?? null,
+      color: item?.color ?? null,
+      brand: item?.brand ?? null,
+    });
+    setAttrValues((prev) => {
+      const next: AttrState = { ...prev };
+      for (const def of list) {
+        if (!next[def.attribute_id]) {
+          next[def.attribute_id] = seeded[def.attribute_id] ?? emptyAttrValue();
+        }
+      }
+      return next;
+    });
+  }, [attrDefs.data, existingAttrs.data, item]);
 
   const pickPhotos = async () => {
     const res = await ImagePicker.launchImageLibraryAsync({
@@ -242,6 +279,15 @@ export default function SellScreen() {
       toast.error(null, t("priceRequired"));
       return;
     }
+    // Required category attributes are checked here and again by the backend
+    // when the row is written, so a stale form can't slip past.
+    const { rows: attrRows, missingRequired } = buildAttributeRows(defs, attrValues);
+    if (missingRequired.length) {
+      const names = missingRequired.map((d) => attrLabel(d, lang).replace(" *", "")).join(", ");
+      toast.error(null, `${t("attrMissing")} ${names}`);
+      return;
+    }
+    const facets = nativeFacetValues(defs, attrValues);
     setPublishing(true);
     try {
       // Upload only the newly picked photos (existing ones are already stored).
@@ -270,10 +316,10 @@ export default function SellScreen() {
         original_price: originalPrice ? Number(originalPrice) : null,
         negotiable,
         condition,
-        material: material.trim() || null,
-        color: color.trim() || null,
+        material: facets.material,
+        color: facets.color,
         room_type: roomType,
-        brand: brand.trim() || null,
+        brand: facets.brand,
         city,
         sub_city: subCity.trim() || null,
         // A root-only pick is the category itself; when a child is chosen it
@@ -306,6 +352,9 @@ export default function SellScreen() {
           .filter((url) => !finalUrls.includes(url));
         // A replaced or removed video orphans its Cloudinary asset too.
         const removedVideo = item.video_url && !video?.isExisting ? item.video_url : null;
+        // Values first: the update re-fires the backend's required-attribute
+        // check, so a category switch must already have its values in place.
+        await saveListingAttributeValues(id, defs, attrRows);
         await updateListing(id, patch);
         await replaceListingImages(id, finalUrls);
         if (removedPhotos.length) void deleteCloudinaryAssets(removedPhotos);
@@ -333,7 +382,14 @@ export default function SellScreen() {
           longitude: patch.longitude,
           imagePaths: finalUrls,
           videoUrl,
+          // Draft → values → activate, so the backend's publish-time check
+          // sees the attribute values when the listing goes live. Announcing
+          // is therefore ours to do (createListing skips it for drafts).
+          status: "draft",
         });
+        await saveListingAttributeValues(id, defs, attrRows);
+        await updateListingStatus(id, "active");
+        announceListing(id);
       }
       setPhotos([]);
       setVideo(null);
@@ -365,6 +421,10 @@ export default function SellScreen() {
     }
     setPublishing(true);
     try {
+      // A draft may be incomplete, so required attributes are not enforced —
+      // whatever the seller has filled in so far is kept.
+      const { rows: attrRows } = buildAttributeRows(defs, attrValues);
+      const facets = nativeFacetValues(defs, attrValues);
       const newPaths = await Promise.all(
         photos
           .filter((p) => !p.isExisting)
@@ -383,10 +443,10 @@ export default function SellScreen() {
         original_price: originalPrice ? Number(originalPrice) : null,
         negotiable,
         condition,
-        material: material.trim() || null,
-        color: color.trim() || null,
+        material: facets.material,
+        color: facets.color,
         room_type: roomType,
-        brand: brand.trim() || null,
+        brand: facets.brand,
         city,
         sub_city: subCity.trim() || null,
         category_id: categoryId ?? rootCategoryId,
@@ -404,7 +464,7 @@ export default function SellScreen() {
           patch.longitude = c[1];
         }
       }
-      await createListing({
+      const draftId = await createListing({
         sellerId: user.id,
         title: patch.title,
         description: patch.description,
@@ -428,6 +488,7 @@ export default function SellScreen() {
         videoUrl,
         status: "draft",
       });
+      await saveListingAttributeValues(draftId, defs, attrRows);
       toast.success(t("draftSaved"));
       setPhotos([]);
       setVideo(null);
@@ -444,6 +505,16 @@ export default function SellScreen() {
   const removePhoto = (index: number) => setPhotos((prev) => prev.filter((_, j) => j !== index));
 
   const isEditLoading = !!editId && editing.loading && !item;
+
+  // Session restore is async — see favorites.tsx. Without this gate the "not
+  // signed in" prompt flashes before the stored session lands.
+  if (authLoading) {
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
 
   if (!user) {
     return (
@@ -512,7 +583,7 @@ export default function SellScreen() {
           <View style={styles.photoRow}>
             {photos.map((p, i) => (
               <View key={`${p.uri}-${i}`} style={styles.photoThumb}>
-                <Image source={imageSource(p.uri)} style={styles.photoThumbImg} />
+                <Image source={imageSource(p.uri, undefined, 300)} style={styles.photoThumbImg} />
                 <Pressable
                   style={styles.photoRemove}
                   onPress={() => removePhoto(i)}
@@ -681,30 +752,9 @@ export default function SellScreen() {
           />
         </View>
 
-        {/* Attributes */}
+        {/* Attributes — driven by the chosen category (spec §15). Room stays
+            fixed: it is a cross-category facet with no attribute of its own. */}
         <View style={styles.card}>
-          <SelectField
-            label={t("material")}
-            value={!materialCustom && MATERIALS.includes(material) ? material : ""}
-            placeholder={t("selectMaterial")}
-            options={[
-              ...MATERIALS.map((m) => ({ value: m, label: m })),
-              { value: "__custom__", label: t("materialCustom") },
-            ]}
-            onChange={(v) => {
-              if (v === "__custom__") {
-                setMaterialCustom(true);
-              } else {
-                setMaterialCustom(false);
-                setMaterial(v);
-              }
-            }}
-          />
-          {materialCustom ? (
-            <Field label={t("materialCustom")} value={material} onChange={setMaterial} />
-          ) : null}
-          <Field label={t("color")} value={color} onChange={setColor} />
-          <Field label={t("brand")} value={brand} onChange={setBrand} />
           <SelectField
             label={t("roomType")}
             value={roomType}
@@ -712,6 +762,29 @@ export default function SellScreen() {
             options={ROOM_TYPES.map((r) => ({ value: r, label: r }))}
             onChange={setRoomType}
           />
+          {!pickedCategoryId ? (
+            <Text style={styles.attrHint}>{t("attrPickCategory")}</Text>
+          ) : attrDefs.loading && !attrDefs.data ? (
+            <ActivityIndicator color={colors.primary} style={{ marginTop: spacing.sm }} />
+          ) : defs.length ? (
+            <View style={styles.attrList}>
+              <Text style={styles.attrHint}>{t("attrHint")}</Text>
+              {defs.map((def) => (
+                <AttributeField
+                  key={def.attribute_id}
+                  def={def}
+                  value={attrValues[def.attribute_id] ?? emptyAttrValue()}
+                  onChange={(next) =>
+                    setAttrValues((prev) => ({ ...prev, [def.attribute_id]: next }))
+                  }
+                  lang={lang}
+                  t={t}
+                />
+              ))}
+            </View>
+          ) : (
+            <Text style={styles.attrHint}>{t("attrNone")}</Text>
+          )}
         </View>
 
         {/* Delivery */}
@@ -846,6 +919,157 @@ function SelectField<T extends string>({
           ))}
         </View>
       ) : null}
+    </View>
+  );
+}
+
+/**
+ * One dynamic category attribute (spec §15). The type decides the control:
+ * text/number get a box, boolean a switch, selects a chip grid — except the
+ * colour attribute, which gets swatches plus a free-text box (spec §10) so a
+ * seller can say "Walnut" when none of the chips fit.
+ */
+function AttributeField({
+  def,
+  value,
+  onChange,
+  lang,
+  t,
+}: {
+  def: CategoryAttributeDef;
+  value: AttrValue;
+  onChange: (next: AttrValue) => void;
+  lang: "en" | "am";
+  t: (key: DictKey) => string;
+}) {
+  const label = attrLabel(def, lang);
+
+  if (def.type === "boolean") {
+    return (
+      <View style={styles.switchRow}>
+        <Text style={styles.switchLabel}>{label}</Text>
+        <Switch
+          value={value.bool}
+          onValueChange={(bool) => onChange({ ...value, bool })}
+          trackColor={{ true: colors.primary }}
+        />
+      </View>
+    );
+  }
+
+  if (def.type === "text" || def.type === "number" || def.type === "range") {
+    return (
+      <View style={styles.field}>
+        <Text style={styles.fieldLabel}>{label}</Text>
+        <TextInput
+          value={value.text}
+          onChangeText={(text) => onChange({ ...value, text })}
+          placeholder={def.unit ?? label}
+          placeholderTextColor={colors.textSoft}
+          keyboardType={def.type === "text" ? "default" : "numeric"}
+          style={styles.fieldInput}
+        />
+      </View>
+    );
+  }
+
+  if (def.slug === "color") {
+    return (
+      <ColorAttributeField def={def} value={value} onChange={onChange} lang={lang} t={t} />
+    );
+  }
+
+  const multi = def.type === "multi_select";
+  const toggle = (id: string) => {
+    if (multi) {
+      const has = value.optionIds.includes(id);
+      onChange({
+        ...value,
+        optionIds: has ? value.optionIds.filter((x) => x !== id) : [...value.optionIds, id],
+      });
+    } else {
+      // Tapping the chosen chip again clears it, so an optional attribute
+      // filled by mistake can be undone.
+      onChange({ ...value, optionIds: value.optionIds[0] === id ? [] : [id] });
+    }
+  };
+
+  return (
+    <View style={styles.field}>
+      <Text style={styles.fieldLabel}>{label}</Text>
+      <View style={styles.chipWrap}>
+        {def.options.map((o) => {
+          const on = value.optionIds.includes(o.id);
+          return (
+            <Pressable
+              key={o.id}
+              style={[styles.chip, on && styles.chipActive]}
+              onPress={() => toggle(o.id)}
+            >
+              <Text style={[styles.chipText, on && styles.chipTextActive]}>
+                {optionLabel(o, lang)}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+      {/* A listing written before these options existed keeps its free text
+          (e.g. "Mahogany"); show it so an edit doesn't silently drop it. */}
+      {!value.optionIds.length && value.text ? (
+        <Text style={styles.attrLegacy}>{value.text}</Text>
+      ) : null}
+    </View>
+  );
+}
+
+/** Colour swatches + a free-text fallback. Picking one clears the other. */
+function ColorAttributeField({
+  def,
+  value,
+  onChange,
+  lang,
+  t,
+}: {
+  def: CategoryAttributeDef;
+  value: AttrValue;
+  onChange: (next: AttrValue) => void;
+  lang: "en" | "am";
+  t: (key: DictKey) => string;
+}) {
+  return (
+    <View style={styles.field}>
+      <Text style={styles.fieldLabel}>{attrLabel(def, lang)}</Text>
+      <View style={styles.chipWrap}>
+        {def.options.map((o) => {
+          const on = value.optionIds[0] === o.id;
+          return (
+            <Pressable
+              key={o.id}
+              style={[styles.colorChip, on && styles.chipActive]}
+              onPress={() =>
+                onChange({ ...value, optionIds: on ? [] : [o.id], text: on ? value.text : "" })
+              }
+            >
+              <View
+                style={[
+                  styles.colorDot,
+                  { backgroundColor: COLOR_SWATCHES[o.value] ?? colors.border },
+                ]}
+              />
+              <Text style={[styles.chipText, on && styles.chipTextActive]}>
+                {optionLabel(o, lang)}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+      <TextInput
+        value={value.text}
+        onChangeText={(text) => onChange({ ...value, text, optionIds: text ? [] : value.optionIds })}
+        placeholder={t("colourOther")}
+        placeholderTextColor={colors.textSoft}
+        style={[styles.fieldInput, { marginTop: 8 }]}
+      />
     </View>
   );
 }
@@ -1025,6 +1249,28 @@ const styles = StyleSheet.create({
   chipActive: { backgroundColor: colors.primary, borderColor: colors.primary },
   chipText: { fontSize: 12.5, color: colors.text },
   chipTextActive: { color: colors.onPrimary, fontWeight: "600" },
+  // Dynamic category attributes.
+  attrList: { marginTop: 4 },
+  attrHint: { fontSize: 12, color: colors.textMuted, marginBottom: 10, lineHeight: 17 },
+  attrLegacy: { fontSize: 12, color: colors.textSoft, marginTop: 6, fontStyle: "italic" },
+  colorChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 11,
+    paddingVertical: 7,
+    borderRadius: radius.full,
+    borderWidth: 1,
+    borderColor: "transparent",
+    backgroundColor: colors.secondary,
+  },
+  colorDot: {
+    width: 14,
+    height: 14,
+    borderRadius: 7,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
   priceRow: { flexDirection: "row", gap: 10 },
   priceInput: {
     flex: 1,

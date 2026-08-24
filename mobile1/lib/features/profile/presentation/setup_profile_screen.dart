@@ -274,9 +274,16 @@ class _SetupProfileScreenState extends State<SetupProfileScreen> with AppStateMi
     setState(() => _docBusy = true);
     try {
       final picker = ImagePicker();
-      final file = await picker.pickImage(source: ImageSource.gallery);
+      // 2000px keeps small print on an ID legible; the original off a phone
+      // camera is 4000px and several megabytes for no extra readability.
+      final file = await picker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 2000,
+        maxHeight: 2000,
+        imageQuality: 88,
+      );
       if (file == null) return;
-      final url = await SupabaseApi.uploadListingImage(p.id, file);
+      final url = await SupabaseApi.uploadVerificationDocument(p.id, file);
       final docTypeEnum = switch (_docType) {
         'National ID' => 'national_id',
         'Business License' => 'business_license',

@@ -4,10 +4,12 @@ import { router } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useLang } from "../../lib/lang";
 import { useAsync } from "../../hooks/use-async";
+import { useFavorites } from "../../hooks/use-favorites";
 import { fetchCategories, fetchListings, fetchTrendingSearches, logSearch } from "../../lib/api";
 import { ListingCard } from "../../components/ListingCard";
 import { SectionHeader } from "../../components/SectionHeader";
 import { NotificationBell } from "../../components/NotificationBell";
+import { LanguageToggle } from "../../components/LanguageToggle";
 import { EmptyState } from "../../components/EmptyState";
 import { colors, radius, spacing, shadows } from "../../lib/theme";
 import { categoryIcon } from "../../lib/category-icons";
@@ -15,6 +17,7 @@ import { categoryIcon } from "../../lib/category-icons";
 export default function HomeScreen() {
   const { t, lang } = useLang();
   const [term, setTerm] = useState("");
+  const favs = useFavorites();
 
   const cats = useAsync(fetchCategories, []);
   const featured = useAsync(() => fetchListings({ featured: true, limit: 10 }), []);
@@ -45,10 +48,13 @@ export default function HomeScreen() {
               style={styles.heroLogo}
             />
             <Text style={styles.heroTitle}>
-              Addis<Text style={styles.heroTitleAccent}>Furnish</Text>
+              Addis<Text style={styles.heroTitleAccent}>Home</Text>
             </Text>
           </View>
-          <NotificationBell />
+          <View style={styles.heroActions}>
+            <LanguageToggle />
+            <NotificationBell />
+          </View>
         </View>
         <Text style={styles.heroTagline}>{t("tagline")}</Text>
         <View style={styles.searchBox}>
@@ -135,7 +141,14 @@ export default function HomeScreen() {
             contentContainerStyle={{ gap: 12 }}
           >
             {(featured.data ?? []).map((l) => (
-              <ListingCard key={l.id} listing={l} lang={lang} compact />
+              <ListingCard
+                key={l.id}
+                listing={l}
+                lang={lang}
+                compact
+                isFav={favs.isFav(l.id)}
+                onToggleFav={favs.toggle}
+              />
             ))}
           </ScrollView>
         )}
@@ -155,7 +168,13 @@ export default function HomeScreen() {
         ) : (
           <View style={styles.grid}>
             {(fresh.data ?? []).slice(0, 6).map((l) => (
-              <ListingCard key={l.id} listing={l} lang={lang} />
+              <ListingCard
+                key={l.id}
+                listing={l}
+                lang={lang}
+                isFav={favs.isFav(l.id)}
+                onToggleFav={favs.toggle}
+              />
             ))}
           </View>
         )}
@@ -180,7 +199,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
   },
-  heroBrand: { flexDirection: "row", alignItems: "center", gap: 10 },
+  heroBrand: { flexDirection: "row", alignItems: "center", gap: 10, flexShrink: 1 },
+  // Language switch + bell share the right edge of the header row; the brand
+  // block shrinks rather than pushing them off-screen on narrow devices.
+  heroActions: { flexDirection: "row", alignItems: "center", gap: 8 },
   heroLogo: { width: 34, height: 34, borderRadius: 8 },
   heroTitle: {
     fontSize: 28,

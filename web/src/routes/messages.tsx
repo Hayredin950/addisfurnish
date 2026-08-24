@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Check, CheckCheck, ExternalLink, Phone, Trash2 } from "lucide-react";
@@ -7,6 +7,9 @@ import { supabase } from "@/integrations/supabase/client";
 import { notifyUser } from "@/lib/marketplace";
 import { useAuth } from "@/lib/auth";
 import { useLang } from "@/lib/i18n";
+import { friendlyError } from "@/lib/friendly-error";
+import { useDraft } from "@/lib/drafts";
+import { uploadListingImage } from "@/lib/storage";
 import { RequireAuth } from "@/components/RequireAuth";
 import { UserAvatar } from "@/components/UserAvatar";
 import { ListingImage } from "@/components/ListingImage";
@@ -79,9 +82,11 @@ function Messages() {
   const { t } = useLang();
   const queryClient = useQueryClient();
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [body, setBody] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editBody, setEditBody] = useState("");
+  // The message log is the scroll container now that the page itself doesn't
+  // scroll, so newest-at-the-bottom has to be scrolled to explicitly.
+  const logRef = useRef<HTMLDivElement>(null);
 
   const { data: conversations } = useQuery({
     queryKey: ["conversations", user?.id],
@@ -141,6 +146,10 @@ function Messages() {
 
   const current = activeId ?? conversations?.[0]?.id ?? null;
 
+  // Unsent text is kept per conversation (item 42), so switching threads or
+  // reloading no longer throws away a half-written message.
+  const [body, setBody, clearBody] = useDraft(`msg:${current ?? "none"}`);
+
   const { data: messages } = useQuery({
     queryKey: ["messages", current],
     enabled: !!current,
@@ -159,6 +168,14 @@ function Messages() {
   });
 
   const activeConversation = (conversations ?? []).find((c) => c.id === current);
+
+  // Jump to the newest message when the thread changes or a message arrives.
+  // The log is the scroll container now, so this no longer happens for free.
+  useEffect(() => {
+    const el = logRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [current, messages?.length]);
+
   /** The other participant — whichever side of the conversation isn't me. */
   const counterpart = activeConversation
     ? activeConversation.buyer_id === user?.id
@@ -179,7 +196,7 @@ function Messages() {
       setEditBody("");
       queryClient.invalidateQueries({ queryKey: ["messages", current] });
     },
-    onError: (error: Error) => toast.error(error.message),
+    onError: (error: Error) => toast.error(friendlyError(error, t)),
   });
 
   /** Soft delete: the row stays so the other side sees a "deleted" placeholder. */
@@ -195,7 +212,7 @@ function Messages() {
       queryClient.invalidateQueries({ queryKey: ["messages", current] });
       queryClient.invalidateQueries({ queryKey: ["conversations"] });
     },
-    onError: (error: Error) => toast.error(error.message),
+    onError: (error: Error) => toast.error(friendlyError(error, t)),
   });
 
   // Mark the counterpart's messages read when the conversation is open. The DB
@@ -240,11 +257,30 @@ function Messages() {
     };
   }, [current, queryClient]);
 
+  // The picked file is held locally and uploaded on send (mobile parity). It
+  // used to upload on pick, inline, with no error check at all — so a failed
+  // upload left the preview showing while `imageUrl` stayed null, and Send
+  // remained disabled with no explanation.
   const [pendingImage, setPendingImage] = useState<string | null>(null);
-  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [pendingFile, setPendingFile] = useState<File | null>(null);
+
+  /** Drops the staged attachment and releases its object URL. */
+  const clearPendingImage = () => {
+    setPendingImage((prev) => {
+      if (prev) URL.revokeObjectURL(prev);
+      return null;
+    });
+    setPendingFile(null);
+  };
+
+  // A staged attachment belongs to the conversation it was picked in.
+  useEffect(() => {
+    clearPendingImage();
+  }, [current]);
 
   const send = useMutation({
     mutationFn: async () => {
+      const imageUrl = pendingFile ? await uploadListingImage(user!.id, pendingFile) : null;
       const { error } = await supabase
         .from("messages")
         .insert({ conversation_id: current!, sender_id: user!.id, body, image_url: imageUrl });
@@ -265,18 +301,19 @@ function Messages() {
           listingId: activeConversation.listings?.id ?? "",
           conversationId: current!,
           senderName: me?.full_name || "",
-          messagePreview: body,
+          messagePreview: body || "[Image]",
         });
       }
     },
     onSuccess: () => {
-      setBody("");
-      setImageUrl(null);
-      setPendingImage(null);
+      clearBody();
+      clearPendingImage();
       queryClient.invalidateQueries({ queryKey: ["messages", current] });
       queryClient.invalidateQueries({ queryKey: ["conversations"] });
       queryClient.invalidateQueries({ queryKey: ["conversation-unread"] });
     },
+    // Keep the typed text and the staged image so the send can be retried.
+    onError: (error: Error) => toast.error(friendlyError(error, t, "msg.sendFailed")),
   });
 
   /** Hide the conversation from the caller's own inbox. */
@@ -302,16 +339,33 @@ function Messages() {
       queryClient.invalidateQueries({ queryKey: ["conversation-unread"] });
       toast.success(t("msg.conversationDeleted"));
     },
-    onError: (error: Error) => toast.error(error.message),
+    onError: (error: Error) => toast.error(friendlyError(error, t)),
   });
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-12">
-      <h1 className="font-display text-3xl font-semibold">{t("nav.messages")}</h1>
-      <div className="mt-8 grid gap-6 md:grid-cols-[260px_1fr]">
+    /*
+     * Chat is a fixed-height app pane, not a document. The page used to be a
+     * normal `py-12` column, so the composer sat below the fold and you had to
+     * scroll the whole window to reach the input — and every new message pushed
+     * it further down. Now the outer shell is pinned to the viewport minus the
+     * sticky header (and minus the mobile tab bar), `overflow-hidden` stops the
+     * window from scrolling, and the only scrollable regions are the
+     * conversation list and the message log.
+     *
+     * 100dvh, not 100vh: on mobile browsers the dynamic unit accounts for the
+     * collapsing URL bar, which otherwise cuts the composer off.
+     */
+    <div className="mx-auto flex h-[calc(100dvh-4rem-3.5rem)] max-w-5xl flex-col overflow-hidden px-4 py-4 lg:h-[calc(100dvh-4rem)] lg:py-6">
+      <h1 className="shrink-0 font-display text-2xl font-semibold lg:text-3xl">
+        {t("nav.messages")}
+      </h1>
+      <div className="mt-4 grid min-h-0 flex-1 gap-4 md:grid-cols-[260px_1fr] lg:mt-6 lg:gap-6">
+        {/* Only this list scrolls, not the page. */}
         {/* Phones: one pane at a time — picking a conversation swaps the list
             for the chat, and the back arrow returns to the inbox. */}
-        <aside className={`space-y-2 ${activeId ? "hidden md:block" : ""}`}>
+        <aside
+          className={`min-h-0 space-y-2 overflow-y-auto md:pr-1 ${activeId ? "hidden md:block" : ""}`}
+        >
           {(conversations ?? []).map((c) => {
             const unread = unreadRows?.get(c.id) ?? 0;
             return (
@@ -376,18 +430,20 @@ function Messages() {
           ) : null}
         </aside>
 
-        <section className="flex min-h-[420px] flex-col rounded-lg border bg-card p-4">
-          {activeId ? (
-            <button
-              type="button"
-              onClick={() => setActiveId(null)}
-              className="mb-2 inline-flex items-center gap-1 text-sm text-muted-foreground md:hidden"
-            >
-              ← {t("listing.back")}
-            </button>
-          ) : null}
+        {activeId ? (
+          <button
+            type="button"
+            onClick={() => setActiveId(null)}
+            className="mb-2 inline-flex items-center gap-1 text-sm text-muted-foreground md:hidden"
+          >
+            ← {t("listing.back")}
+          </button>
+        ) : null}
+        {/* min-h-0 is what lets the inner message log shrink and scroll instead
+            of the section growing to fit every message. */}
+        <section className="flex min-h-0 flex-col overflow-hidden rounded-lg border bg-card p-4">
           {counterpart ? (
-            <header className="mb-3 flex items-center gap-2 border-b pb-3">
+            <header className="mb-3 flex shrink-0 items-center gap-2 border-b pb-3">
               <UserAvatar name={counterpart.full_name} avatarUrl={counterpart.avatar_url} />
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm font-medium">
@@ -435,7 +491,7 @@ function Messages() {
             <Link
               to="/listing/$id"
               params={{ id: activeConversation.listings.id }}
-              className="mb-3 flex items-center gap-3 rounded-lg border bg-secondary/40 p-2.5 transition-colors hover:border-primary"
+              className="mb-3 flex shrink-0 items-center gap-3 rounded-lg border bg-secondary/40 p-2.5 transition-colors hover:border-primary"
             >
               <ListingImage
                 path={
@@ -461,7 +517,7 @@ function Messages() {
             </Link>
           ) : null}
 
-          <div className="flex-1 space-y-3 overflow-y-auto">
+          <div ref={logRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
             {(messages ?? []).map((m) => {
               const mine = m.sender_id === user?.id;
               const sender = m.profiles;
@@ -584,55 +640,53 @@ function Messages() {
           </div>
           {current ? (
             <form
-              className="mt-4 space-y-2"
+              className="mt-3 shrink-0 space-y-2 border-t pt-3"
               onSubmit={(e) => {
                 e.preventDefault();
-                if (body.trim() || imageUrl) send.mutate();
+                if (body.trim() || pendingFile) send.mutate();
               }}
             >
               {pendingImage ? (
                 <div className="flex items-center gap-2 rounded-md border p-2">
                   <img src={pendingImage} alt="" className="h-12 w-12 rounded object-cover" />
                   <span className="flex-1 text-xs text-muted-foreground">
-                    {t("msg.imageAttached")}
+                    {send.isPending ? t("msg.imageUploading") : t("msg.imageAttached")}
                   </span>
                   <button
                     type="button"
-                    onClick={() => {
-                      setPendingImage(null);
-                      setImageUrl(null);
-                    }}
-                    className="text-muted-foreground hover:text-foreground"
+                    onClick={clearPendingImage}
+                    disabled={send.isPending}
+                    className="text-muted-foreground hover:text-foreground disabled:opacity-50"
                   >
                     ×
                   </button>
                 </div>
               ) : null}
               <div className="flex gap-2">
-                <label className="flex h-9 w-9 shrink-0 cursor-pointer items-center justify-center rounded-md border bg-background hover:bg-accent">
+                <label
+                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md border bg-background ${
+                    send.isPending
+                      ? "cursor-not-allowed opacity-50"
+                      : "cursor-pointer hover:bg-accent"
+                  }`}
+                >
                   <input
                     type="file"
                     accept="image/*"
                     className="hidden"
-                    onChange={async (e) => {
+                    disabled={send.isPending}
+                    onChange={(e) => {
                       const file = e.target.files?.[0];
+                      // Reset the input so re-picking the same file re-fires onChange.
+                      e.target.value = "";
                       if (!file || !user) return;
-                      setPendingImage(URL.createObjectURL(file));
-                      const form = new FormData();
-                      form.append("file", file);
-                      // Upload via Cloudinary sign (reuse listing image upload for chat)
-                      const { data: sign } = await supabase.functions.invoke("cloudinary-sign", {
-                        body: { scope: "listing" },
-                      });
-                      if (sign?.signature) {
-                        form.append("api_key", sign.api_key);
-                        form.append("timestamp", sign.timestamp);
-                        form.append("signature", sign.signature);
-                        form.append("folder", sign.folder);
-                        const res = await fetch(sign.upload_url, { method: "POST", body: form });
-                        const json = await res.json();
-                        if (json.secure_url) setImageUrl(json.secure_url);
+                      if (!file.type.startsWith("image/")) {
+                        toast.error(t("msg.imageInvalid"));
+                        return;
                       }
+                      clearPendingImage();
+                      setPendingImage(URL.createObjectURL(file));
+                      setPendingFile(file);
                     }}
                   />
                   <svg
@@ -656,8 +710,8 @@ function Messages() {
                   onChange={(e) => setBody(e.target.value)}
                   placeholder={t("msg.write")}
                 />
-                <Button type="submit" disabled={send.isPending || (!body.trim() && !imageUrl)}>
-                  {t("msg.send")}
+                <Button type="submit" disabled={send.isPending || (!body.trim() && !pendingFile)}>
+                  {send.isPending ? t("msg.sending") : t("msg.send")}
                 </Button>
               </div>
             </form>

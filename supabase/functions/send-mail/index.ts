@@ -113,8 +113,10 @@ Deno.serve(async (req) => {
   if (!to) return json(400, { message: "missing recipient" });
   if (!html) return json(400, { message: "missing content" });
   if (!USER || !PASS) {
+    // "which environment variable is missing" is a deployment detail; say it in
+    // the log, not in the response.
     console.error("send-mail-error: missing SMTP credentials");
-    return json(500, { message: "missing SMTP credentials" });
+    return json(500, { message: "error", error: "send_failed" });
   }
 
   try {
@@ -140,7 +142,11 @@ Deno.serve(async (req) => {
     return json(200, { message: "success" });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
+    // The detail goes to the function log, not to the caller. An SMTP failure
+    // message names the mail host, the authenticating user and sometimes the
+    // reason a relay refused the address — none of which belongs in a response
+    // body that a client could read.
     console.error(`send-mail-error: ${msg}`);
-    return json(500, { message: "error", error: msg });
+    return json(500, { message: "error", error: "send_failed" });
   }
 });

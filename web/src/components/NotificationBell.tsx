@@ -29,6 +29,9 @@ const TYPE_KEY: Record<
   | "notif.sellerVerified"
   | "notif.sellerRejected"
   | "notif.shopReviewed"
+  | "notif.emailChangeRequested"
+  | "notif.emailChangeApproved"
+  | "notif.emailChangeRejected"
 > = {
   new_message: "notif.newMessage",
   callback_request: "notif.callbackRequest",
@@ -41,6 +44,9 @@ const TYPE_KEY: Record<
   seller_verified: "notif.sellerVerified",
   seller_rejected: "notif.sellerRejected",
   shop_reviewed: "notif.shopReviewed",
+  email_change_requested: "notif.emailChangeRequested",
+  email_change_approved: "notif.emailChangeApproved",
+  email_change_rejected: "notif.emailChangeRejected",
 };
 
 export function NotificationBell() {
@@ -90,13 +96,18 @@ export function NotificationBell() {
         <Button
           variant="outline"
           size="icon"
-          aria-label={t("nav.notifications")}
+          aria-label={unread > 0 ? `${t("nav.notifications")} (${unread})` : t("nav.notifications")}
           className="relative"
         >
           <Bell className="h-4 w-4" />
           {unread > 0 ? (
-            <span className="absolute -right-1 -top-1 grid h-4 min-w-4 place-items-center rounded-full bg-destructive px-1 text-[10px] font-semibold text-destructive-foreground">
-              {unread}
+            // Pulled only slightly outside the button: at -top-1.5/-right-1.5
+            // the badge was clipped by the header's bottom border and by the
+            // avatar button beside it. A ring in the header colour keeps it
+            // legible where it does overlap, and counts above 99 are capped so
+            // three digits can't stretch the pill under the chevron.
+            <span className="pointer-events-none absolute -right-1 -top-1 grid h-[18px] min-w-[18px] place-items-center rounded-full bg-destructive px-[5px] text-[10px] font-bold leading-none text-destructive-foreground ring-2 ring-background">
+              {unread > 99 ? "99+" : unread}
             </span>
           ) : null}
         </Button>

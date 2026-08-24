@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../models/models.dart';
 import '../utils/format.dart';
+import '../utils/image_url.dart';
 import 'app_image.dart';
 
 /// Card for a single listing: photo, title, price (with strikethrough original
@@ -33,6 +34,7 @@ class ListingCard extends StatelessWidget {
                 AppImage(
                   listing.coverImageUrl,
                   borderRadius: BorderRadius.circular(16),
+                  targetWidth: kThumbWidth,
                 ),
                 if (listing.featured)
                   Positioned(

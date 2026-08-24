@@ -34,6 +34,7 @@ import { imageSource } from "../../lib/storage";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { useToast } from "../../components/Toast";
 import { formatBirr, timeAgo } from "../../lib/format";
+import { useDraft } from "../../lib/drafts";
 import type { Message } from "../../lib/api";
 
 export default function ChatScreen() {
@@ -41,7 +42,9 @@ export default function ChatScreen() {
   const { user } = useAuth();
   const { t } = useLang();
   const toast = useToast();
-  const [body, setBody] = useState("");
+  // Unsent text is kept per conversation, so leaving the screen mid-sentence
+  // (or the OS reclaiming the app) no longer loses it — item 42.
+  const [body, setBody, clearBody] = useDraft(`msg:${id ?? "none"}`);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editBody, setEditBody] = useState("");
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
@@ -114,7 +117,7 @@ export default function ChatScreen() {
     const text = body.trim();
     const imgUri = pendingImage;
     if ((!text && !imgUri) || !id || !user) return;
-    setBody("");
+    clearBody();
     setPendingImage(null);
     try {
       let imageUrl: string | null = null;
@@ -123,7 +126,7 @@ export default function ChatScreen() {
         imageUrl = await uploadListingImage(user.id, {
           uri: imgUri,
           name: "chat-photo.jpg",
-        } as any);
+        });
       }
       await sendMessage(id, user.id, text || "", imageUrl);
       if (conv) {
@@ -138,9 +141,12 @@ export default function ChatScreen() {
         });
       }
       messages.refetch();
-    } catch {
+    } catch (err) {
+      // Restore the draft so the send can be retried, and say why it failed —
+      // silently putting the text back read as the app losing the message.
       setBody(text);
       setPendingImage(imgUri);
+      toast.error(err, t("msgSendFailed"));
     } finally {
       setImageBusy(false);
     }

@@ -332,7 +332,7 @@ class _AuthScreenState extends State<AuthScreen> {
                       children: [
                         const TextSpan(text: 'Addis'),
                         TextSpan(
-                          text: 'Furnish',
+                          text: 'Home',
                           style: TextStyle(color: theme.colorScheme.primary),
                         ),
                       ],

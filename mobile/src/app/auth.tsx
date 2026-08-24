@@ -13,15 +13,19 @@ import {
 import { router } from "expo-router";
 import * as WebBrowser from "expo-web-browser";
 import * as Linking from "expo-linking";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Ionicons } from "@expo/vector-icons";
 import { supabase } from "../lib/supabase";
-import { friendlyError } from "../lib/api";
+import { friendlyError } from "../lib/friendly-error";
 import { useLang } from "../lib/lang";
 import { authFlow } from "../lib/authFlow";
 import { Button } from "../components/Button";
 import { colors, radius, spacing } from "../lib/theme";
 
 type Mode = "signin" | "signup";
+
+/** Sign-in email kept for the next visit when "remember me" is ticked. */
+const REMEMBER_EMAIL_KEY = "rememberedEmail";
 
 /**
  * Exchange a Supabase auth redirect URL for a session.
@@ -74,6 +78,21 @@ export default function AuthScreen() {
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  // Remember the sign-in address on this device. The session itself is already
+  // persisted by the Supabase client; this saves retyping the email, and
+  // unticking it wipes the stored address for shared phones.
+  const [remember, setRemember] = useState(true);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const saved = await AsyncStorage.getItem(REMEMBER_EMAIL_KEY);
+        if (saved) setEmail(saved);
+      } catch {
+        // No stored email — start blank.
+      }
+    })();
+  }, []);
   // Set after a signup that needs email confirmation, so we can offer a resend
   // — confirmation mail lands in spam often enough that a dead end here would
   // strand people who can't find it.
@@ -127,8 +146,14 @@ export default function AuthScreen() {
         password,
       });
       if (err) {
-        setError(friendlyError(err));
+        setError(friendlyError(err, t));
       } else {
+        // Only persist the address on success: a typo shouldn't be remembered.
+        if (remember) {
+          await AsyncStorage.setItem(REMEMBER_EMAIL_KEY, email.trim()).catch(() => {});
+        } else {
+          await AsyncStorage.removeItem(REMEMBER_EMAIL_KEY).catch(() => {});
+        }
         router.replace("/(tabs)");
       }
     } finally {
@@ -155,7 +180,7 @@ export default function AuthScreen() {
         },
       });
       if (err) {
-        setError(friendlyError(err));
+        setError(friendlyError(err, t));
         return;
       }
       if (!data.session) {
@@ -179,7 +204,7 @@ export default function AuthScreen() {
         type: "signup",
         email: pendingEmail,
       });
-      if (err) setError(friendlyError(err));
+      if (err) setError(friendlyError(err, t));
       else setNotice(t("confirmationResent"));
     } finally {
       setBusy(false);
@@ -198,7 +223,7 @@ export default function AuthScreen() {
         type: "signup",
       });
       if (err) {
-        setError(friendlyError(err));
+        setError(friendlyError(err, t));
         return;
       }
       if (data.session) {
@@ -218,7 +243,7 @@ export default function AuthScreen() {
         redirectTo: Linking.createURL("auth"),
       });
       if (err) {
-        setError(friendlyError(err));
+        setError(friendlyError(err, t));
         return;
       }
       setNotice(t("resetSent"));
@@ -239,7 +264,7 @@ export default function AuthScreen() {
         type: "recovery",
       });
       if (err) {
-        setError(friendlyError(err));
+        setError(friendlyError(err, t));
         return;
       }
       if (data.session) {
@@ -261,7 +286,7 @@ export default function AuthScreen() {
     try {
       const { error: err } = await supabase.auth.updateUser({ password: newPassword });
       if (err) {
-        setError(friendlyError(err));
+        setError(friendlyError(err, t));
         return;
       }
       setNotice(t("resetDone"));
@@ -279,7 +304,7 @@ export default function AuthScreen() {
       const { error: err } = await supabase.auth.resetPasswordForEmail(resetEmail.trim(), {
         redirectTo: Linking.createURL("auth"),
       });
-      if (err) setError(friendlyError(err));
+      if (err) setError(friendlyError(err, t));
       else setNotice(t("resetSent"));
     } finally {
       setBusy(false);
@@ -359,7 +384,7 @@ export default function AuthScreen() {
             />
           </View>
           <Text style={styles.title}>
-            Addis<Text style={{ color: colors.primary }}>Furnish</Text>
+            Addis<Text style={{ color: colors.primary }}>Home</Text>
           </Text>
           <Text style={styles.subtitle}>{t("welcome")}</Text>
         </View>
@@ -565,17 +590,37 @@ export default function AuthScreen() {
               {mode === "signup" ? (
                 <Text style={styles.hint}>{t("passwordMinLength")}</Text>
               ) : (
-                <Pressable
-                  onPress={() => {
-                    setResetEmail(email);
-                    setError(null);
-                    setNotice(null);
-                    setResetStep("email");
-                  }}
-                  hitSlop={8}
-                >
-                  <Text style={styles.forgot}>{t("forgotPassword")}</Text>
-                </Pressable>
+                <View style={styles.signinRow}>
+                  {/* Remembers the address, not the session — the session is
+                      already persisted by the Supabase client. Unticking it
+                      forgets the email on this device, which is what matters on
+                      a shared phone. */}
+                  <Pressable
+                    style={styles.remember}
+                    onPress={() => setRemember((r) => !r)}
+                    hitSlop={8}
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: remember }}
+                  >
+                    <Ionicons
+                      name={remember ? "checkbox" : "square-outline"}
+                      size={18}
+                      color={remember ? colors.primary : colors.textMuted}
+                    />
+                    <Text style={styles.rememberText}>{t("rememberMe")}</Text>
+                  </Pressable>
+                  <Pressable
+                    onPress={() => {
+                      setResetEmail(email);
+                      setError(null);
+                      setNotice(null);
+                      setResetStep("email");
+                    }}
+                    hitSlop={8}
+                  >
+                    <Text style={styles.forgot}>{t("forgotPassword")}</Text>
+                  </Pressable>
+                </View>
               )}
               <Button
                 title={mode === "signin" ? t("loginEmail") : t("createAccount")}
@@ -659,6 +704,15 @@ const styles = StyleSheet.create({
     textAlign: "right",
     marginTop: -2,
   },
+  signinRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+    marginTop: -2,
+  },
+  remember: { flexDirection: "row", alignItems: "center", gap: 6 },
+  rememberText: { fontSize: 13, color: colors.textMuted, fontWeight: "600" },
   confirmCard: {
     backgroundColor: colors.card,
     borderRadius: radius.md,

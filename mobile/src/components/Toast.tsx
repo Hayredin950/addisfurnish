@@ -3,6 +3,9 @@ import type { ReactNode } from "react";
 import { Animated, StyleSheet, Text } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { colors, radius, spacing, shadows } from "../lib/theme";
+import { errorKey, logRawError } from "../lib/friendly-error";
+import type { DictKey } from "../lib/i18n";
+import { useLang } from "../lib/lang";
 
 type ToastKind = "success" | "error";
 type Toast = { id: number; kind: ToastKind; text: string };
@@ -10,10 +13,16 @@ type Toast = { id: number; kind: ToastKind; text: string };
 type ToastApi = {
   success: (text: string) => void;
   /**
-   * Show a failure. Pass the caught error, not a generic string — the real
-   * Postgres/network message is what tells you *why* a write failed. Web does
-   * the same (web/src/routes/profile.tsx: "Show the real reason instead of a
-   * generic failure").
+   * Show a failure. Pass the caught error itself plus a translated fallback.
+   *
+   * The raw message is deliberately NOT displayed. It is English-only,
+   * describes the database's problem rather than the user's, and — the reason
+   * that actually matters — leaks schema details: `duplicate key value
+   * violates unique constraint "profiles_phone_key"` names the table, the
+   * column and the constraint for anyone probing the API. `friendly-error.ts`
+   * maps what it recognises onto a translated message; anything it doesn't
+   * recognise falls back to the string the caller passed. The real error is
+   * still logged in dev builds.
    */
   error: (err: unknown, fallback: string) => void;
 };
@@ -24,19 +33,26 @@ export function useToast() {
   return useContext(ToastContext);
 }
 
-/** Pulls a human-readable message out of whatever was thrown. */
-export function errorMessage(err: unknown, fallback: string): string {
-  if (typeof err === "string" && err.trim()) return err;
-  if (err && typeof err === "object") {
-    const e = err as { message?: unknown; error_description?: unknown; details?: unknown };
-    for (const v of [e.message, e.error_description, e.details]) {
-      if (typeof v === "string" && v.trim()) return v;
-    }
-  }
-  return fallback;
+/**
+ * The message to show for a failure: a translated one when the error is
+ * recognised, otherwise whatever the call site passed. `errorKey` returns
+ * `errGeneric` when it recognises nothing, and a caller's fallback ("Couldn't
+ * send your message") is always more useful than "Something went wrong", so
+ * the fallback wins that tie.
+ */
+export function errorMessage(
+  err: unknown,
+  fallback: string,
+  t: (key: DictKey) => string,
+): string {
+  logRawError(err);
+  const key = errorKey(err);
+  if (key === "errGeneric" && fallback.trim()) return fallback;
+  return t(key);
 }
 
 export function ToastProvider({ children }: { children: ReactNode }) {
+  const { t } = useLang();
   const [toast, setToast] = useState<Toast | null>(null);
   const opacity = useRef(new Animated.Value(0)).current;
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -48,7 +64,8 @@ export function ToastProvider({ children }: { children: ReactNode }) {
       nextId.current += 1;
       setToast({ id: nextId.current, kind, text });
       Animated.timing(opacity, { toValue: 1, duration: 160, useNativeDriver: true }).start();
-      // Errors carry real diagnostic text, so leave them up longer to read.
+      // Failures usually ask the reader to do something, so give them
+      // longer on screen than a confirmation needs.
       timer.current = setTimeout(
         () => {
           Animated.timing(opacity, { toValue: 0, duration: 200, useNativeDriver: true }).start(
@@ -65,11 +82,11 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
   const api = useRef<ToastApi>({
     success: (text) => show("success", text),
-    error: (err, fallback) => show("error", errorMessage(err, fallback)),
+    error: (err, fallback) => show("error", errorMessage(err, fallback, t)),
   });
   api.current = {
     success: (text) => show("success", text),
-    error: (err, fallback) => show("error", errorMessage(err, fallback)),
+    error: (err, fallback) => show("error", errorMessage(err, fallback, t)),
   };
 
   return (

@@ -1,7 +1,8 @@
 import { useState } from "react";
 import { useNavigate } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { submitReport } from "@/lib/marketplace";
+import { isAdminQuery, submitReport } from "@/lib/marketplace";
 import { useAuth } from "@/lib/auth";
 import { useLang } from "@/lib/i18n";
 import { Button } from "@/components/ui/button";
@@ -49,6 +50,7 @@ export function ReportDialog({
   const { user } = useAuth();
   const { t } = useLang();
   const navigate = useNavigate();
+  const { data: isAdmin } = useQuery(isAdminQuery(user?.id));
   const [open, setOpen] = useState(false);
   const [reason, setReason] = useState<string>("");
   const [details, setDetails] = useState("");
@@ -82,6 +84,12 @@ export function ReportDialog({
       setBusy(false);
     }
   };
+
+  // Item 38: moderators resolve reports, so they may not author them — filing
+  // one would put the same person on both sides of the case. Item 36: nobody
+  // reports themselves. Both are enforced by the reports INSERT policy as well;
+  // hiding the trigger just stops the UI from offering a dead action.
+  if (isAdmin || (sellerId && sellerId === user?.id)) return null;
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>

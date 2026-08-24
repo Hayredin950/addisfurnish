@@ -63,7 +63,7 @@ export function FavoriteButton({ listingId }: { listingId: string }) {
         }
         toggle.mutate();
       }}
-      className="grid h-8 w-8 place-items-center rounded-full bg-card/90 backdrop-blur transition-colors hover:bg-card"
+      className="grid h-8 w-8 cursor-pointer place-items-center rounded-full bg-card/90 backdrop-blur transition-colors hover:bg-card"
     >
       <Heart
         className={cn(

@@ -243,6 +243,7 @@ class _ProfileScreenState extends State<ProfileScreen> with AppStateMixin {
                   width: 72,
                   height: 72,
                   icon: Icons.person_outline,
+                  targetWidth: 216,
                 ),
               ),
               Positioned(
@@ -465,7 +466,7 @@ class _ProfileScreenState extends State<ProfileScreen> with AppStateMixin {
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(12),
                   child: p.shopLogoUrl != null
-                      ? AppImage(p.shopLogoUrl!)
+                      ? AppImage(p.shopLogoUrl!, targetWidth: 216)
                       : Icon(Icons.add_photo_alternate_outlined, color: theme.colorScheme.outline),
                 ),
               ),
@@ -694,11 +695,19 @@ class _ProfileScreenState extends State<ProfileScreen> with AppStateMixin {
             FilledButton.icon(
               onPressed: () async {
                 final picker = ImagePicker();
-                final file = await picker.pickImage(source: ImageSource.gallery);
+                // Same caps as the setup flow: legible, not multi-megabyte.
+                final file = await picker.pickImage(
+                  source: ImageSource.gallery,
+                  maxWidth: 2000,
+                  maxHeight: 2000,
+                  imageQuality: 88,
+                );
                 if (file == null) return;
                 setState(() => _busy = true);
                 try {
-                  final url = await SupabaseApi.uploadListingImage(p.id, file); // Reuse storage or create 'verification-docs' storage bucket. Actually, web app uses 'verification-documents' or similar. We'll use profile repo.
+                  // Identity documents belong in the private bucket, which is
+                  // also the only place either admin panel looks for them.
+                  final url = await SupabaseApi.uploadVerificationDocument(p.id, file);
                   // Map the pretty name to the enum expected by the backend
                   final docTypeEnum = switch (_docType) {
                     'National ID' => 'national_id',

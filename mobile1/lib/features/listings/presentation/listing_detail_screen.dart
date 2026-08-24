@@ -6,6 +6,7 @@ import '../../../core/di/service_locator.dart';
 import '../../../core/navigation/routes.dart';
 import '../../../core/models/models.dart';
 import '../../../core/utils/format.dart';
+import '../../../core/utils/image_url.dart';
 import '../../../core/state/app_state.dart';
 import '../../../core/state/app_state_mixin.dart';
 import '../../../core/widgets/app_image.dart';
@@ -514,6 +515,7 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> with AppState
                     listing.images[i].url,
                     width: double.infinity,
                     height: 300,
+                    targetWidth: kLargeWidth,
                   ),
                 ),
               if (listing.status != 'active') ...[
@@ -716,6 +718,7 @@ class _ListingDetailScreenState extends State<ListingDetailScreen> with AppState
                 width: 48,
                 height: 48,
                 icon: Icons.storefront_outlined,
+                targetWidth: 144,
               ),
             ),
             const SizedBox(width: 12),

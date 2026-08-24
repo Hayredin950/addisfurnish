@@ -46,7 +46,7 @@ const SITE_BASE = SITE_URL || "https://addisfurnish.vercel.app";
 // The single acceptable fallback image: every card is a photo card, so a
 // listing with no usable cover still renders as a photo message with the
 // AddisHome logo instead of plain text with a raw link.
-const ADDISFURNISH_LOGO_URL = `${SITE_BASE}/logo-mark.png`;
+const LOGO_URL = `${SITE_BASE}/logo-mark.png`;
 
 /** Telegram's URL fetcher truncates large files behind Cloudflare — relay
  * bytes directly (photos cap at 10 MB) instead of making Telegram fetch. */
@@ -230,6 +230,31 @@ async function markBlocked(chatId: string) {
 }
 
 /**
+ * True when the chat will never accept another message: the user blocked the
+ * bot or deleted their account, or the stored chat id is stale.
+ *
+ * `chat not found` was previously untreated, so ten dead chat ids were retried
+ * on every notification and logged as fresh delivery failures forever. It is as
+ * permanent as a 403 and gets the same handling.
+ */
+function isDeadChat(errorCode: number | undefined, description: string | undefined): boolean {
+  if (errorCode === 403) return true;
+  return /chat not found|bot was blocked|user is deactivated|bot was kicked|PEER_ID_INVALID/i.test(
+    description ?? "",
+  );
+}
+
+/**
+ * True when an edit "failure" actually means the desired state already holds.
+ * Re-sending an identical caption (a sold-toggle that doesn't change the
+ * rendered card) answers `message is not modified` — that is a no-op, not an
+ * outage, and logging it as one produced 21 of the 50 recorded failures.
+ */
+function isBenignEditError(description: string | undefined): boolean {
+  return /message is not modified/i.test(description ?? "");
+}
+
+/**
  * Telegram allows ~1 message/second per chat. Serialize sends to the same
  * chat (short sleep instead of dropping) so a milestone burst or fan-out
  * doesn't trip the 429 rate limit.
@@ -252,14 +277,21 @@ async function throttleChat(chatId: string) {
   }
 }
 
-/** Full sendMessage: throttle, delivery log, 403→blocked. Returns the id. */
+/**
+ * Full sendMessage: throttle, delivery log, dead-chat handling. Returns the id.
+ *
+ * `logResult: false` is for callers that are one stage of a longer fallback
+ * chain (sendCard) and log the chain's overall outcome themselves — otherwise a
+ * recovered send records both a failure and a success.
+ */
 async function sendMessageFull(
   chatId: string,
   text: string,
   kind = "notify",
   replyMarkup?: unknown,
-): Promise<{ ok: boolean; message_id?: number }> {
-  if (!BOT_TOKEN) return { ok: false };
+  logResult = true,
+): Promise<{ ok: boolean; message_id?: number; error?: string }> {
+  if (!BOT_TOKEN) return { ok: false, error: "no bot token" };
   await throttleChat(chatId);
   try {
     const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
@@ -280,15 +312,17 @@ async function sendMessageFull(
       error_code?: number;
     } | null;
     if (!res.ok) {
-      await logSend(kind, chatId, false, body?.description ?? `HTTP ${res.status}`);
-      if (body?.error_code === 403) await markBlocked(chatId);
-      return { ok: false };
+      const error = body?.description ?? `HTTP ${res.status}`;
+      if (logResult) await logSend(kind, chatId, false, error);
+      if (isDeadChat(body?.error_code, body?.description)) await markBlocked(chatId);
+      return { ok: false, error };
     }
-    await logSend(kind, chatId, true, null);
+    if (logResult) await logSend(kind, chatId, true, null);
     return { ok: true, message_id: body?.result?.message_id };
-  } catch {
-    await logSend(kind, chatId, false, "network");
-    return { ok: false };
+  } catch (err) {
+    const error = err instanceof Error ? `network: ${err.message}` : "network";
+    if (logResult) await logSend(kind, chatId, false, error);
+    return { ok: false, error };
   }
 }
 
@@ -302,14 +336,88 @@ async function sendMessage(chatId: string, text: string): Promise<boolean> {
  * Shop logos and old-era media are Supabase storage *paths* (`<user>/logos/x.jpg`),
  * which Telegram rejects as a bare string. Both apps resolve them under the
  * `listing-images` bucket, so the same prefix applies here.
+ *
+ * Every URL is width-capped, because Telegram will not fetch a photo URL over
+ * 5 MB and a phone-camera original routinely is: the Flutter app and the bot
+ * both write untouched files to the bucket (2–5 MB), and Cloudinary serves the
+ * original unless a transformation is asked for. Capping turns a send that used
+ * to fail and fall back to the byte relay — or to the logo — into a first-try
+ * success, and 1280px is well past what a Telegram card displays.
  */
+const TELEGRAM_PHOTO_WIDTH = 1280;
+
 function resolvePhotoUrl(photoUrl: string | null): string | null {
   if (!photoUrl) return null;
-  if (/^https?:\/\//i.test(photoUrl)) return photoUrl;
+  if (/^https?:\/\//i.test(photoUrl)) {
+    // Telegram answers "wrong HTTP URL specified" for anything it can't parse,
+    // so reject a malformed URL here rather than spending a send on it.
+    try {
+      new URL(photoUrl);
+      return capPhotoUrl(photoUrl);
+    } catch {
+      return null;
+    }
+  }
   if (SUPABASE_URL && !photoUrl.startsWith("/")) {
-    return `${SUPABASE_URL}/storage/v1/object/public/listing-images/${photoUrl}`;
+    // The storage transformation endpoint: same object, resized on delivery.
+    return (
+      `${SUPABASE_URL}/storage/v1/render/image/public/listing-images/${photoUrl}` +
+      `?width=${TELEGRAM_PHOTO_WIDTH}&resize=contain&quality=80`
+    );
   }
   return null;
+}
+
+/** Width-cap whichever CDN this absolute URL belongs to; others pass through. */
+function capPhotoUrl(url: string): string {
+  const marker = "/image/upload/";
+  const idx = url.indexOf(marker);
+  if (idx !== -1 && url.startsWith("https://res.cloudinary.com/")) {
+    return (
+      `${url.slice(0, idx + marker.length)}w_${TELEGRAM_PHOTO_WIDTH},q_auto,f_auto/` +
+      url.slice(idx + marker.length)
+    );
+  }
+  return storageThumb(url);
+}
+
+/**
+ * `…/storage/v1/object/public/<bucket>/<path>` → the same object through the
+ * image transformation endpoint. Anything else is returned unchanged.
+ */
+function storageThumb(url: string): string {
+  const marker = "/storage/v1/object/public/";
+  const idx = url.indexOf(marker);
+  if (idx === -1) return url;
+  const rendered =
+    url.slice(0, idx) + "/storage/v1/render/image/public/" + url.slice(idx + marker.length);
+  const sep = rendered.includes("?") ? "&" : "?";
+  return `${rendered}${sep}width=${TELEGRAM_PHOTO_WIDTH}&resize=contain&quality=80`;
+}
+
+/**
+ * Confirm a URL actually serves an image before handing it to Telegram.
+ *
+ * `listing_images.url` holds a mix of bare storage paths, Cloudinary URLs and
+ * hand-entered third-party URLs, and any of them can point at something that
+ * isn't an image: a storage object that was never uploaded answers with a JSON
+ * 404, and a stale third-party link answers with an HTML error page. Telegram
+ * fetches those and rejects them as "wrong type of the web page content" — a
+ * guaranteed wasted send. One HEAD is cheaper than that round trip, and lets
+ * the card fall back to the logo instead of degrading all the way to text-only.
+ *
+ * Failing open (returning true) is deliberate: if the probe itself can't run,
+ * the existing send → bytes → text fallback chain still covers us.
+ */
+async function isFetchableImage(url: string): Promise<boolean> {
+  try {
+    const res = await fetch(url, { method: "HEAD" });
+    if (!res.ok) return false;
+    const type = res.headers.get("content-type") ?? "";
+    return type.startsWith("image/");
+  } catch {
+    return true;
+  }
 }
 
 /** Download a photo URL's bytes for direct re-upload (size-capped). */
@@ -325,15 +433,17 @@ async function downloadBytes(url: string, cap: number): Promise<Uint8Array | nul
   }
 }
 
-/** Send raw photo bytes as a multipart upload — bypasses Telegram's URL fetch. */
+/**
+ * Send raw photo bytes as a multipart upload — bypasses Telegram's URL fetch.
+ * One stage of sendCard's fallback chain, so it reports rather than logs.
+ */
 async function uploadPhotoBytes(
   chatId: string,
   bytes: Uint8Array,
   caption: string,
   replyMarkup: unknown,
-  kind: string,
-): Promise<{ ok: boolean; message_id?: number } | null> {
-  if (!BOT_TOKEN) return null;
+): Promise<{ ok: boolean; message_id?: number; error?: string }> {
+  if (!BOT_TOKEN) return { ok: false, error: "no bot token" };
   try {
     const form = new FormData();
     form.append("chat_id", chatId);
@@ -352,14 +462,12 @@ async function uploadPhotoBytes(
       error_code?: number;
     } | null;
     if (res.ok && body?.ok) {
-      await logSend(kind, chatId, true, null);
       return { ok: true, message_id: body.result?.message_id };
     }
-    await logSend(kind, chatId, false, body?.description ?? `HTTP ${res.status}`);
-    if (body?.error_code === 403) await markBlocked(chatId);
-    return null;
-  } catch {
-    return null;
+    if (isDeadChat(body?.error_code, body?.description)) await markBlocked(chatId);
+    return { ok: false, error: body?.description ?? `HTTP ${res.status}` };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? `network: ${err.message}` : "network" };
   }
 }
 
@@ -368,12 +476,19 @@ async function uploadPhotoBytes(
  *
  * Every card is a photo card — never plain text with a raw link (Telegram
  * would unfurl the generic site card). Strategy, in order:
+ *   0. probe a storage-path photo and drop straight to the logo if the object
+ *      isn't actually a fetchable image
  *   1. sendPhoto with the real photo URL (or the logo when none exists)
  *   2. if the URL send fails, download the bytes and upload them directly
  *      (Telegram's fetcher truncates large Cloudflare-fronted files, which
  *      surfaced as "wrong type of the web page content")
  *   3. last resort: a plain message, keeping the button as a real inline
  *      keyboard instead of a pasted URL.
+ *
+ * Exactly ONE delivery-log row is written, for the outcome of the chain as a
+ * whole. Each stage used to log its own result, so a card that failed on the
+ * URL and recovered via bytes recorded a failure *and* a success — inflating
+ * the admin health view's failure rate with attempts that actually delivered.
  * Returns the sent message id.
  */
 async function sendCard(
@@ -387,8 +502,11 @@ async function sendCard(
   await throttleChat(chatId);
   const reply_markup = button ? { inline_keyboard: [button] } : undefined;
   const caption = html.slice(0, 1024); // 1024 is Telegram's cap for a photo caption.
+  // Why each route was abandoned, so a total failure logs the whole story
+  // instead of a bare "edit failed"-style placeholder.
+  const attempts: string[] = [];
 
-  const sendUrl = async (photo: string): Promise<{ ok: boolean; message_id?: number } | null> => {
+  const sendUrl = async (photo: string): Promise<{ ok: boolean; message_id?: number }> => {
     try {
       const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
         method: "POST",
@@ -407,71 +525,139 @@ async function sendCard(
         description?: string;
         error_code?: number;
       } | null;
-      if (res.ok && body?.ok) {
-        await logSend(kind, chatId, true, null);
-        return { ok: true, message_id: body.result?.message_id };
-      }
-      await logSend(kind, chatId, false, body?.description ?? `HTTP ${res.status}`);
-      if (body?.error_code === 403) await markBlocked(chatId);
-      return null;
-    } catch {
-      return null;
+      if (res.ok && body?.ok) return { ok: true, message_id: body.result?.message_id };
+      attempts.push(`url: ${body?.description ?? `HTTP ${res.status}`}`);
+      if (isDeadChat(body?.error_code, body?.description)) await markBlocked(chatId);
+      return { ok: false };
+    } catch (err) {
+      attempts.push(`url: ${err instanceof Error ? err.message : "network"}`);
+      return { ok: false };
     }
   };
 
-const photo = resolvePhotoUrl(photoUrl) || ADDISFURNISH_LOGO_URL;
+  const resolved = resolvePhotoUrl(photoUrl);
+  // Check the reference before spending a send on it — see isFetchableImage.
+  // The logo is our own static asset and is never probed.
+  const usable = resolved ? await isFetchableImage(resolved) : false;
+  if (resolved && !usable) attempts.push(`photo unreachable: ${resolved}`);
+  const photo = usable ? resolved! : LOGO_URL;
+
   const sent = await sendUrl(photo);
-  if (sent) return sent;
+  if (sent.ok) {
+    await logSend(kind, chatId, true, null);
+    return sent;
+  }
 
   // The real listing photo failed as a URL (large/truncated fetch) — relay
   // the bytes directly instead of giving up on the photo.
-  if (photo && photo !== ADDISFURNISH_LOGO_URL) {
+  if (photo !== LOGO_URL) {
     const bytes = await downloadBytes(photo, MAX_PHOTO_BYTES);
     if (bytes) {
-      const upload = await uploadPhotoBytes(chatId, bytes, caption, reply_markup, kind);
-      if (upload?.ok) return upload;
+      const upload = await uploadPhotoBytes(chatId, bytes, caption, reply_markup);
+      if (upload.ok) {
+        await logSend(kind, chatId, true, null);
+        return upload;
+      }
+      attempts.push(`bytes: ${upload.error ?? "upload failed"}`);
+    } else {
+      attempts.push("bytes: download failed or over size cap");
     }
   }
 
   // Last resort: keep the button as an inline keyboard on the text message.
-  return sendMessageFull(chatId, html, kind, reply_markup);
+  const text = await sendMessageFull(chatId, html, kind, reply_markup, false);
+  if (text.ok) {
+    // Delivered, just without the photo — a success worth distinguishing so the
+    // health view can show that cards are silently losing their images.
+    await logSend(kind, chatId, true, `text fallback — ${attempts.join("; ")}`);
+    return text;
+  }
+  attempts.push(`text: ${text.error ?? "send failed"}`);
+  await logSend(kind, chatId, false, attempts.join("; "));
+  return { ok: false };
 }
 
-/** Refresh a channel post's caption when the listing changes (sold, price…). */
+/**
+ * Refresh a channel post's caption when the listing changes (sold, price…).
+ *
+ * Returns the real reason on failure. It used to swallow Telegram's
+ * `description` and blind-retry both edit methods, so every outcome collapsed
+ * into a bare `"edit failed"` — which is how 21 harmless `message is not
+ * modified` no-ops ended up recorded as delivery failures with no way to tell
+ * them apart from a genuinely broken post.
+ */
 async function editChannelCaption(
   chatId: string,
   messageId: number,
   html: string,
-): Promise<boolean> {
-  if (!BOT_TOKEN) return false;
+): Promise<{ ok: boolean; error?: string }> {
+  if (!BOT_TOKEN) return { ok: false, error: "no bot token" };
   const caption = html.slice(0, 1024);
-  // A photo post edits via caption; a text-fallback post edits via text.
+  let lastError = "edit failed";
+  // Nearly every post is a photo card, so try the caption edit first and only
+  // fall through to a text edit when Telegram says this post has no caption —
+  // any other error means retrying the other method can't help either.
   for (const method of ["editMessageCaption", "editMessageText"]) {
-    const body = {
+    const payload = {
       chat_id: chatId,
       message_id: messageId,
       parse_mode: "HTML",
       ...(method === "editMessageCaption" ? { caption } : { text: caption }),
     };
-    const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/${method}`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    if (res.ok) return true;
+    try {
+      const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/${method}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const body = (await res.json().catch(() => null)) as {
+        ok?: boolean;
+        description?: string;
+        error_code?: number;
+      } | null;
+      if (res.ok && body?.ok !== false) return { ok: true };
+      const description = body?.description ?? `HTTP ${res.status}`;
+      // The post already reads the way we want it to.
+      if (isBenignEditError(description)) return { ok: true };
+      lastError = description;
+      if (isDeadChat(body?.error_code, description)) return { ok: false, error: description };
+      if (!/no caption in the message|there is no text in the message/i.test(description)) {
+        return { ok: false, error: description };
+      }
+    } catch (err) {
+      return { ok: false, error: err instanceof Error ? `network: ${err.message}` : "network" };
+    }
   }
-  return false;
+  return { ok: false, error: lastError };
 }
 
-/** Remove a channel post when the listing is deleted. */
-async function deleteChannelMessage(chatId: string, messageId: number): Promise<boolean> {
-  if (!BOT_TOKEN) return false;
-  const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/deleteMessage`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ chat_id: chatId, message_id: messageId }),
-  });
-  return res.ok;
+/**
+ * Remove a channel post when the listing is deleted. A post that Telegram can
+ * no longer find is already in the state we wanted, so it counts as success.
+ */
+async function deleteChannelMessage(
+  chatId: string,
+  messageId: number,
+): Promise<{ ok: boolean; error?: string }> {
+  if (!BOT_TOKEN) return { ok: false, error: "no bot token" };
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/deleteMessage`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ chat_id: chatId, message_id: messageId }),
+    });
+    const body = (await res.json().catch(() => null)) as {
+      ok?: boolean;
+      description?: string;
+      error_code?: number;
+    } | null;
+    if (res.ok && body?.ok !== false) return { ok: true };
+    const description = body?.description ?? `HTTP ${res.status}`;
+    if (/message to delete not found/i.test(description)) return { ok: true };
+    return { ok: false, error: description };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? `network: ${err.message}` : "network" };
+  }
 }
 
 /**
@@ -574,14 +760,16 @@ const LISTING_SELECT =
   "room_type,material,color,delivery_offered,delivery_fee,seller_id,status,telegram_posted_at," +
   "listing_images(url,position),profiles(shop_name),categories(name)";
 
-/** Best available cover-photo URL for a listing (storage passthrough). */
-function coverUrl(listing: ListingRow, supabaseUrl?: string | null): string | null {
+/**
+ * Best available cover-photo URL for a listing.
+ *
+ * Goes through `resolvePhotoUrl` so the cover is width-capped like every other
+ * photo the bot sends — building the raw `object/public` URL here was how a
+ * 5 MB original still reached Telegram after the cap was added.
+ */
+function coverUrl(listing: ListingRow, _supabaseUrl?: string | null): string | null {
   const cover = [...(listing.listing_images ?? [])].sort((a, b) => a.position - b.position)[0];
-  if (!cover?.url) return null;
-  if (cover.url.startsWith("http")) return cover.url;
-  return supabaseUrl
-    ? `${supabaseUrl}/storage/v1/object/public/listing-images/${cover.url}`
-    : null;
+  return resolvePhotoUrl(cover?.url ?? null);
 }
 
 /** Fetch a listing and its card fields for the notification DM. */
@@ -953,10 +1141,10 @@ async function handleChannelSync(
   if (!chatId || !messageId) return new Response("invalid post", { status: 200 });
 
   if (action === "delete") {
-    const ok = await deleteChannelMessage(chatId, messageId);
-    await logSend("channel_delete", chatId, ok, ok ? null : "delete failed");
+    const removed = await deleteChannelMessage(chatId, messageId);
+    await logSend("channel_delete", chatId, removed.ok, removed.error ?? null);
     // Row cleanup happens via the listings cascade; nothing more to do here.
-    return Response.json({ ok, action });
+    return Response.json({ ok: removed.ok, action, error: removed.error ?? null });
   }
 
   const { data: listing } = await supabase
@@ -966,9 +1154,9 @@ async function handleChannelSync(
     .maybeSingle();
   // Listing already gone without a delete-sync — retract the stale post.
   if (!listing) {
-    const ok = await deleteChannelMessage(chatId, messageId);
-    await logSend("channel_delete", chatId, ok, ok ? null : "delete failed");
-    return Response.json({ ok, action: "delete" });
+    const removed = await deleteChannelMessage(chatId, messageId);
+    await logSend("channel_delete", chatId, removed.ok, removed.error ?? null);
+    return Response.json({ ok: removed.ok, action: "delete", error: removed.error ?? null });
   }
 
   const row = listing as unknown as ListingRow;
@@ -987,9 +1175,9 @@ async function handleChannelSync(
     shop_name: row.profiles?.shop_name ?? null,
     category: row.categories?.name ?? null,      });
   const html = row.status === "sold" ? `✅ <b>SOLD</b>\n\n${card}` : card;
-  const ok = await editChannelCaption(chatId, messageId, html);
-  await logSend("channel_edit", chatId, ok, ok ? null : "edit failed");
-  return Response.json({ ok, action: "edited" });
+  const edited = await editChannelCaption(chatId, messageId, html);
+  await logSend("channel_edit", chatId, edited.ok, edited.error ?? null);
+  return Response.json({ ok: edited.ok, action: "edited", error: edited.error ?? null });
 }
 
 /** Shape C — one-time view-milestone "your item is getting views" ping. */

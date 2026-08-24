@@ -29,8 +29,11 @@ export function MobileTabBar() {
 
   return (
     <nav
-      className="fixed inset-x-0 bottom-0 z-50 border-t bg-background/95 backdrop-blur lg:hidden"
-      aria-label={t("nav.accountMenu")}
+      // The home indicator on iOS sits on top of a bottom-anchored bar, so the
+      // safe-area inset is padded out here the same way the app reads its
+      // runtime inset in mobile/src/app/(tabs)/_layout.tsx.
+      className="fixed inset-x-0 bottom-0 z-50 border-t bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur lg:hidden"
+      aria-label={t("nav.mainNav")}
     >
       <div className="mx-auto flex max-w-6xl items-stretch">
         {TABS.map((tab) => {

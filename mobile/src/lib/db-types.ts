@@ -795,6 +795,56 @@ export type Database = {
           },
         ];
       };
+      email_change_requests: {
+        Row: {
+          created_at: string;
+          id: string;
+          new_email: string;
+          old_email: string | null;
+          reason: string | null;
+          rejection_reason: string | null;
+          requested_by: string | null;
+          reviewed_at: string | null;
+          reviewed_by: string | null;
+          status: string;
+          user_id: string;
+        };
+        Insert: {
+          created_at?: string;
+          id?: string;
+          new_email: string;
+          old_email?: string | null;
+          reason?: string | null;
+          rejection_reason?: string | null;
+          requested_by?: string | null;
+          reviewed_at?: string | null;
+          reviewed_by?: string | null;
+          status?: string;
+          user_id: string;
+        };
+        Update: {
+          created_at?: string;
+          id?: string;
+          new_email?: string;
+          old_email?: string | null;
+          reason?: string | null;
+          rejection_reason?: string | null;
+          requested_by?: string | null;
+          reviewed_at?: string | null;
+          reviewed_by?: string | null;
+          status?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "email_change_requests_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       reports: {
         Row: {
           created_at: string;
@@ -1528,6 +1578,22 @@ buyer_preferences: {
       admin_health_stats: {
         Args: Record<string, never>;
         Returns: Json;
+      };
+      request_email_change: {
+        Args: { _new_email: string; _reason?: string | null };
+        Returns: Json;
+      };
+      admin_review_email_change: {
+        Args: { _request_id: string; _approve: boolean; _reason?: string | null };
+        Returns: Json;
+      };
+      admin_set_user_email: {
+        Args: { _user_id: string; _new_email: string; _reason?: string | null };
+        Returns: Json;
+      };
+      is_listing_owner: {
+        Args: { _listing_id: string; _user_id: string };
+        Returns: boolean;
       };
       admin_notify_user: {
         Args: {

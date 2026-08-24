@@ -81,8 +81,15 @@
   --secondary-foreground: oklch(0.315 0.032 55);
   --muted: oklch(0.936 0.014 84);
   --muted-foreground: oklch(0.492 0.024 62);
-  --accent: oklch(0.383 0.048 62);
-  --accent-foreground: oklch(0.975 0.012 85);
+  /* Accent is the *hover tint*, so it must be a light wash in light mode, not a
+     saturated walnut. It used to be oklch(0.383 …) — a dark brown — which was
+     only legible on the elements that also set `hover:text-accent-foreground`.
+     Anything that set just `hover:bg-accent` (the profile quick-action tiles,
+     the root error-boundary button, the shop/browse chips) put near-black text
+     on dark brown and became unreadable on hover. A light tint is readable
+     either way, and keeps the terracotta `--primary` as the one strong accent. */
+  --accent: oklch(0.906 0.029 76);
+  --accent-foreground: oklch(0.245 0.024 55);
   --destructive: oklch(0.545 0.192 27);
   --destructive-foreground: oklch(0.985 0.008 85);
   --success: oklch(0.505 0.106 152);
@@ -142,6 +149,16 @@
     color: var(--color-foreground);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
+  }
+
+  /* Interactive elements should always show a pointer cursor. */
+  button, a, [role="button"], label[for], select, input[type="checkbox"], input[type="radio"] {
+    cursor: pointer;
+  }
+
+  /* Primary button hover: brighten instead of darkening for better contrast. */
+  .bg-primary:hover, .bg-primary:focus-visible {
+    filter: brightness(1.15);
   }
 
   h1,

@@ -129,7 +129,9 @@ export const adminRevokeSessions = createServerFn({ method: "POST" })
     const { error } = await supabaseAdmin.rpc("admin_revoke_sessions", {
       _user_id: data.userId,
     });
-    return error ? { ok: false, error: error.message } : { ok: true };
+    // Opaque code, never the driver's text: this string is rendered in a toast.
+    if (error) console.error("[admin_revoke_sessions]", error);
+    return error ? { ok: false, error: "rpc" } : { ok: true };
   });
 
 /**
@@ -147,7 +149,10 @@ export const adminBanUser = createServerFn({ method: "POST" })
     const { error } = await supabaseAdmin.auth.admin.updateUserById(data.userId, {
       ban_duration: `${hours}h`,
     });
-    if (error) return { ok: false, error: error.message };
+    if (error) {
+      console.error("[admin ban]", error);
+      return { ok: false, error: "rpc" };
+    }
     // Mirror onto profiles so the admin list can show who is suspended;
     // auth.users.banned_until isn't reachable through PostgREST.
     const { error: mirrorErr } = await supabaseAdmin.rpc("admin_set_ban", {

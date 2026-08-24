@@ -120,8 +120,6 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
           "Browse thousands of second-hand sofas, beds, desks and dining sets from trusted shops across Addis Ababa. Free to list, free to message.",
       },
       { property: "og:image", content: ogImageUrl },
-      { property: "og:image:width", content: "1200" },
-      { property: "og:image:height", content: "630" },
       { name: "twitter:image", content: ogImageUrl },
     ],
     links: [
@@ -165,7 +163,9 @@ function RootComponent() {
       <AuthProvider>
         <LanguageProvider>
           <LanguageSync />
-          <div className="flex min-h-screen flex-col pb-14 lg:pb-0">
+          {/* Bottom padding clears the fixed tab bar *and* the iOS home
+              indicator, so the footer isn't half-hidden on a phone. */}
+          <div className="flex min-h-screen flex-col pb-[calc(3.5rem+env(safe-area-inset-bottom))] lg:pb-0">
             <SiteHeader />
             <main className="flex-1">
               {/* Required: nested routes render here. */}

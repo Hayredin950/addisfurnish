@@ -341,6 +341,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
               width: 52,
               height: 52,
               borderRadius: BorderRadius.circular(8),
+              targetWidth: 160,
             ),
             const SizedBox(width: 12),
             Expanded(

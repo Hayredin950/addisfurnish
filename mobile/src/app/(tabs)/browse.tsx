@@ -15,22 +15,22 @@ import { Ionicons } from "@expo/vector-icons";
 import * as Location from "expo-location";
 import { useLang } from "../../lib/lang";
 import { useAsync } from "../../hooks/use-async";
+import { useFavorites } from "../../hooks/use-favorites";
 import { useAuth } from "../../lib/auth";
 import {
   fetchCategories,
-  fetchFavoriteIds,
   fetchListings,
   fetchSavedSearches,
   fetchTrendingSearches,
   logSearch,
   saveSearch,
   deleteSavedSearch,
-  toggleFavorite,
 } from "../../lib/api";
 import { ListingCard } from "../../components/ListingCard";
 import { SheetOverlay } from "../../components/SheetOverlay";
 import { EmptyState } from "../../components/EmptyState";
 import { Button } from "../../components/Button";
+import { useToast } from "../../components/Toast";
 import { colors, radius, spacing } from "../../lib/theme";
 import { haversineKm } from "../../lib/format";
 
@@ -42,6 +42,7 @@ type SortKey = "newest" | "price-asc" | "price-desc" | "viewed" | "nearest";
 export default function BrowseScreen() {
   const { t, lang } = useLang();
   const { user } = useAuth();
+  const toast = useToast();
   const params = useLocalSearchParams<{ q?: string; category?: string }>();
 
   const [q, setQ] = useState(params.q ?? "");
@@ -58,23 +59,7 @@ export default function BrowseScreen() {
   const [location, setLocation] = useState<{ lat: number; lon: number } | null>(null);
   const [locating, setLocating] = useState(false);
   const [savedCurrent, setSavedCurrent] = useState(false);
-  const [favIds, setFavIds] = useState<string[]>([]);
-
-  // Load the user's favourite listing ids.
-  useEffect(() => {
-    if (!user) return;
-    void fetchFavoriteIds(user.id).then(setFavIds);
-  }, [user?.id]);
-
-  const handleToggleFav = async (listingId: string, isFav: boolean) => {
-    if (!user) return;
-    try {
-      await toggleFavorite(user.id, listingId, isFav);
-      setFavIds((prev) =>
-        isFav ? prev.filter((x) => x !== listingId) : [...prev, listingId],
-      );
-    } catch { /* ignore */ }
-  };
+  const favs = useFavorites();
 
   const cats = useAsync(fetchCategories, []);
   const trending = useAsync(fetchTrendingSearches, []);
@@ -210,6 +195,12 @@ export default function BrowseScreen() {
 
   const toggleSaveSearch = async () => {
     if (!user) return;
+    // Nothing to save yet: say so instead of looking broken. The button used to
+    // be `disabled`, which gave no clue what a "saved search" even is.
+    if (!(appliedQ || category)) {
+      toast.success(t("saveSearchNeedsQuery"));
+      return;
+    }
     try {
       const rows = await fetchSavedSearches(user.id);
       const match = rows.find(
@@ -220,6 +211,7 @@ export default function BrowseScreen() {
       if (match) {
         await deleteSavedSearch(match.id);
         setSavedCurrent(false);
+        toast.success(t("savedSearchRemoved"));
       } else {
         await saveSearch(user.id, {
           query: appliedQ,
@@ -228,9 +220,12 @@ export default function BrowseScreen() {
           max: max ? Number(max) : undefined,
         });
         setSavedCurrent(true);
+        // Explains what saving actually buys you: alerts on new matches.
+        toast.success(t("searchAlertsHint"));
       }
-    } catch {
-      // ignore
+      mySaved.refetch();
+    } catch (err) {
+      toast.error(err, t("oops"));
     }
   };
 
@@ -248,6 +243,58 @@ export default function BrowseScreen() {
     { key: "price-desc", label: t("sortPriceHigh") },
     { key: "viewed", label: t("sortViewed") },
     { key: "nearest", label: t("sortNearest") },
+  ];
+
+  const categoryLabel = useMemo(() => {
+    const hit = (cats.data ?? []).find((c) => c.slug === category);
+    if (!hit) return category;
+    return lang === "am" ? (hit.name_am ?? hit.name) : hit.name;
+  }, [cats.data, category, lang]);
+
+  // Every applied filter, each with its own way off. Previously the only way to
+  // undo a filter was to reopen the sheet and hunt for it, and the single "clear
+  // all" lived at the bottom of that sheet — invisible from the results.
+  const activeChips: { key: string; label: string; clear: () => void }[] = [
+    ...(appliedQ
+      ? [
+          {
+            key: "q",
+            label: `"${appliedQ}"`,
+            clear: () => {
+              setQ("");
+              setAppliedQ("");
+            },
+          },
+        ]
+      : []),
+    ...(category ? [{ key: "cat", label: categoryLabel, clear: () => setCategory("") }] : []),
+    ...(condition ? [{ key: "cond", label: condition, clear: () => setCondition("") }] : []),
+    ...(city ? [{ key: "city", label: city, clear: () => setCity("") }] : []),
+    ...(room ? [{ key: "room", label: room, clear: () => setRoom("") }] : []),
+    ...(min || max
+      ? [
+          {
+            key: "price",
+            label: `${min || 0} ${t("to")} ${max || "∞"}`,
+            clear: () => {
+              setMin("");
+              setMax("");
+            },
+          },
+        ]
+      : []),
+    ...(sort !== "newest"
+      ? [
+          {
+            key: "sort",
+            label: options.find((o) => o.key === sort)?.label ?? sort,
+            clear: () => {
+              setSort("newest");
+              setLocation(null);
+            },
+          },
+        ]
+      : []),
   ];
 
   const header = (
@@ -276,11 +323,7 @@ export default function BrowseScreen() {
           <Ionicons name="options-outline" size={20} color={colors.primary} />
           {activeFilterCount > 0 ? <View style={styles.filterDot} /> : null}
         </Pressable>
-        <Pressable
-          style={styles.filterBtn}
-          onPress={toggleSaveSearch}
-          disabled={!user || !(appliedQ || category)}
-        >
+        <Pressable style={styles.filterBtn} onPress={toggleSaveSearch} disabled={!user}>
           <Ionicons
             name={savedCurrent ? "bookmark" : "bookmark-outline"}
             size={20}
@@ -361,13 +404,19 @@ export default function BrowseScreen() {
         </View>
       ) : null}
 
-      {/* Sort chips */}
+      {/* Sort chips — tapping the active one turns it back off (newest is the
+          default order, not a filter you're stuck with). */}
       <ScrollableChips>
         {options.map((o) => (
           <Pressable
             key={o.key}
             style={[styles.chip, sort === o.key && styles.chipActive]}
             onPress={() => {
+              if (sort === o.key) {
+                setSort("newest");
+                if (o.key === "nearest") setLocation(null);
+                return;
+              }
               if (o.key === "nearest") {
                 void locate();
               } else {
@@ -387,10 +436,31 @@ export default function BrowseScreen() {
             <Text style={[styles.chipText, sort === o.key && styles.chipTextActive]}>
               {o.label}
             </Text>
+            {sort === o.key && o.key !== "newest" ? (
+              <Ionicons name="close" size={12} color={colors.onPrimary} />
+            ) : null}
           </Pressable>
         ))}
       </ScrollableChips>
       {locating ? <Text style={styles.locating}>{t("locating")}</Text> : null}
+
+      {/* Applied filters, always in view, each removable in one tap. */}
+      {activeChips.length > 0 ? (
+        <View style={styles.activeRow}>
+          <Text style={styles.activeLabel}>{t("activeFilters")}</Text>
+          {activeChips.map((chip) => (
+            <Pressable key={chip.key} style={styles.activeChip} onPress={chip.clear} hitSlop={4}>
+              <Text numberOfLines={1} style={styles.activeChipText}>
+                {chip.label}
+              </Text>
+              <Ionicons name="close-circle" size={14} color={colors.primary} />
+            </Pressable>
+          ))}
+          <Pressable style={styles.clearAllChip} onPress={clearFilters} hitSlop={4}>
+            <Text style={styles.clearAllText}>{t("clearAll")}</Text>
+          </Pressable>
+        </View>
+      ) : null}
     </View>
   );
 
@@ -408,18 +478,29 @@ export default function BrowseScreen() {
           loading && !data ? (
             <ActivityIndicator style={{ marginTop: 40 }} color={colors.primary} />
           ) : (
-            <EmptyState
-              title={error ? t("noConnection") : t("noResults")}
-              hint={error ? t("retry") : undefined}
-            />
+            <View>
+              <EmptyState
+                title={error ? t("noConnection") : t("noResults")}
+                hint={
+                  error ? t("retry") : activeChips.length > 0 ? t("noResultsHint") : undefined
+                }
+              />
+              {/* A zero-result screen with no way out was a dead end: the only
+                  escape was to reopen the filter sheet and undo each choice. */}
+              {!error && activeChips.length > 0 ? (
+                <View style={styles.emptyAction}>
+                  <Button title={t("resetFilters")} onPress={clearFilters} />
+                </View>
+              ) : null}
+            </View>
           )
         }
         renderItem={({ item }) => (
           <ListingCard
             listing={item}
             lang={lang}
-            isFav={favIds.includes(item.id)}
-            onToggleFav={handleToggleFav}
+            isFav={favs.isFav(item.id)}
+            onToggleFav={favs.toggle}
           />
         )}
         onRefresh={refetch}
@@ -449,26 +530,70 @@ export default function BrowseScreen() {
                 active={category ? 1 : 0}
                 defaultOpen={!!category || !condition && !city && !room}
               >
-                <View style={styles.chipWrap}>
+                {/* Hierarchical category tree: level 0 → 1 → 2 */}
+                <View style={{ gap: 4 }}>
                   <Pressable
-                    style={[styles.chip, !category && styles.chipActive]}
+                    style={[styles.chip, !category && styles.chipActive, { marginBottom: 6 }]}
                     onPress={() => setCategory("")}
                   >
-                    <Text style={[styles.chipText, !category && styles.chipTextActive]}>All</Text>
+                    <Text style={[styles.chipText, !category && styles.chipTextActive]}>{t("all")}</Text>
                   </Pressable>
-                  {(cats.data ?? []).map((c) => (
-                    <Pressable
-                      key={c.id}
-                      style={[styles.chip, category === c.slug && styles.chipActive]}
-                      onPress={() => setCategory(category === c.slug ? "" : c.slug)}
-                    >
-                      <Text
-                        style={[styles.chipText, category === c.slug && styles.chipTextActive]}
-                      >
-                        {lang === "am" ? (c.name_am ?? c.name) : c.name}
-                      </Text>
-                    </Pressable>
-                  ))}
+                  {(cats.data ?? [])
+                    .filter((c) => (c as { level?: number }).level === 0 || !c.parent_id)
+                    .sort((a, b) => ((a as { sort_order?: number }).sort_order ?? 0) - ((b as { sort_order?: number }).sort_order ?? 0))
+                    .map((root) => {
+                      const children = (cats.data ?? [])
+                        .filter((c) => c.parent_id === root.id)
+                        .sort((a, b) => ((a as { sort_order?: number }).sort_order ?? 0) - ((b as { sort_order?: number }).sort_order ?? 0));
+                      return (
+                        <View key={root.id} style={{ gap: 2 }}>
+                          <Pressable
+                            style={[styles.chip, category === root.slug && styles.chipActive]}
+                            onPress={() => setCategory(category === root.slug ? "" : root.slug)}
+                          >
+                            <Text style={[styles.chipText, category === root.slug && styles.chipTextActive, { fontWeight: "700" }]}>
+                              {lang === "am" ? (root.name_am ?? root.name) : root.name}
+                            </Text>
+                          </Pressable>
+                          {children.length > 0 ? (
+                            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6, paddingLeft: 12 }}>
+                              {children.map((child) => {
+                                const grandkids = (cats.data ?? [])
+                                  .filter((c) => c.parent_id === child.id)
+                                  .sort((a, b) => ((a as { sort_order?: number }).sort_order ?? 0) - ((b as { sort_order?: number }).sort_order ?? 0));
+                                return (
+                                  <View key={child.id} style={{ gap: 2 }}>
+                                    <Pressable
+                                      style={[styles.chip, category === child.slug && styles.chipActive]}
+                                      onPress={() => setCategory(category === child.slug ? "" : child.slug)}
+                                    >
+                                      <Text style={[styles.chipText, category === child.slug && styles.chipTextActive]}>
+                                        {lang === "am" ? (child.name_am ?? child.name) : child.name}
+                                      </Text>
+                                    </Pressable>
+                                    {grandkids.length > 0 ? (
+                                      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 4, paddingLeft: 10 }}>
+                                        {grandkids.map((gk) => (
+                                          <Pressable
+                                            key={gk.id}
+                                            style={[styles.chip, category === gk.slug && styles.chipActive, { paddingHorizontal: 8, paddingVertical: 3 }]}
+                                            onPress={() => setCategory(category === gk.slug ? "" : gk.slug)}
+                                          >
+                                            <Text style={[styles.chipText, { fontSize: 11 }, category === gk.slug && styles.chipTextActive]}>
+                                              {lang === "am" ? (gk.name_am ?? gk.name) : gk.name}
+                                            </Text>
+                                          </Pressable>
+                                        ))}
+                                      </View>
+                                    ) : null}
+                                  </View>
+                                );
+                              })}
+                            </View>
+                          ) : null}
+                        </View>
+                      );
+                    })}
                 </View>
               </FilterGroup>
 
@@ -540,8 +665,14 @@ export default function BrowseScreen() {
             </ScrollView>
 
             <View style={styles.modalActions}>
-              <Button title={t("reset")} variant="ghost" onPress={clearFilters} />
-              <Button title={t("apply")} onPress={applyFilters} />
+              <Button title={t("resetFilters")} variant="ghost" onPress={clearFilters} />
+              {/* Filters apply live as you tap them, so "Apply" only ever closed
+                  the sheet — which read as "did that do anything?". Naming it
+                  after the result count says what tapping it shows you. */}
+              <Button
+                title={`${t("showResults")} (${listings.length})`}
+                onPress={applyFilters}
+              />
             </View>
           </View>
         </SheetOverlay>
@@ -645,6 +776,40 @@ const styles = StyleSheet.create({
   chipText: { fontSize: 12.5, color: colors.text },
   chipTextActive: { color: colors.onPrimary, fontWeight: "600" },
   locating: { fontSize: 12, color: colors.textMuted, marginTop: 8 },
+  activeRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 10,
+  },
+  activeLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: colors.textMuted,
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
+  },
+  activeChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    maxWidth: "60%",
+    backgroundColor: colors.primaryLight,
+    borderRadius: radius.full,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  activeChipText: { fontSize: 12, color: colors.primary, fontWeight: "600" },
+  clearAllChip: {
+    borderRadius: radius.full,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  clearAllText: { fontSize: 12, color: colors.textMuted, fontWeight: "600" },
+  emptyAction: { paddingHorizontal: spacing.xl, marginTop: -8 },
   modalSheet: {
     backgroundColor: colors.card,
     borderTopLeftRadius: radius.xl,

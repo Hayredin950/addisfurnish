@@ -21,9 +21,11 @@ import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { useLang } from "@/lib/i18n";
 import { formatBirr, timeAgo, categoryName, isOnlineNow, formatEthiopianDate } from "@/lib/format";
+import { useDraft } from "@/lib/drafts";
 import { pingListingView } from "@/lib/telegram";
 import {
   deleteReview,
+  fetchListingSocialMeta,
   listingQuery,
   listingsQuery,
   notifyUser,
@@ -34,7 +36,7 @@ import {
 } from "@/lib/marketplace";
 import { Stars, StarPicker } from "@/components/ReviewStars";
 import { ListingGallery } from "@/components/ListingGallery";
-import { useImageUrl } from "@/lib/storage";
+import { resolveImageUrl, useImageUrl } from "@/lib/storage";
 import { UserAvatar } from "@/components/UserAvatar";
 import { LocationCard } from "@/components/LocationCard";
 import { ListingCard } from "@/components/ListingCard";
@@ -77,18 +79,60 @@ async function ensureConversation(
   return data.id;
 }
 
+// Absolute base for social tags. Scrapers won't resolve relative URLs, so an
+// unset VITE_SITE_URL degrades to the shared site-wide og:image.
+const SITE_URL = ((import.meta.env["VITE_SITE_URL"] as string | undefined) ?? "").replace(
+  /\/+$/,
+  "",
+);
+const DEFAULT_OG_IMAGE = `${SITE_URL}/og-image.png`;
+
 export const Route = createFileRoute("/listing/$id")({
-  head: () => ({
-    meta: [
-      { title: "Furniture Listing — AddisHome" },
-      {
-        name: "description",
-        content: "View photos, price history, condition details and contact the seller directly.",
-      },
-      { property: "og:title", content: "Furniture Listing — AddisHome" },
-      { property: "og:description", content: "Second-hand furniture for sale in Ethiopia." },
-    ],
-  }),
+  // Loaded server-side so Telegram/WhatsApp/Twitter see real listing tags in the
+  // initial HTML — link-preview scrapers never execute our JS, which is why the
+  // previous static head always previewed as a generic AddisHome page.
+  loader: ({ params }) => fetchListingSocialMeta(params.id),
+  head: ({ loaderData, params }) => {
+    const url = SITE_URL ? `${SITE_URL}/listing/${params.id}` : undefined;
+    if (!loaderData) {
+      return {
+        meta: [
+          { title: "Furniture Listing — AddisHome" },
+          {
+            name: "description",
+            content:
+              "View photos, price history, condition details and contact the seller directly.",
+          },
+          { property: "og:title", content: "Furniture Listing — AddisHome" },
+          { property: "og:description", content: "Second-hand furniture for sale in Ethiopia." },
+        ],
+      };
+    }
+    const priceLabel = formatBirr(loaderData.price);
+    const title = `${loaderData.title} — ${priceLabel}`;
+    // Prefer the seller's own words; fall back to the structured facts.
+    const description =
+      loaderData.description?.trim() ||
+      [priceLabel, loaderData.condition, loaderData.city].filter(Boolean).join(" · ");
+    // 1200px wide, compressed: Telegram, Facebook and X all refuse an og:image
+    // past a few megabytes, which is exactly what a phone camera original is.
+    const image = resolveImageUrl(loaderData.imagePath, undefined, 1200) ?? DEFAULT_OG_IMAGE;
+    return {
+      meta: [
+        { title },
+        { name: "description", content: description },
+        { property: "og:title", content: title },
+        { property: "og:description", content: description },
+        { property: "og:type", content: "product" },
+        { property: "og:image", content: image },
+        { name: "twitter:card", content: "summary_large_image" },
+        { name: "twitter:title", content: title },
+        { name: "twitter:description", content: description },
+        { name: "twitter:image", content: image },
+        ...(url ? [{ property: "og:url", content: url }] : []),
+      ],
+    };
+  },
   component: ListingDetail,
 });
 
@@ -101,20 +145,25 @@ function ListingDetail() {
   const { data: listing, isLoading } = useQuery(listingQuery(id));
   const { data: history } = useQuery(priceHistoryQuery(id));
   const { data: reviews } = useQuery(reviewsQuery(listing?.seller_id ?? ""));
+  const avgRating =
+    reviews && reviews.length > 0 ? reviews.reduce((s, r) => s + r.rating, 0) / reviews.length : 0;
   const { data: videoUrl } = useImageUrl(listing?.video_url ?? null);
   const [rating, setRating] = useState(0);
   const [comment, setComment] = useState("");
   const messageBoxRef = useRef<HTMLTextAreaElement>(null);
   const { data: similar } = useQuery(
     listingsQuery(
-      listing?.categories?.slug ? { category: listing.categories.slug, limit: 4 } : { limit: 4 },
+      listing?.categories?.slug ? { category: listing.categories.slug, limit: 12 } : { limit: 12 },
     ),
   );
-  const [message, setMessage] = useState("");
+  // The message to the seller and the offer both survive a reload or an
+  // accidental navigation away (item 42) — they are keyed to this listing.
+  const [message, setMessage, clearMessage] = useDraft(`contact:${id}`);
   const [phone, setPhone] = useState("");
   const [offerOpen, setOfferOpen] = useState(false);
-  const [offerAmount, setOfferAmount] = useState("");
-  const [offerMessage, setOfferMessage] = useState("");
+  const [offerAmount, setOfferAmount, clearOfferAmount] = useDraft(`offer-amount:${id}`);
+  const [offerMessage, setOfferMessage, clearOfferMessage] = useDraft(`offer-msg:${id}`);
+  const [showAllReviews, setShowAllReviews] = useState(false);
 
   // Refs let the view effect read the latest values without re-running (the
   // effect must run exactly once per page visit to avoid double counts).
@@ -229,7 +278,7 @@ function ListingDetail() {
       });
     },
     onSuccess: () => {
-      setMessage("");
+      clearMessage();
       toast.success(t("toast.messageSent"));
       navigate({ to: "/messages" });
     },
@@ -296,8 +345,8 @@ function ListingDetail() {
     },
     onSuccess: () => {
       setOfferOpen(false);
-      setOfferAmount("");
-      setOfferMessage("");
+      clearOfferAmount();
+      clearOfferMessage();
       toast.success(t("offer.sent"));
     },
     onError: (error: Error) => {
@@ -399,15 +448,17 @@ function ListingDetail() {
         </Link>
         <div className="flex items-center gap-2">
           <ShareButton />
-          <ReportDialog
-            listingId={listing.id}
-            sellerId={listing.seller_id}
-            trigger={
-              <Button variant="ghost" size="sm">
-                {t("listing.report")}
-              </Button>
-            }
-          />
+          {listing.seller_id !== user?.id ? (
+            <ReportDialog
+              listingId={listing.id}
+              sellerId={listing.seller_id}
+              trigger={
+                <Button variant="ghost" size="sm">
+                  {t("listing.report")}
+                </Button>
+              }
+            />
+          ) : null}
         </div>
       </div>
 
@@ -457,6 +508,66 @@ function ListingDetail() {
           {history && history.length > 1 ? (
             <div className="mt-8 rounded-lg border bg-card p-5">
               <h2 className="font-display text-lg font-semibold">{t("listing.priceHistory")}</h2>
+              {/* Simple SVG bar chart */}
+              {(() => {
+                const prices = history.map((h) => h.price);
+                const maxPrice = Math.max(...prices);
+                const minPrice = Math.min(...prices);
+                const range = maxPrice - minPrice || 1;
+                const barWidth = Math.max(28, Math.floor(400 / history.length));
+                const chartHeight = 120;
+                const svgWidth = history.length * barWidth + 60;
+                return (
+                  <div className="mt-3 overflow-x-auto">
+                    <svg
+                      viewBox={`0 0 ${svgWidth} ${chartHeight + 40}`}
+                      className="w-full max-w-md"
+                      aria-label={t("listing.priceHistory")}
+                    >
+                      {history.map((h, i) => {
+                        const x = i * barWidth + 40;
+                        const barH = ((h.price - minPrice) / range) * (chartHeight - 10) + 10;
+                        const y = chartHeight - barH;
+                        return (
+                          <g key={i}>
+                            <rect
+                              x={x}
+                              y={y}
+                              width={barWidth - 8}
+                              height={barH}
+                              rx={3}
+                              className="fill-primary/80"
+                            />
+                            <text
+                              x={x + (barWidth - 8) / 2}
+                              y={chartHeight + 14}
+                              textAnchor="middle"
+                              className="fill-muted-foreground"
+                              fontSize={10}
+                            >
+                              {new Date(h.changed_at).toLocaleDateString(undefined, {
+                                month: "short",
+                                day: "numeric",
+                              })}
+                            </text>
+                            <text
+                              x={x + (barWidth - 8) / 2}
+                              y={y - 4}
+                              textAnchor="middle"
+                              className="fill-foreground"
+                              fontSize={9}
+                              fontWeight={600}
+                            >
+                              {(h.price / 1000).toFixed(h.price >= 10000 ? 0 : 1)}k
+                            </text>
+                          </g>
+                        );
+                      })}
+                    </svg>
+                  </div>
+                );
+              })()}
+              {/* Also keep a compact list below for detail */}
               <ul className="mt-3 space-y-1 text-sm text-muted-foreground">
                 {history.map((h, i) => (
                   <li key={i} className="flex justify-between">
@@ -574,6 +685,13 @@ function ListingDetail() {
                     <BadgeCheck className="h-4 w-4 shrink-0 text-primary" />
                   ) : null}
                 </span>
+                {avgRating > 0 ? (
+                  <span className="ml-auto flex items-center gap-1 text-xs text-muted-foreground">
+                    <Star className="h-3 w-3 fill-primary text-primary" />
+                    {avgRating.toFixed(1)}
+                    <span className="text-[10px]">({reviews?.length ?? 0})</span>
+                  </span>
+                ) : null}
               </div>
               <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
                 {online ? (
@@ -636,10 +754,11 @@ function ListingDetail() {
                 </Button>
               </div>
             </div>
-          ) : (listing.status === "sold" || listing.status === "reserved" ? (
+          ) : listing.status === "sold" || listing.status === "reserved" ? (
             <div className="rounded-xl border bg-card p-6 text-center">
               <p className="text-muted-foreground">
-                {listing.status === "sold" ? t("listing.statusSold") : t("listing.statusReserved")} — {t("listing.noLongerAvailable")}
+                {listing.status === "sold" ? t("listing.statusSold") : t("listing.statusReserved")}{" "}
+                — {t("listing.noLongerAvailable")}
               </p>
             </div>
           ) : (
@@ -723,7 +842,7 @@ function ListingDetail() {
                 </Link>
               </p>
             </div>
-          ))}
+          )}
 
           <Dialog open={offerOpen} onOpenChange={setOfferOpen}>
             <DialogContent>
@@ -772,57 +891,73 @@ function ListingDetail() {
         <div className="rounded-xl border bg-card p-6">
           <h2 className="flex items-center gap-2 font-display text-xl font-semibold">
             <Star className="h-5 w-5 text-primary" /> {t("shop.reviews")}
+            {avgRating > 0 ? (
+              <span className="ml-1 text-sm font-normal text-muted-foreground">
+                {avgRating.toFixed(1)} · {reviews?.length ?? 0}
+              </span>
+            ) : null}
           </h2>
           {reviews && reviews.length > 0 ? (
-            <ul className="mt-5 space-y-5">
-              {reviews.map((r) => {
-                const mine = !!user && r.author_id === user.id;
-                return (
-                  <li key={r.id} className="border-b pb-5 last:border-0">
-                    <div className="flex items-center justify-between">
-                      <Stars value={r.rating} />
-                      <span className="text-xs text-muted-foreground">
-                        {new Date(r.created_at).toLocaleDateString()}
-                      </span>
-                    </div>
-                    {r.comment ? (
-                      <p className="mt-2 text-sm text-muted-foreground">{r.comment}</p>
-                    ) : null}
-                    <div className="mt-1.5 flex items-center justify-between gap-2">
-                      <span className="truncate text-xs font-medium">
-                        {r.profiles?.full_name ?? t("nav.profile")}
-                      </span>
-                      {mine ? (
-                        <span className="flex shrink-0 gap-1">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 px-2 text-xs"
-                            onClick={() => {
-                              setRating(r.rating);
-                              setComment(r.comment ?? "");
-                            }}
-                          >
-                            <Pencil className="mr-1 h-3 w-3" />
-                            {t("action.edit")}
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            className="h-7 px-2 text-xs text-destructive hover:text-destructive"
-                            disabled={removeReview.isPending}
-                            onClick={() => removeReview.mutate(r.id)}
-                          >
-                            <Trash2 className="mr-1 h-3 w-3" />
-                            {t("action.delete")}
-                          </Button>
+            <>
+              <ul className="mt-5 space-y-5">
+                {(showAllReviews ? reviews : reviews.slice(0, 5)).map((r) => {
+                  const mine = !!user && r.author_id === user.id;
+                  return (
+                    <li key={r.id} className="border-b pb-5 last:border-0">
+                      <div className="flex items-center justify-between">
+                        <Stars value={r.rating} />
+                        <span className="text-xs text-muted-foreground">
+                          {new Date(r.created_at).toLocaleDateString()}
                         </span>
+                      </div>
+                      {r.comment ? (
+                        <p className="mt-2 text-sm text-muted-foreground">{r.comment}</p>
                       ) : null}
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
+                      <div className="mt-1.5 flex items-center justify-between gap-2">
+                        <span className="truncate text-xs font-medium">
+                          {r.profiles?.full_name ?? t("nav.profile")}
+                        </span>
+                        {mine ? (
+                          <span className="flex shrink-0 gap-1">
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 px-2 text-xs"
+                              onClick={() => {
+                                setRating(r.rating);
+                                setComment(r.comment ?? "");
+                              }}
+                            >
+                              <Pencil className="mr-1 h-3 w-3" />
+                              {t("action.edit")}
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-7 px-2 text-xs text-destructive hover:text-destructive"
+                              disabled={removeReview.isPending}
+                              onClick={() => removeReview.mutate(r.id)}
+                            >
+                              <Trash2 className="mr-1 h-3 w-3" />
+                              {t("action.delete")}
+                            </Button>
+                          </span>
+                        ) : null}
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+              {showAllReviews && reviews.length > 5 ? null : reviews.length > 5 ? (
+                <button
+                  type="button"
+                  className="mt-3 text-sm font-medium text-primary hover:underline"
+                  onClick={() => setShowAllReviews(true)}
+                >
+                  {t("shop.seeAllReviews")} ({reviews.length})
+                </button>
+              ) : null}
+            </>
           ) : (
             <p className="mt-5 text-sm text-muted-foreground">{t("shop.noReviews")}</p>
           )}
@@ -873,12 +1008,17 @@ function ListingDetail() {
       {similar && similar.length > 1 ? (
         <section className="mt-16">
           <h2 className="font-display text-2xl font-semibold">{t("listing.similar")}</h2>
-          <div className="mt-6 grid grid-cols-2 gap-4 lg:grid-cols-4">
+          <div
+            className="mt-6 flex gap-4 overflow-x-auto pb-4 snap-x snap-mandatory"
+            style={{ scrollbarWidth: "thin" }}
+          >
             {similar
               .filter((s) => s.id !== listing.id)
-              .slice(0, 4)
+              .slice(0, 8)
               .map((s) => (
-                <ListingCard key={s.id} listing={s} />
+                <div key={s.id} className="w-64 shrink-0 snap-start lg:w-56">
+                  <ListingCard listing={s} />
+                </div>
               ))}
           </div>
         </section>

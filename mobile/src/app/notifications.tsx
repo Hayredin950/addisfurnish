@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -9,7 +9,7 @@ import {
   Text,
   View,
 } from "react-native";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../lib/auth";
 import { useLang } from "../lib/lang";
@@ -145,6 +145,23 @@ export default function NotificationsScreen() {
 
   const unread = notifs.filter((n) => !n.is_read).length;
 
+  // Opening this list counts as reading it: clear the unread flag when the
+  // screen loses focus. Doing it on *blur* rather than on entry keeps the
+  // "new" highlight and dots visible for as long as the list is open, while
+  // still clearing the header badge by the time the user is back on it — the
+  // badge previously survived until the app restarted.
+  useFocusEffect(
+    useCallback(() => {
+      return () => {
+        if (!user) return;
+        void markNotificationsRead(user.id).catch(() => {
+          // Non-critical: the badge just persists until the next visit.
+        });
+      };
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [user?.id]),
+  );
+
   // Live delivery: refetch when a realtime INSERT arrives (the foreground
   // banner is shown app-wide by the root layout — no duplicate here).
   useEffect(() => {
@@ -157,7 +174,9 @@ export default function NotificationsScreen() {
   }, [user?.id]);
 
   const openNotif = (n: Notif) => {
-    void markNotificationRead(n.id).then(() => refetch());
+    void markNotificationRead(n.id)
+      .then(() => refetch())
+      .catch(() => {});
     // Seller-side offer alert lands on the dashboard's exact offer row
     // (?offer=<id>); older offers without an id fall back to the chat thread
     // (offers are mirrored into the conversation), then the plain dashboard.

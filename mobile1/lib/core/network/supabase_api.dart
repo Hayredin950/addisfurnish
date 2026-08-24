@@ -1039,6 +1039,41 @@ class SupabaseApi {
     }
   }
 
+  /// Uploads a seller verification document (national ID, business licence, TIN
+  /// certificate) to the private `verification-docs` bucket and returns the
+  /// bare storage path to store in `seller_verification_documents.file_url`.
+  ///
+  /// These must not go through [uploadListingImage]: that bucket is public, so
+  /// an identity document put there is readable by anyone holding the URL. The
+  /// private bucket only grants read to the uploading owner and to admins, and
+  /// it is also where both admin panels look — they resolve `file_url` with a
+  /// signed URL against `verification-docs`, so a document uploaded anywhere
+  /// else cannot be reviewed at all.
+  static Future<String> uploadVerificationDocument(
+    String userId,
+    XFile upload,
+  ) async {
+    try {
+      final ext = upload.name.contains('.')
+          ? upload.name.split('.').last.toLowerCase()
+          : 'jpg';
+      final path =
+          '$userId/${DateTime.now().millisecondsSinceEpoch}-${_rand()}.$ext';
+      final uploaded = await AppSupabase.client.storage
+          .from('verification-docs')
+          .uploadBinary(
+            path,
+            await upload.readAsBytes(),
+            fileOptions: const FileOptions(cacheControl: '3600', upsert: false),
+          );
+      return uploaded.startsWith('verification-docs/')
+          ? uploaded.substring('verification-docs/'.length)
+          : uploaded;
+    } catch (e) {
+      _raise(e);
+    }
+  }
+
   /// Uploads the single short showcase video (≤ ~60s) straight to Cloudinary,
   /// returning the public `secure_url` to store in `listings.video_url`.
   /// Mirrors the RN app: the server mints a one-user-scoped signature via the

@@ -2,10 +2,12 @@ import { Tabs } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { colors } from "../../lib/theme";
+import { useLang } from "../../lib/lang";
 
 const ICON_SIZE = 22;
 
 export default function TabsLayout() {
+  const { t } = useLang();
   // Android renders edge-to-edge by default, so the app draws under the
   // system navigation bar. Its height differs per device and per nav mode
   // (gesture ≈ small inset, 3-button ≈ 48dp), so the tab bar must read the
@@ -34,8 +36,9 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="index"
         options={{
+          // The brand name stays as-is; only the tab label is translated.
           title: "AddisHome",
-          tabBarLabel: "Home",
+          tabBarLabel: t("home"),
           tabBarIcon: ({ color, focused }) => (
             <Ionicons name={focused ? "home" : "home-outline"} size={ICON_SIZE} color={color} />
           ),
@@ -44,7 +47,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="browse"
         options={{
-          title: "Browse",
+          title: t("browse"),
           tabBarIcon: ({ color, focused }) => (
             <Ionicons name={focused ? "search" : "search-outline"} size={ICON_SIZE} color={color} />
           ),
@@ -53,14 +56,14 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="sell"
         options={{
-          title: "Sell",
+          title: t("sell"),
           tabBarIcon: ({ color }) => <Ionicons name="add-circle" size={28} color={color} />,
         }}
       />
       <Tabs.Screen
         name="messages"
         options={{
-          title: "Messages",
+          title: t("messages"),
           tabBarIcon: ({ color, focused }) => (
             <Ionicons
               name={focused ? "chatbubbles" : "chatbubbles-outline"}
@@ -73,7 +76,7 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="profile"
         options={{
-          title: "Profile",
+          title: t("profile"),
           tabBarIcon: ({ color, focused }) => (
             <Ionicons name={focused ? "person" : "person-outline"} size={ICON_SIZE} color={color} />
           ),

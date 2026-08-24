@@ -5,6 +5,60 @@ const BUCKET = "listing-images";
 const DOCS_BUCKET = "verification-docs";
 
 /**
+ * Resolves a public-bucket image reference to a CDN URL, synchronously.
+ *
+ * `getPublicUrl` is pure string manipulation — no network, no auth — so this is
+ * safe to call during SSR. Route loaders use it to build absolute `og:image`
+ * URLs for social/Telegram link previews, which have to be present in the
+ * server-rendered HTML because scrapers never run our JS.
+ *
+ * Cloudinary uploads store full https URLs, which pass straight through.
+ * Returns null for a missing reference so callers can fall back to a default.
+ *
+ * `width` caps the delivered size. Photos that arrive from the Flutter app or
+ * the Telegram bot land in the bucket untouched — 2 to 5 MB each — so a feed of
+ * them is slow enough to look broken, and an `og:image` that heavy is dropped
+ * by the scrapers it exists for. Cloudinary URLs get a `w_<width>` derivative;
+ * bucket paths go through the storage transformation endpoint.
+ */
+export function resolveImageUrl(
+  pathOrUrl: string | null | undefined,
+  bucket: string = BUCKET,
+  width?: number,
+): string | null {
+  if (!pathOrUrl) return null;
+  if (pathOrUrl.startsWith("http")) return cloudThumb(pathOrUrl, width);
+  // Strip a leading bucket prefix so legacy rows that stored
+  // `listing-images/<uuid>/photo.jpg` don't double-prefix.
+  const path = pathOrUrl.startsWith(`${bucket}/`)
+    ? pathOrUrl.substring(bucket.length + 1)
+    : pathOrUrl;
+  if (width && width > 0) {
+    return supabase.storage.from(bucket).getPublicUrl(path, {
+      transform: { width, quality: 70, resize: "contain" },
+    }).data.publicUrl;
+  }
+  return supabase.storage.from(bucket).getPublicUrl(path).data.publicUrl;
+}
+
+/**
+ * A width-capped Cloudinary derivative: the transformation goes between
+ * `/image/upload/` and the version segment, and `q_auto,f_auto` let Cloudinary
+ * pick the format and compression per device. Anything that isn't a Cloudinary
+ * image URL is returned unchanged.
+ */
+function cloudThumb(url: string, width?: number): string {
+  const marker = "/image/upload/";
+  const idx = url.indexOf(marker);
+  if (!width || width <= 0 || idx === -1 || !url.startsWith("https://res.cloudinary.com/")) {
+    return url;
+  }
+  return `${url.slice(0, idx + marker.length)}w_${width},q_auto,f_auto/${url.slice(
+    idx + marker.length,
+  )}`;
+}
+
+/**
  * Resolves a stored image reference (storage path or absolute URL) to a usable src.
  *
  * `listing-images` is a public bucket, so it resolves to a plain CDN URL — no
@@ -13,28 +67,22 @@ const DOCS_BUCKET = "verification-docs";
  * including one that calls has_role(), which anon may not execute — so
  * logged-out visitors saw no images at all.
  *
- * Cloudinary uploads store full https URLs, which pass straight through.
- *
  * Private buckets (verification documents) still need a signed URL.
  */
-export function useImageUrl(pathOrUrl: string | null | undefined, bucket: string = BUCKET) {
+export function useImageUrl(
+  pathOrUrl: string | null | undefined,
+  bucket: string = BUCKET,
+  width?: number,
+) {
   const isPublicBucket = bucket === BUCKET;
   return useQuery({
-    queryKey: ["image-url", bucket, pathOrUrl],
+    queryKey: ["image-url", bucket, pathOrUrl, width ?? 0],
     enabled: !!pathOrUrl,
     // Signed URLs last an hour; re-fetch well before they expire.
     staleTime: isPublicBucket ? Infinity : 1000 * 60 * 30,
     queryFn: async () => {
       const value = pathOrUrl!;
-      if (value.startsWith("http")) return value;
-      if (isPublicBucket) {
-        // Strip a leading bucket prefix so legacy rows that stored
-        // `listing-images/<uuid>/photo.jpg` don't double-prefix.
-        const path = value.startsWith(`${bucket}/`)
-          ? value.substring(bucket.length + 1)
-          : value;
-        return supabase.storage.from(bucket).getPublicUrl(path).data.publicUrl;
-      }
+      if (isPublicBucket || value.startsWith("http")) return resolveImageUrl(value, bucket, width)!;
       const { data, error } = await supabase.storage.from(bucket).createSignedUrl(value, 60 * 60);
       if (error) throw error;
       return data.signedUrl;
