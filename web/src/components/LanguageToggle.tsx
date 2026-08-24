@@ -21,7 +21,7 @@ export function LanguageToggle() {
       }}
     >
       {/* Short Flutter-style label everywhere: "En" / "አማ". */}
-      <SelectTrigger className="h-9 gap-1 px-2.5" aria-label="Language">
+      <SelectTrigger className="h-8 gap-0.5 rounded-md px-2 text-xs" aria-label="Language">
         {lang === "am" ? "አማ" : "En"}
       </SelectTrigger>
       <SelectContent>
