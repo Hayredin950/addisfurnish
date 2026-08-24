@@ -1003,8 +1003,14 @@ async function uploadViaCloudinary(
     throw error ?? new Error("cloudinary sign failed");
   }
 
+  // React Native doesn't have the File constructor. RN's FormData
+  // accepts { uri, type, name } objects for file uploads.
   const form = new FormData();
-  form.append("file", new File(file.uri));
+  form.append("file", {
+    uri: file.uri,
+    type: file.mimeType || "image/jpeg",
+    name: file.name || "upload.jpg",
+  } as unknown as Blob);
   form.append("api_key", data.api_key);
   form.append("timestamp", data.timestamp);
   form.append("signature", data.signature);
