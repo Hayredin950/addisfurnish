@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { ListingCard } from "@/components/ListingCard";
+import { CategoryFilterTree } from "@/components/category-filter-tree";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -28,6 +29,7 @@ import { useLang } from "@/lib/i18n";
 import { useAuth } from "@/lib/auth";
 import {
   categoriesQuery,
+  categoryCountsQuery,
   listingsQuery,
   logSearch,
   trendingSearchesQuery,
@@ -91,6 +93,8 @@ function Browse() {
   const { user } = useAuth();
   const { t, lang } = useLang();
   const { data: categories } = useQuery(categoriesQuery);
+  // Subtree counts, so the tree can say how much a branch actually holds.
+  const { data: counts } = useQuery(categoryCountsQuery);
   const [coords, setCoords] = useState<{ latitude: number; longitude: number } | null>(null);
   const [locDenied, setLocDenied] = useState(false);
 
@@ -199,7 +203,6 @@ function Browse() {
     (search.max ? 1 : 0);
 
   const roots = (categories ?? []).filter((c) => !c.parent_id);
-  const children = (categories ?? []).filter((c) => c.parent_id);
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-10">
@@ -231,8 +234,8 @@ function Browse() {
               <FilterControls
                 search={search}
                 set={set}
-                roots={roots}
-                children={children}
+                categories={categories ?? []}
+                counts={counts}
                 activeCount={activeCount}
               />
               <SheetClose asChild>
@@ -247,8 +250,8 @@ function Browse() {
           <FilterControls
             search={search}
             set={set}
-            roots={roots}
-            children={children}
+            categories={categories ?? []}
+            counts={counts}
             activeCount={activeCount}
           />
         </aside>
@@ -424,17 +427,17 @@ function Browse() {
 function FilterControls({
   search,
   set,
-  roots,
-  children,
+  categories,
+  counts,
   activeCount,
 }: {
   search: Partial<BrowseSearch>;
   set: (patch: Partial<BrowseSearch>) => void;
-  roots: Category[];
-  children: Category[];
+  categories: Category[];
+  counts: Record<string, number> | undefined;
   activeCount: number;
 }) {
-  const { t, lang } = useLang();
+  const { t } = useLang();
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-2 text-sm font-medium">
@@ -472,17 +475,12 @@ function FilterControls({
         />
       </div>
 
-      <FilterSelect
+      <CategoryFilterTree
         label={t("browse.category")}
+        categories={categories}
+        counts={counts}
         value={search.category ?? ""}
         onChange={(v) => set({ category: v })}
-        options={[
-          ...roots.map((c) => ({ value: c.slug, label: categoryName(c, lang) })),
-          ...children.map((c) => ({
-            value: c.slug,
-            label: `— ${categoryName(c, lang)}`,
-          })),
-        ]}
       />
       <FilterSelect
         label={t("browse.condition")}

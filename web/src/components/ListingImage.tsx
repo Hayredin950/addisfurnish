@@ -7,13 +7,16 @@ export function ListingImage({
   alt,
   className,
   eager = false,
+  width = 600,
 }: {
   path: string | null | undefined;
   alt: string;
   className?: string;
   eager?: boolean;
+  /** Delivered pixel width. Cards don't need the 4 MB original. */
+  width?: number;
 }) {
-  const { data: url } = useImageUrl(path);
+  const { data: url } = useImageUrl(path, undefined, width);
 
   if (!url) {
     return (

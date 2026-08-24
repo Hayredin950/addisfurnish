@@ -1,5 +1,6 @@
 import { supabase } from "./supabase";
 import { deleteCloudinaryAssets, fetchTrendingSearches, syncListingChannel } from "./api";
+import { logRawError } from "./friendly-error";
 
 /**
  * Admin-only moderation actions for the mobile app.
@@ -10,7 +11,7 @@ import { deleteCloudinaryAssets, fetchTrendingSearches, syncListingChannel } fro
  *
  *  - `has_role` / "admin reads all profiles" / "admin updates any profile"
  *  - `admin_notify_user` (notifies any user; gated on the admin role)
- *  - `admin_revoke_sessions` / `admin_set_ban` (SECURITY DEFINER, admin-gated)
+ *  - `admin_set_ban` (SECURITY DEFINER, admin-gated)
  *  - reports / seller_verification_documents / verification_decisions policies
  *
  * The UI is only ever the trigger — the database re-verifies the admin role on
@@ -247,8 +248,14 @@ export async function requestRoleChange(
     _target_user_id: targetUserId,
     _action: action,
   });
-  if (error) return { ok: false, error: error.message };
-  return (data ?? { ok: false, error: "unknown" }) as { ok: boolean; error?: string };
+  // Opaque code only: this value is rendered in a toast, and PostgREST text
+  // names tables and constraints. The RPC's own failures already arrive as
+  // short codes ("email_taken", "self"), which friendly-error.ts translates.
+  if (error) {
+    logRawError(error);
+    return { ok: false, error: "rpc" };
+  }
+  return (data ?? { ok: false, error: "rpc" }) as { ok: boolean; error?: string };
 }
 
 /** Step 2: verify the 6-digit code and apply the role change. */
@@ -258,19 +265,19 @@ export async function confirmRoleChange(
   const { data, error } = await supabase.rpc("admin_confirm_role_change", {
     _code: code,
   });
-  if (error) return { ok: false, error: error.message };
-  return (data ?? { ok: false, error: "unknown" }) as {
+  // Opaque code only: this value is rendered in a toast, and PostgREST text
+  // names tables and constraints. The RPC's own failures already arrive as
+  // short codes ("email_taken", "self"), which friendly-error.ts translates.
+  if (error) {
+    logRawError(error);
+    return { ok: false, error: "rpc" };
+  }
+  return (data ?? { ok: false, error: "rpc" }) as {
     ok: boolean;
     error?: string;
     action?: string;
     name?: string;
   };
-}
-
-/** Log the user out of every device (deletes sessions + refresh tokens). */
-export async function revokeSessions(userId: string): Promise<void> {
-  const { error } = await supabase.rpc("admin_revoke_sessions", { _user_id: userId });
-  if (error) throw error;
 }
 
 /**
@@ -294,6 +301,77 @@ export async function unbanUser(userId: string): Promise<void> {
     _reason: null,
   });
   if (error) throw error;
+}
+
+// ── Email changes (item 43) ───────────────────────────────────────────────
+// The address lives in auth.users, which no client role may write, so both
+// paths go through admin-gated SECURITY DEFINER RPCs. Every call leaves a row
+// in `email_change_requests`, so the direct change is audited exactly like an
+// approved request.
+
+export type EmailChangeRequest = {
+  id: string;
+  user_id: string;
+  old_email: string | null;
+  new_email: string;
+  reason: string | null;
+  status: "pending" | "rejected" | "applied";
+  reviewed_at: string | null;
+  rejection_reason: string | null;
+  created_at: string;
+  profiles?: { full_name: string; shop_name: string | null } | null;
+};
+
+/** Pending requests awaiting a decision, newest first. */
+export async function fetchEmailChangeQueue(): Promise<EmailChangeRequest[]> {
+  const { data, error } = await supabase
+    .from("email_change_requests")
+    .select("*, profiles!email_change_requests_user_id_fkey(full_name,shop_name)")
+    .eq("status", "pending")
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as unknown as EmailChangeRequest[];
+}
+
+export async function reviewEmailChange(
+  requestId: string,
+  approve: boolean,
+  reason?: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const { data, error } = await supabase.rpc("admin_review_email_change", {
+    _request_id: requestId,
+    _approve: approve,
+    _reason: reason?.trim() || null,
+  });
+  // Opaque code only: this value is rendered in a toast, and PostgREST text
+  // names tables and constraints. The RPC's own failures already arrive as
+  // short codes ("email_taken", "self"), which friendly-error.ts translates.
+  if (error) {
+    logRawError(error);
+    return { ok: false, error: "rpc" };
+  }
+  return (data ?? { ok: false, error: "rpc" }) as { ok: boolean; error?: string };
+}
+
+/** Change an address directly, without a request to approve. */
+export async function setUserEmail(
+  userId: string,
+  newEmail: string,
+  reason?: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const { data, error } = await supabase.rpc("admin_set_user_email", {
+    _user_id: userId,
+    _new_email: newEmail.trim(),
+    _reason: reason?.trim() || null,
+  });
+  // Opaque code only: this value is rendered in a toast, and PostgREST text
+  // names tables and constraints. The RPC's own failures already arrive as
+  // short codes ("email_taken", "self"), which friendly-error.ts translates.
+  if (error) {
+    logRawError(error);
+    return { ok: false, error: "rpc" };
+  }
+  return (data ?? { ok: false, error: "rpc" }) as { ok: boolean; error?: string };
 }
 
 // ── Categories / Listings / Stats (admin tabs) ────────────────────────────
@@ -459,7 +537,10 @@ export type AdminStats = {
   telegramSends7d: number;
   telegramOk7d: number;
   telegramFailures7d: number;
-  telegramFailureReasons: string[];
+  /** Delivered, but as plain text because the card lost its photo. */
+  telegramDegraded7d: number;
+  /** Failures grouped by (kind, reason) with counts — mirrors the web panel. */
+  telegramFailureBreakdown: { kind: string; error: string; count: number }[];
   telegramLinkedUsers: number;
   telegramBlockedUsers: number;
   telegramChannelPosts: number;
@@ -511,7 +592,7 @@ export async function fetchAdminStats(): Promise<AdminStats> {
     // ── Telegram integration health (spec §19 monitoring gap) ──
     supabase
       .from("telegram_delivery_log")
-      .select("ok,error")
+      .select("kind,ok,error")
       .gte("created_at", weekAgo),
     supabase
       .from("profiles")
@@ -553,13 +634,24 @@ export async function fetchAdminStats(): Promise<AdminStats> {
     telegramSends7d: (telegramLog.data ?? []).length,
     telegramOk7d: (telegramLog.data ?? []).filter((r) => r.ok).length,
     telegramFailures7d: (telegramLog.data ?? []).filter((r) => !r.ok).length,
-    telegramFailureReasons: [
-      ...new Map(
-        (telegramLog.data ?? [])
-          .filter((r: { ok: boolean; error: string | null }) => !r.ok && r.error)
-          .map((r: { error: string | null }) => [r.error as string, r.error as string]),
-      ).keys(),
-    ].slice(0, 3),
+    telegramDegraded7d: (telegramLog.data ?? []).filter((r) => r.ok && r.error).length,
+    telegramFailureBreakdown: (() => {
+      const groups = new Map<string, { kind: string; error: string; count: number }>();
+      for (const row of (telegramLog.data ?? []) as {
+        kind: string | null;
+        ok: boolean;
+        error: string | null;
+      }[]) {
+        if (row.ok) continue;
+        const kind = row.kind ?? "unknown";
+        const error = row.error ?? "unknown error";
+        const key = `${kind} ${error}`;
+        const existing = groups.get(key);
+        if (existing) existing.count += 1;
+        else groups.set(key, { kind, error, count: 1 });
+      }
+      return [...groups.values()].sort((a, b) => b.count - a.count);
+    })(),
     telegramLinkedUsers: telegramLinked.count ?? 0,
     telegramBlockedUsers: telegramBlocked.count ?? 0,
     telegramChannelPosts: telegramChannelPosts.count ?? 0,
@@ -637,19 +729,24 @@ export async function fetchAdminTopSearches(): Promise<{ name: string; count: nu
     .map(([name, count]) => ({ name, count }));
 }
 
-export async function fetchAdminTopCategories(): Promise<{ name: string; count: number }[]> {
+export async function fetchAdminTopCategories(): Promise<
+  { name: string; count: number; slug: string | null }[]
+> {
   const { data, error } = await supabase
     .from("listings")
-    .select("categories(name)")
+    .select("categories(name,slug)")
     .neq("status", "draft");
   if (error) throw error;
-  const counts = new Map<string, number>();
+  // The slug rides along so each bar can open Browse filtered to it (item 40).
+  const counts = new Map<string, { count: number; slug: string | null }>();
   for (const row of data ?? []) {
-    const name = (row.categories as { name: string } | null)?.name ?? "Uncategorised";
-    counts.set(name, (counts.get(name) ?? 0) + 1);
+    const cat = row.categories as { name: string; slug: string } | null;
+    const name = cat?.name ?? "Uncategorised";
+    const prev = counts.get(name);
+    counts.set(name, { count: (prev?.count ?? 0) + 1, slug: cat?.slug ?? null });
   }
   return [...counts.entries()]
-    .sort((a, b) => b[1] - a[1])
+    .sort((a, b) => b[1].count - a[1].count)
     .slice(0, 10)
-    .map(([name, count]) => ({ name, count }));
+    .map(([name, v]) => ({ name, count: v.count, slug: v.slug }));
 }

@@ -123,9 +123,9 @@ export const categoriesQuery = queryOptions({
 });
 
 /**
- * Active-listing count per category, including each category's direct children
- * (mirrors how browse.tsx filters a root category). Backed by the
- * `category_listing_counts` view.
+ * Active-listing count per category across its whole descendant subtree
+ * (the `category_listing_counts` view recurses), so a root's count matches
+ * what filtering by that root returns — see `categoryDescendantIds`.
  */
 export const categoryCountsQuery = queryOptions({
   queryKey: ["category-counts"],
@@ -143,6 +143,33 @@ export const categoryCountsQuery = queryOptions({
     return counts;
   },
 });
+
+/**
+ * Every category id in the subtree rooted at `slug`, itself included.
+ *
+ * Browsing a category must return the listings filed under its descendants
+ * too: the taxonomy is three deep (spec §3) and sellers pick the deepest
+ * level, so a root like "Furniture" has almost no listings of its own. This
+ * also keeps the sidebar counts honest — `category_listing_counts` recurses
+ * over the whole subtree, so anything shallower here would show a count the
+ * filtered results contradict.
+ */
+async function categoryDescendantIds(slug: string): Promise<string[]> {
+  const { data: all } = await supabase.from("categories").select("id,parent_id,slug");
+  const rows = all ?? [];
+  const root = rows.find((c) => c.slug === slug);
+  if (!root) return [];
+  const ids = [root.id];
+  // Breadth-first over the children map; the level trigger forbids cycles, but
+  // the frontier shrinks to nothing regardless.
+  let frontier = [root.id];
+  while (frontier.length) {
+    const next = rows.filter((c) => c.parent_id && frontier.includes(c.parent_id)).map((c) => c.id);
+    ids.push(...next);
+    frontier = next;
+  }
+  return ids;
+}
 
 export type ListingFilters = {
   q?: string;
@@ -187,19 +214,8 @@ export function listingsQuery(filters: ListingFilters = {}) {
       if (filters.discounted) query = query.not("original_price", "is", null);
       if (filters.featured) query = query.eq("featured", true);
       if (filters.category) {
-        const { data: cat } = await supabase
-          .from("categories")
-          .select("id")
-          .eq("slug", filters.category)
-          .maybeSingle();
-        if (cat) {
-          const { data: children } = await supabase
-            .from("categories")
-            .select("id")
-            .eq("parent_id", cat.id);
-          const ids = [cat.id, ...(children ?? []).map((c) => c.id)];
-          query = query.in("category_id", ids);
-        }
+        const ids = await categoryDescendantIds(filters.category);
+        if (ids.length) query = query.in("category_id", ids);
       }
 
       switch (filters.sort) {
@@ -239,6 +255,43 @@ export function listingQuery(id: string) {
   });
 }
 
+/**
+ * Minimal listing fields needed to build social/Telegram link-preview tags.
+ *
+ * Deliberately not `listingQuery`: this runs in the route loader on every SSR
+ * render of a listing page, including for scrapers, so it stays a narrow select
+ * with no joins to profiles. Returns null for a missing listing (or any error)
+ * so a broken preview never fails the page render.
+ */
+export async function fetchListingSocialMeta(id: string): Promise<{
+  title: string;
+  price: number;
+  city: string | null;
+  condition: string | null;
+  description: string | null;
+  imagePath: string | null;
+} | null> {
+  const { data, error } = await supabase
+    .from("listings")
+    .select("title,price,city,condition,description,status,listing_images(url,position)")
+    .eq("id", id)
+    .maybeSingle();
+  if (error || !data) return null;
+  // Drafts are private — don't leak their details into a shareable preview.
+  if (data.status === "draft") return null;
+  const images = [...((data.listing_images ?? []) as { url: string; position: number }[])].sort(
+    (a, b) => (a.position ?? 0) - (b.position ?? 0),
+  );
+  return {
+    title: data.title,
+    price: data.price,
+    city: data.city,
+    condition: data.condition,
+    description: data.description,
+    imagePath: images[0]?.url ?? null,
+  };
+}
+
 export function shopQuery(slug: string) {
   return queryOptions({
     queryKey: ["shop", slug],
@@ -261,7 +314,9 @@ export function categoryAttributesQuery(categoryId: string) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("category_attributes")
-        .select("id, attribute_id, is_required, is_filterable, sort_order, attributes(id, name, name_am, slug, type, unit)")
+        .select(
+          "id, attribute_id, is_required, is_filterable, sort_order, attributes(id, name, name_am, slug, type, unit)",
+        )
         .eq("category_id", categoryId)
         .order("sort_order");
       if (error) throw error;
@@ -835,18 +890,22 @@ export function adminTopCategoriesQuery() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("listings")
-        .select("categories(name)")
+        .select("categories(name,slug)")
         .neq("status", "draft");
       if (error) throw error;
-      const counts = new Map<string, number>();
+      // The slug rides along so the admin panel's bars can link straight into
+      // /browse for that category (item 40). Uncategorised rows have none.
+      const counts = new Map<string, { count: number; slug: string | null }>();
       for (const row of data ?? []) {
-        const name = (row.categories as { name: string } | null)?.name ?? "Uncategorised";
-        counts.set(name, (counts.get(name) ?? 0) + 1);
+        const cat = row.categories as { name: string; slug: string } | null;
+        const name = cat?.name ?? "Uncategorised";
+        const prev = counts.get(name);
+        counts.set(name, { count: (prev?.count ?? 0) + 1, slug: cat?.slug ?? null });
       }
       return [...counts.entries()]
-        .sort((a, b) => b[1] - a[1])
+        .sort((a, b) => b[1].count - a[1].count)
         .slice(0, 10)
-        .map(([name, count]) => ({ name, count }));
+        .map(([name, v]) => ({ name, count: v.count, slug: v.slug }));
     },
   });
 }
@@ -919,7 +978,7 @@ export function adminStatsQuery() {
           .select("id", { count: "exact", head: true })
           .gte("created_at", weekAgo),
         // ── Telegram integration health (spec §19 monitoring gap) ──
-        supabase.from("telegram_delivery_log").select("ok,error").gte("created_at", weekAgo),
+        supabase.from("telegram_delivery_log").select("kind,ok,error").gte("created_at", weekAgo),
         supabase
           .from("profiles")
           .select("id", { count: "exact", head: true })
@@ -928,8 +987,12 @@ export function adminStatsQuery() {
           .from("profiles")
           .select("id", { count: "exact", head: true })
           .eq("telegram_blocked", true),
-        supabase.from("telegram_channel_posts").select("listing_id", { count: "exact", head: true }),
-        supabase.from("telegram_processed_updates").select("update_id", { count: "exact", head: true }),
+        supabase
+          .from("telegram_channel_posts")
+          .select("listing_id", { count: "exact", head: true }),
+        supabase
+          .from("telegram_processed_updates")
+          .select("update_id", { count: "exact", head: true }),
       ]);
       const totalViews = (views.data ?? []).reduce(
         (sum: number, l: { view_count: number }) => sum + (l.view_count ?? 0),
@@ -961,13 +1024,31 @@ export function adminStatsQuery() {
         telegramSends7d: (telegramLog.data ?? []).length,
         telegramOk7d: (telegramLog.data ?? []).filter((r) => r.ok).length,
         telegramFailures7d: (telegramLog.data ?? []).filter((r) => !r.ok).length,
-        telegramFailureReasons: [
-          ...new Map(
-            (telegramLog.data ?? [])
-              .filter((r) => !r.ok && r.error)
-              .map((r) => [r.error as string, r.error as string]),
-          ).keys(),
-        ].slice(0, 3),
+        // Delivered, but not as intended — a card that lost its photo and went
+        // out as plain text. Logged ok=true with a reason, so it is invisible in
+        // the failure breakdown below while still being worth watching.
+        telegramDegraded7d: (telegramLog.data ?? []).filter((r) => r.ok && r.error).length,
+        // Failures grouped by (kind, reason) with counts. This used to be a
+        // deduped list of three bare strings, so "50 failures" gave no clue that
+        // most were one benign cause — a count per reason is what makes the
+        // number actionable.
+        telegramFailureBreakdown: (() => {
+          const groups = new Map<string, { kind: string; error: string; count: number }>();
+          for (const row of (telegramLog.data ?? []) as {
+            kind: string | null;
+            ok: boolean;
+            error: string | null;
+          }[]) {
+            if (row.ok) continue;
+            const kind = row.kind ?? "unknown";
+            const error = row.error ?? "unknown error";
+            const key = `${kind} ${error}`;
+            const existing = groups.get(key);
+            if (existing) existing.count += 1;
+            else groups.set(key, { kind, error, count: 1 });
+          }
+          return [...groups.values()].sort((a, b) => b.count - a.count);
+        })(),
         telegramLinkedUsers: telegramLinked.count ?? 0,
         telegramBlockedUsers: telegramBlocked.count ?? 0,
         telegramChannelPosts: telegramChannelPosts.count ?? 0,
@@ -1052,4 +1133,122 @@ export function isAdminQuery(userId: string | undefined) {
       return !!data;
     },
   });
+}
+
+// ── Email changes (item 43) ───────────────────────────────────────────────
+// The address lives in auth.users, which no client may write, so every path
+// goes through a SECURITY DEFINER RPC. Two of them: a user asks and an admin
+// approves, or an admin sets it directly. Either way an
+// `email_change_requests` row records who did what.
+
+export type EmailChangeRequest = {
+  id: string;
+  user_id: string;
+  old_email: string | null;
+  new_email: string;
+  reason: string | null;
+  status: "pending" | "rejected" | "applied";
+  requested_by: string | null;
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  rejection_reason: string | null;
+  created_at: string;
+  profiles?: { full_name: string; shop_name: string | null } | null;
+};
+
+/** The signed-in user's own request history (RLS scopes it to them). */
+export function myEmailChangeRequestsQuery(userId: string | undefined) {
+  return queryOptions({
+    queryKey: ["my-email-change-requests", userId],
+    enabled: !!userId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("email_change_requests")
+        .select("*")
+        .eq("user_id", userId!)
+        .order("created_at", { ascending: false })
+        .limit(5);
+      if (error) throw error;
+      return (data ?? []) as unknown as EmailChangeRequest[];
+    },
+  });
+}
+
+/** Admin queue: everything still pending, newest first. */
+export function emailChangeQueueQuery() {
+  return queryOptions({
+    queryKey: ["admin-email-change-queue"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("email_change_requests")
+        .select("*, profiles!email_change_requests_user_id_fkey(full_name,shop_name)")
+        .eq("status", "pending")
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+      return (data ?? []) as unknown as EmailChangeRequest[];
+    },
+  });
+}
+
+type RpcResult = { ok: boolean; error?: string };
+
+/** User-facing: ask an admin to move the sign-in address. */
+export async function requestEmailChange(newEmail: string, reason: string): Promise<RpcResult> {
+  const { data, error } = await supabase.rpc("request_email_change", {
+    _new_email: newEmail,
+    _reason: reason || null,
+  });
+  // Transport-level failure: log it for the developer, hand the UI an opaque
+  // code. The RPC's own failures already come back as short codes
+  // ("email_taken", "already_pending"), and raw PostgREST text must never
+  // reach a toast — see lib/friendly-error.ts.
+  if (error) {
+    if (import.meta.env.DEV) console.error("[email change rpc]", error);
+    return { ok: false, error: "rpc" };
+  }
+  return (data ?? { ok: false, error: "rpc" }) as unknown as RpcResult;
+}
+
+/** Admin: approve or reject a queued request. */
+export async function adminReviewEmailChange(
+  requestId: string,
+  approve: boolean,
+  reason?: string,
+): Promise<RpcResult> {
+  const { data, error } = await supabase.rpc("admin_review_email_change", {
+    _request_id: requestId,
+    _approve: approve,
+    _reason: reason || null,
+  });
+  // Transport-level failure: log it for the developer, hand the UI an opaque
+  // code. The RPC's own failures already come back as short codes
+  // ("email_taken", "already_pending"), and raw PostgREST text must never
+  // reach a toast — see lib/friendly-error.ts.
+  if (error) {
+    if (import.meta.env.DEV) console.error("[email change rpc]", error);
+    return { ok: false, error: "rpc" };
+  }
+  return (data ?? { ok: false, error: "rpc" }) as unknown as RpcResult;
+}
+
+/** Admin: set an address directly, no request needed. Audited all the same. */
+export async function adminSetUserEmail(
+  userId: string,
+  newEmail: string,
+  reason?: string,
+): Promise<RpcResult> {
+  const { data, error } = await supabase.rpc("admin_set_user_email", {
+    _user_id: userId,
+    _new_email: newEmail,
+    _reason: reason || null,
+  });
+  // Transport-level failure: log it for the developer, hand the UI an opaque
+  // code. The RPC's own failures already come back as short codes
+  // ("email_taken", "already_pending"), and raw PostgREST text must never
+  // reach a toast — see lib/friendly-error.ts.
+  if (error) {
+    if (import.meta.env.DEV) console.error("[email change rpc]", error);
+    return { ok: false, error: "rpc" };
+  }
+  return (data ?? { ok: false, error: "rpc" }) as unknown as RpcResult;
 }

@@ -56,125 +56,6 @@ export type Database = {
           },
         ];
       };
-      attributes: {
-        Row: {
-          id: string;
-          name: string;
-          name_am: string | null;
-          slug: string;
-          type: string;
-          unit: string | null;
-          is_filterable: boolean;
-          is_active: boolean;
-          sort_order: number;
-          created_at: string;
-          updated_at: string;
-        };
-        Insert: {
-          id?: string;
-          name: string;
-          name_am?: string | null;
-          slug: string;
-          type: string;
-          unit?: string | null;
-          is_filterable?: boolean;
-          is_active?: boolean;
-          sort_order?: number;
-          created_at?: string;
-          updated_at?: string;
-        };
-        Update: {
-          id?: string;
-          name?: string;
-          name_am?: string | null;
-          slug?: string;
-          type?: string;
-          unit?: string | null;
-          is_filterable?: boolean;
-          is_active?: boolean;
-          sort_order?: number;
-          created_at?: string;
-          updated_at?: string;
-        };
-        Relationships: [];
-      };
-      attribute_options: {
-        Row: {
-          id: string;
-          attribute_id: string;
-          value: string;
-          label: string;
-          sort_order: number;
-          is_active: boolean;
-        };
-        Insert: {
-          id?: string;
-          attribute_id: string;
-          value: string;
-          label: string;
-          sort_order?: number;
-          is_active?: boolean;
-        };
-        Update: {
-          id?: string;
-          attribute_id?: string;
-          value?: string;
-          label?: string;
-          sort_order?: number;
-          is_active?: boolean;
-        };
-        Relationships: [
-          {
-            foreignKeyName: "attribute_options_attribute_id_fkey";
-            columns: ["attribute_id"];
-            isOneToOne: false;
-            referencedRelation: "attributes";
-            referencedColumns: ["id"];
-          },
-        ];
-      };
-      category_attributes: {
-        Row: {
-          id: string;
-          category_id: string;
-          attribute_id: string;
-          is_required: boolean;
-          is_filterable: boolean;
-          sort_order: number;
-        };
-        Insert: {
-          id?: string;
-          category_id: string;
-          attribute_id: string;
-          is_required?: boolean;
-          is_filterable?: boolean;
-          sort_order?: number;
-        };
-        Update: {
-          id?: string;
-          category_id?: string;
-          attribute_id?: string;
-          is_required?: boolean;
-          is_filterable?: boolean;
-          sort_order?: number;
-        };
-        Relationships: [
-          {
-            foreignKeyName: "category_attributes_category_id_fkey";
-            columns: ["category_id"];
-            isOneToOne: false;
-            referencedRelation: "categories";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "category_attributes_attribute_id_fkey";
-            columns: ["attribute_id"];
-            isOneToOne: false;
-            referencedRelation: "attributes";
-            referencedColumns: ["id"];
-          },
-        ];
-      };
       analytics_events: {
         Row: {
           id: string;
@@ -941,6 +822,56 @@ export type Database = {
           },
         ];
       };
+      email_change_requests: {
+        Row: {
+          created_at: string;
+          id: string;
+          new_email: string;
+          old_email: string | null;
+          reason: string | null;
+          rejection_reason: string | null;
+          requested_by: string | null;
+          reviewed_at: string | null;
+          reviewed_by: string | null;
+          status: string;
+          user_id: string;
+        };
+        Insert: {
+          created_at?: string;
+          id?: string;
+          new_email: string;
+          old_email?: string | null;
+          reason?: string | null;
+          rejection_reason?: string | null;
+          requested_by?: string | null;
+          reviewed_at?: string | null;
+          reviewed_by?: string | null;
+          status?: string;
+          user_id: string;
+        };
+        Update: {
+          created_at?: string;
+          id?: string;
+          new_email?: string;
+          old_email?: string | null;
+          reason?: string | null;
+          rejection_reason?: string | null;
+          requested_by?: string | null;
+          reviewed_at?: string | null;
+          reviewed_by?: string | null;
+          status?: string;
+          user_id?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "email_change_requests_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       reports: {
         Row: {
           created_at: string;
@@ -1525,6 +1456,22 @@ export type Database = {
       };
     };
     Functions: {
+      request_email_change: {
+        Args: { _new_email: string; _reason?: string | null };
+        Returns: Json;
+      };
+      admin_review_email_change: {
+        Args: { _request_id: string; _approve: boolean; _reason?: string | null };
+        Returns: Json;
+      };
+      admin_set_user_email: {
+        Args: { _user_id: string; _new_email: string; _reason?: string | null };
+        Returns: Json;
+      };
+      is_listing_owner: {
+        Args: { _listing_id: string; _user_id: string };
+        Returns: boolean;
+      };
       mint_telegram_link_token: {
         Args: Record<string, never>;
         Returns: string | null;

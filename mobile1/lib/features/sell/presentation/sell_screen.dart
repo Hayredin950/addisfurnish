@@ -11,6 +11,7 @@ import '../../../core/models/models.dart';
 import '../../../core/network/supabase_api.dart';
 import '../../../core/state/app_state.dart';
 import '../../../core/state/app_state_mixin.dart';
+import '../../../core/utils/image_url.dart';
 import '../../../core/widgets/calendar_picker.dart';
 import '../../../core/widgets/draggable_pin_map.dart';
 import '../../../core/widgets/section_header.dart';
@@ -32,6 +33,19 @@ class _SellImage {
 /// Where a listing photo should come from: freshly taken with the camera or
 /// picked from the device gallery.
 enum _ImageSource { camera, gallery }
+
+/// Longest edge, in pixels, of an uploaded listing photo.
+///
+/// A phone camera hands back 4000x3000 at 3-5 MB. Uploading that untouched
+/// costs the seller their data allowance, and every viewer then downloads it
+/// again: the bucket serves the original, so a feed of a dozen such photos is
+/// tens of megabytes. 1600px still fills a zoomed lightbox on any phone and
+/// lands around 300 KB.
+const int _kPhotoMaxEdge = 1600;
+
+/// JPEG quality for uploaded photos. 82 is visually indistinguishable from the
+/// original on furniture photography and roughly halves the bytes again.
+const int _kPhotoQuality = 82;
 
 /// Post-a-listing flow. If the user has not set up a shop yet, prompts them
 /// to fill shop name and slug inline to start selling. When [editListingId] is
@@ -204,11 +218,21 @@ class _SellScreenState extends State<SellScreen> with AppStateMixin {
     final XFile? single;
     final List<XFile> picked;
     if (source == _ImageSource.camera) {
-      single = await picker.pickImage(source: ImageSource.camera);
+      single = await picker.pickImage(
+        source: ImageSource.camera,
+        maxWidth: _kPhotoMaxEdge.toDouble(),
+        maxHeight: _kPhotoMaxEdge.toDouble(),
+        imageQuality: _kPhotoQuality,
+      );
       if (single == null) return;
       picked = [single];
     } else {
-      picked = await picker.pickMultiImage(limit: 10 - _images.length);
+      picked = await picker.pickMultiImage(
+        limit: 10 - _images.length,
+        maxWidth: _kPhotoMaxEdge.toDouble(),
+        maxHeight: _kPhotoMaxEdge.toDouble(),
+        imageQuality: _kPhotoQuality,
+      );
       if (picked.isEmpty) return;
     }
     setState(() {
@@ -808,9 +832,11 @@ class _SellScreenState extends State<SellScreen> with AppStateMixin {
           borderRadius: BorderRadius.circular(12),
           child: image.isExisting
               ? Image.network(
-                  image.url!,
+                  // A 96px tile has no use for the stored original.
+                  thumbUrl(image.url!, width: 288)!,
                   width: 96,
                   height: 96,
+                  cacheWidth: 288,
                   fit: BoxFit.cover,
                   errorBuilder: (_, _, _) => Container(
                     width: 96,

@@ -4,6 +4,7 @@ import {
   Image,
   KeyboardAvoidingView,
   Linking,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -26,8 +27,10 @@ import {
   disconnectTelegram,
   fetchBuyerPreferences,
   fetchCategories,
+  fetchMyEmailChangeRequests,
   fetchMyVerificationDocs,
   getTelegramConnectUrl,
+  requestEmailChange,
   saveBuyerPreferences,
   telegramConfigured,
   updateProfile,
@@ -37,6 +40,7 @@ import {
 import { startPhoneVerification, verifyPhoneOtp } from "../../lib/otp";
 import { DraggablePinMap } from "../../components/DraggablePinMap";
 import { Button } from "../../components/Button";
+import { SheetOverlay } from "../../components/SheetOverlay";
 import { ConfirmDialog } from "../../components/ConfirmDialog";
 import { useToast } from "../../components/Toast";
 import { EmptyState } from "../../components/EmptyState";
@@ -52,7 +56,7 @@ const WEB_APP_URL = "https://addisfurnish.vercel.app";
 
 export default function ProfileScreen() {
   const { user, profile, loading, signOut, refreshProfile } = useAuth();
-  const { t, lang, setLang } = useLang();
+  const { t, lang } = useLang();
   const toast = useToast();
   const [confirm, setConfirm] = useState<{
     title: string;
@@ -105,7 +109,51 @@ export default function ProfileScreen() {
   const [updateBusy, setUpdateBusy] = useState(false);
   const [admin, setAdmin] = useState(false);
 
+  // Email changes (item 43): auth.users is not writable from a client, so the
+  // user files a request and an admin applies it.
+  const [emailOpen, setEmailOpen] = useState(false);
+  const [newEmail, setNewEmail] = useState("");
+  const [emailReason, setEmailReason] = useState("");
+  const [emailBusy, setEmailBusy] = useState(false);
+
+  const submitEmailChange = async () => {
+    setEmailBusy(true);
+    const res = await requestEmailChange(newEmail, emailReason);
+    setEmailBusy(false);
+    if (!res.ok) {
+      toast.error(
+        null,
+        res.error === "invalid_email"
+          ? t("emailInvalid")
+          : res.error === "email_taken"
+            ? t("emailTaken")
+            : res.error === "unchanged"
+              ? t("emailUnchanged")
+              : res.error === "already_pending"
+                ? t("emailAlreadyPending")
+                : t("adminEmailChangeFailed"),
+      );
+      return;
+    }
+    toast.success(t("emailChangeSent"));
+    setEmailOpen(false);
+    setNewEmail("");
+    setEmailReason("");
+    emailReqs.refetch();
+  };
+
   const docs = useAsync(() => fetchMyVerificationDocs(user?.id ?? ""), [user?.id], !!user);
+  const emailReqs = useAsync(
+    () => fetchMyEmailChangeRequests(user?.id ?? ""),
+    [user?.id],
+    !!user,
+  );
+  const pendingEmailRequest = (emailReqs.data ?? []).find((r) => r.status === "pending") ?? null;
+  // Only surface a rejection while nothing newer is in flight, so the banner
+  // does not contradict a pending request.
+  const lastRejectedEmail = pendingEmailRequest
+    ? null
+    : ((emailReqs.data ?? []).find((r) => r.status === "rejected") ?? null);
   const cats = useAsync(fetchCategories, []);
 
   useEffect(() => {
@@ -489,11 +537,6 @@ export default function ProfileScreen() {
             label={t("favorites")}
             onPress={() => router.push("/favorites")}
           />
-          <QuickAction
-            icon="language-outline"
-            label={lang === "am" ? "English" : "አማርኛ"}
-            onPress={() => setLang(lang === "en" ? "am" : "en")}
-          />
         </View>
 
         {/* Set up your profile — one clear entry to the guided wizard. */}
@@ -530,7 +573,35 @@ export default function ProfileScreen() {
           defaultOpen
         >
           {user.email ? (
-            <Field label={t("email")} value={user.email ?? ""} editable={false} />
+            <>
+              <Field label={t("email")} value={user.email ?? ""} editable={false} />
+              {/* Read-only on purpose: the address lives in auth.users, which no
+                  client may write. A request goes to the admin queue instead. */}
+              <Text style={styles.cardHint}>{t("emailHint")}</Text>
+              {pendingEmailRequest ? (
+                <Text style={[styles.cardHint, { color: colors.info }]}>
+                  {t("emailChangePending")}: {pendingEmailRequest.new_email}
+                </Text>
+              ) : (
+                <Pressable
+                  style={styles.inlineBtn}
+                  onPress={() => {
+                    setNewEmail("");
+                    setEmailReason("");
+                    setEmailOpen(true);
+                  }}
+                >
+                  <Ionicons name="mail-outline" size={16} color={colors.onPrimary} />
+                  <Text style={styles.inlineBtnText}>{t("emailChange")}</Text>
+                </Pressable>
+              )}
+              {lastRejectedEmail ? (
+                <Text style={[styles.cardHint, { color: colors.danger }]}>
+                  {t("emailChangeRejectedLabel")}:{" "}
+                  {lastRejectedEmail.rejection_reason ?? lastRejectedEmail.new_email}
+                </Text>
+              ) : null}
+            </>
           ) : null}
           <Field label={t("fullName")} value={fullName} onChange={setFullName} />
           <Field
@@ -837,21 +908,9 @@ export default function ProfileScreen() {
               trackColor={{ true: colors.primary }}
             />
           </View>
-          <Text style={styles.prefLabel}>{t("language")}</Text>
-          <View style={styles.langRow}>
-            <Pressable
-              style={[styles.langBtn, lang === "en" && styles.langActive]}
-              onPress={() => setLang("en")}
-            >
-              <Text style={[styles.langText, lang === "en" && styles.langTextActive]}>English</Text>
-            </Pressable>
-            <Pressable
-              style={[styles.langBtn, lang === "am" && styles.langActive]}
-              onPress={() => setLang("am")}
-            >
-              <Text style={[styles.langText, lang === "am" && styles.langTextActive]}>አማርኛ</Text>
-            </Pressable>
-          </View>
+          {/* Language lives in the home header now (see components/LanguageToggle),
+              not buried in these preferences — an Amharic reader shouldn't have to
+              read English menus to find the switch. */}
           <Button
             title={t("save")}
             variant="outline"
@@ -921,6 +980,45 @@ export default function ProfileScreen() {
         onConfirm={() => confirm?.onConfirm()}
         onCancel={() => setConfirm(null)}
       />
+
+      {/* Email-change request sheet (item 43) */}
+      <Modal
+        visible={emailOpen}
+        transparent
+        animationType="slide"
+        onRequestClose={() => setEmailOpen(false)}
+      >
+        <SheetOverlay onClose={() => setEmailOpen(false)}>
+          <View style={styles.sheet}>
+            <Text style={styles.sheetTitle}>{t("emailChangeTitle")}</Text>
+            <Text style={styles.cardHint}>{t("emailChangeBody")}</Text>
+            <Text style={styles.fieldLabel}>{t("emailChangeNew")}</Text>
+            <TextInput
+              value={newEmail}
+              onChangeText={setNewEmail}
+              placeholder="name@example.com"
+              placeholderTextColor={colors.textSoft}
+              autoCapitalize="none"
+              keyboardType="email-address"
+              style={styles.fieldInput}
+            />
+            <Text style={styles.fieldLabel}>{t("emailChangeReason")}</Text>
+            <TextInput
+              value={emailReason}
+              onChangeText={setEmailReason}
+              multiline
+              placeholderTextColor={colors.textSoft}
+              style={[styles.fieldInput, { minHeight: 70, textAlignVertical: "top" }]}
+            />
+            <Button
+              title={t("emailChangeSubmit")}
+              onPress={submitEmailChange}
+              loading={emailBusy}
+              disabled={emailBusy || !newEmail.trim()}
+            />
+          </View>
+        </SheetOverlay>
+      </Modal>
     </KeyboardAvoidingView>
   );
 }
@@ -1115,6 +1213,15 @@ const styles = StyleSheet.create({
   },
   inlineBtnText: { color: colors.onPrimary, fontWeight: "700", fontSize: 14 },
   field: { marginBottom: 12 },
+  // Bottom sheet for the email-change request.
+  sheet: {
+    backgroundColor: colors.card,
+    borderTopLeftRadius: radius.xl,
+    borderTopRightRadius: radius.xl,
+    padding: spacing.lg,
+    gap: 8,
+  },
+  sheetTitle: { fontSize: 17, fontWeight: "800", color: colors.text },
   fieldLabel: { fontSize: 12, color: colors.textMuted, marginBottom: 5, fontWeight: "600" },
   fieldInput: {
     backgroundColor: colors.secondary,
@@ -1168,17 +1275,6 @@ const styles = StyleSheet.create({
     color: colors.text,
   },
   priceSep: { color: colors.textMuted },
-  langRow: { flexDirection: "row", gap: 10, marginTop: 8 },
-  langBtn: {
-    flex: 1,
-    alignItems: "center",
-    paddingVertical: 10,
-    borderRadius: radius.md,
-    backgroundColor: colors.secondary,
-  },
-  langActive: { backgroundColor: colors.primary },
-  langText: { fontSize: 14, color: colors.text, fontWeight: "600" },
-  langTextActive: { color: colors.onPrimary },
   footer: { alignItems: "center", gap: 8, paddingTop: spacing.xl },
   signOut: { fontSize: 15, color: colors.danger, fontWeight: "700" },
   about: { fontSize: 12, color: colors.textSoft, textAlign: "center" },

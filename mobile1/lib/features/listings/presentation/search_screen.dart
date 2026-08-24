@@ -630,7 +630,21 @@ class _FilterSheetState extends State<_FilterSheet> {
           Wrap(
             spacing: 8,
             children: [
-              for (final m in const ['wood', 'metal', 'fabric', 'glass', 'leather', 'plastic'])
+              // Keep in step with the seeded `material` attribute options and
+              // with web's MATERIALS: a material a seller can pick must be a
+              // material a buyer can filter by. `mesh` predates the attribute
+              // table but live listings still carry it.
+              for (final m in const [
+                'wood',
+                'metal',
+                'fabric',
+                'glass',
+                'leather',
+                'marble',
+                'rattan',
+                'mesh',
+                'plastic',
+              ])
                 ChoiceChip(
                   label: Text(state.t('browse.mat.$m')),
                   selected: _material == m,

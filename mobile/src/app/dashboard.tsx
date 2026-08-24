@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../lib/auth";
@@ -31,7 +31,7 @@ import { formatBirr, timeAgo } from "../lib/format";
  * requests. The profile tab now points here instead of rendering it all inline.
  */
 export default function DashboardScreen() {
-  const { user, profile } = useAuth();
+  const { user, profile, loading: authLoading } = useAuth();
   const { t } = useLang();
   const toast = useToast();
   // Offer-alert deep link (?offer=<id>): scroll to the offers card and ring the
@@ -69,6 +69,16 @@ export default function DashboardScreen() {
     }, 150);
     return () => clearTimeout(timer);
   }, [targetOffer, offersCardY, offers.data]);
+
+  // Session restore is async — see favorites.tsx. Gate on it so the sign-in
+  // prompt does not flash for users who are already signed in.
+  if (authLoading) {
+    return (
+      <View style={styles.center}>
+        <ActivityIndicator size="large" color={colors.primary} />
+      </View>
+    );
+  }
 
   if (!user) {
     return (

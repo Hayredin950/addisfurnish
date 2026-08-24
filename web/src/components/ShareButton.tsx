@@ -15,12 +15,23 @@ import {
  * Shareable listing link (spec §4). Every share carries utm attribution so the
  * backend can measure Telegram / WhatsApp / other channels as acquisition
  * sources, and the share itself is recorded in `analytics_events`.
+ *
+ * The current path MUST be preserved. This previously read
+ * `VITE_SITE_URL ?? origin + pathname`, and since VITE_SITE_URL is set in
+ * production the `?? ` branch never ran — every shared listing collapsed to the
+ * bare origin, so Telegram previewed the homepage (site logo, generic blurb)
+ * instead of the listing.
  */
 function shareUrl(source: string): string {
-  const base =
-    (import.meta.env["VITE_SITE_URL"] as string | undefined) ??
-    window.location.origin + window.location.pathname;
-  return `${base}?utm_source=${encodeURIComponent(source)}&utm_medium=share`;
+  const siteUrl = import.meta.env["VITE_SITE_URL"] as string | undefined;
+  // Resolve the live path against the canonical origin when one is configured,
+  // so the link is absolute *and* still points at this listing.
+  const url = siteUrl
+    ? new URL(window.location.pathname, siteUrl)
+    : new URL(window.location.origin + window.location.pathname);
+  url.searchParams.set("utm_source", source);
+  url.searchParams.set("utm_medium", "share");
+  return url.toString();
 }
 
 /** The listing id from the current path (/listing/<uuid>), if any. */

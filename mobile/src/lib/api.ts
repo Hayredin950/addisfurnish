@@ -1,35 +1,8 @@
 import { File } from "expo-file-system";
 import { supabase } from "./supabase";
 import { formatBirr } from "./format";
+import { logRawError } from "./friendly-error";
 import type { Database } from "./db-types";
-
-/**
- * Turn raw Supabase/Postgres errors into user-friendly strings.
- * The user sees these — never a raw `duplicate key value violates unique
- * constraint` stack trace.
- */
-export function friendlyError(err: unknown): string {
-  const msg = err instanceof Error ? err.message : String(err ?? "");
-  if (msg.includes("Invalid login credentials") || msg.includes("invalid_credentials"))
-    return "Email or password is incorrect.";
-  if (msg.includes("User already registered") || msg.includes("already registered"))
-    return "An account with this email already exists. Try signing in instead.";
-  if (msg.includes("duplicate key") && msg.includes("profiles_phone_key"))
-    return "This phone number is already registered by another account.";
-  if (msg.includes("duplicate key"))
-    return "This record already exists. Please check and try again.";
-  if (msg.includes("Network request failed") || msg.includes("fetch failed"))
-    return "Network error — please check your connection and try again.";
-  if (msg.includes("Password should be at least"))
-    return "Password must be at least 6 characters.";
-  if (msg.includes("Unable to validate email address"))
-    return "Please enter a valid email address.";
-  if (msg.includes("rate limit") || msg.includes("too many"))
-    return "Too many attempts — please wait a minute and try again.";
-  // Fallback: shorten long Postgres messages to one readable line.
-  const short = msg.split("\n")[0].substring(0, 120);
-  return short || "Something went wrong. Please try again.";
-}
 
 export type Category = Database["public"]["Tables"]["categories"]["Row"];
 export type ListingRow = Database["public"]["Tables"]["listings"]["Row"];
@@ -523,6 +496,50 @@ export async function disconnectTelegram(): Promise<boolean> {
   const { error } = await supabase.rpc("unlink_telegram");
   if (error) console.warn("unlink telegram failed", error);
   return !error;
+}
+
+// ── Email change requests (item 43) ──────────────────────────────────────
+// The sign-in address lives in auth.users, so a client cannot write it. The
+// user files a request and an admin applies it.
+
+export type MyEmailChangeRequest = {
+  id: string;
+  new_email: string;
+  status: "pending" | "rejected" | "applied";
+  rejection_reason: string | null;
+  created_at: string;
+};
+
+export async function fetchMyEmailChangeRequests(
+  userId: string,
+): Promise<MyEmailChangeRequest[]> {
+  const { data, error } = await supabase
+    .from("email_change_requests")
+    .select("id,new_email,status,rejection_reason,created_at")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false })
+    .limit(5);
+  if (error) throw error;
+  return (data ?? []) as MyEmailChangeRequest[];
+}
+
+/** Errors come back as codes: invalid_email | unchanged | email_taken | already_pending. */
+export async function requestEmailChange(
+  newEmail: string,
+  reason?: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const { data, error } = await supabase.rpc("request_email_change", {
+    _new_email: newEmail.trim(),
+    _reason: reason?.trim() || null,
+  });
+  // Opaque code only: this value is rendered in a toast, and PostgREST text
+  // names tables and constraints. The RPC's own failures already arrive as
+  // short codes ("email_taken", "self"), which friendly-error.ts translates.
+  if (error) {
+    logRawError(error);
+    return { ok: false, error: "rpc" };
+  }
+  return (data ?? { ok: false, error: "rpc" }) as { ok: boolean; error?: string };
 }
 
 // ── Notifications center ─────────────────────────────────────────────────

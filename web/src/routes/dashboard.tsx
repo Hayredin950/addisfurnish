@@ -7,6 +7,7 @@ import { Phone, PhoneCall } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { useLang } from "@/lib/i18n";
+import { friendlyError } from "@/lib/friendly-error";
 import { RequireAuth } from "@/components/RequireAuth";
 import { listingsQuery, notifyUser, sellerViewsPerDayQuery } from "@/lib/marketplace";
 import { syncListingChannel } from "@/lib/telegram";
@@ -221,7 +222,7 @@ function Dashboard() {
       setPendingDelete(null);
       queryClient.invalidateQueries({ queryKey: ["listings"] });
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : t("toast.deleteFailed"));
+      toast.error(friendlyError(err, t, "toast.deleteFailed"));
     } finally {
       setDeleting(false);
     }

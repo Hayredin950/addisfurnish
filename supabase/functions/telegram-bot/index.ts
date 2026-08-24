@@ -72,6 +72,8 @@ const COPY = {
       "It doesn't look like you've joined yet. 😅\n\nOpen the channel link above, tap Join, then come back and press the button again.",
     joinFailed:
       "I couldn't verify your membership right now (Telegram may be busy). Try the button again in a minute.",
+    // Shown instead of a raw error string when something unexpected throws.
+    genericError: "Something went wrong on our side — please try again in a moment.",
     alreadyVerified: "✅ You're already verified — alerts are active. Nothing to do!",
     stopped:
       "🔕 Disconnected. You won't get any more alerts here.\n\nReconnect any time from your AddisHome profile.",
@@ -133,6 +135,7 @@ const COPY = {
       `✅ <b>Draft created!</b>\n\n${title}\n\nTap below to finish the details (title, description, delivery…) and publish from the marketplace.`,
     sellFinishButton: "✏️ Finish in marketplace",
     sellCanceled: "🚫 Sell flow canceled. Send /sell to start again anytime.",
+    sellNoSession: "That form has expired — send /sell to start again.",
     sellCancel: "🚫 Cancel",
     sellTitlePrefix: "New listing — ",
   },
@@ -155,6 +158,7 @@ const COPY = {
       "እስካሁን የተቀላቀሉ አይመስሉም። 😅\n\nከላይ ያለውን ቻናል ይክፈቱ፣ Join ይጫኑ፣ ከዚያ ተመልሰው ቁልፉን ይጫኑ።",
     joinFailed:
       "አባልነትዎን ማረጋገጥ አልቻልኩም (ቴሌግራም ስራ ላይ ነው ሊሆን)። ከአንድ ደቂቃ በኋላ እንደገና ይሞክሩ።",
+    genericError: "በእኛ በኩል ችግር ተፈጥሯል — እባክዎ ከጥቂት ጊዜ በኋላ እንደገና ይሞክሩ።",
     alreadyVerified: "✅ አስቀድመው ተረጋግጠዋል — ማሳወቂያዎች ንቁ ናቸው። ምንም አይጠበቅም!",
     stopped: "🔕 ተቋርጧል። ከዚህ በኋላ ማሳወቂያ አይደርስዎትም።\n\nበማንኛውም ጊዜ ከመገለጫዎ እንደገና ማገናኘት ይችላሉ።",
     notLinked:
@@ -214,6 +218,7 @@ const COPY = {
       `✅ <b>ረቂቅ ተፈጥሯል!</b>\n\n${title}\n\nዝርዝሮቹን ለማጠናቀቅ (ርዕስ፣ መግለጫ፣ ማድረስ…) እና ለማተም ከታች ይጫኑ።`,
     sellFinishButton: "✏️ በመደብሩ ውስጥ ይጨርሱ",
     sellCanceled: "🚫 የመሸጫ ሂደት ተሰርዟል። በማንኛውም ጊዜ /sell ይላኩ።",
+    sellNoSession: "ያ ቅጽ ጊዜው አልፎበታል — እንደገና ለመጀመር /sell ይላኩ።",
     sellCancel: "🚫 ሰርዝ",
     sellTitlePrefix: "አዲስ ማስታወቂያ — ",
   },
@@ -257,6 +262,21 @@ async function markBlocked(chatId: string) {
   }
 }
 
+/**
+ * True when the chat will never accept another message: the user blocked the
+ * bot or deleted their account, or the stored chat id is stale.
+ *
+ * `chat not found` was previously untreated, so dead chat ids were retried on
+ * every send and logged as fresh failures forever. It is as permanent as a 403
+ * and gets the same handling. Mirrors telegram-notify's copy of this rule.
+ */
+function isDeadChat(errorCode: number | undefined, description: string | undefined): boolean {
+  if (errorCode === 403) return true;
+  return /chat not found|bot was blocked|user is deactivated|bot was kicked|PEER_ID_INVALID/i.test(
+    description ?? "",
+  );
+}
+
 /** Download a Telegram photo (getFile → file bytes) for sell-via-bot drafts. */
 async function downloadTelegramFile(fileId: string): Promise<Uint8Array | null> {
   if (!BOT_TOKEN) return null;
@@ -277,7 +297,7 @@ async function downloadTelegramFile(fileId: string): Promise<Uint8Array | null> 
 // The single acceptable fallback image — used only when no shop logo, listing
 // photo or avatar exists for the message being sent.
 const SITE_BASE = SITE_URL || "https://addisfurnish.vercel.app";
-const ADDISFURNISH_LOGO_URL = `${SITE_BASE}/logo-mark.png`;
+const LOGO_URL = `${SITE_BASE}/logo-mark.png`;
 
 /**
  * Resolve a stored image reference to a URL Telegram can fetch.
@@ -285,25 +305,96 @@ const ADDISFURNISH_LOGO_URL = `${SITE_BASE}/logo-mark.png`;
  * Shop logos and older media are stored as Supabase storage *paths*
  * (`<user-id>/logos/x.jpg`) rather than absolute URLs. Passing a bare path to
  * sendPhoto makes Telegram reject it ("wrong HTTP URL specified") and the card
- * silently dies — exactly what broke the reconnect flow. Cloudinary URLs and
- * anything already absolute pass through untouched.
+ * silently dies — exactly what broke the reconnect flow.
+ *
+ * Every result is width-capped. Telegram refuses to fetch a photo URL larger
+ * than 5 MB, and the originals here regularly are: photos posted from the
+ * Flutter app or by this bot go into the bucket untouched at 2–5 MB, and
+ * Cloudinary serves the original unless a transformation is requested. An
+ * absolute storage URL built by a caller is rewritten to the transformation
+ * endpoint for the same reason.
  */
+const TELEGRAM_PHOTO_WIDTH = 1280;
+
 function absolutizePhotoUrl(photoUrl: string | null): string | null {
   if (!photoUrl) return null;
-  if (/^https?:\/\//i.test(photoUrl)) return photoUrl;
-  // Bare storage path → public object URL. Both apps resolve shop logos and
-  // old-era media under the `listing-images` bucket (e.g. `<user>/logos/x.jpg`),
-  // so the same prefix applies here — same convention as telegram-notify.
+  if (/^https?:\/\//i.test(photoUrl)) {
+    // Telegram answers "wrong HTTP URL specified" for anything it can't parse.
+    try {
+      new URL(photoUrl);
+      return capPhotoUrl(photoUrl);
+    } catch {
+      return null;
+    }
+  }
+  // Bare storage path → transformation endpoint. Both apps resolve shop logos
+  // and old-era media under the `listing-images` bucket (e.g.
+  // `<user>/logos/x.jpg`), so the same prefix applies here — same convention as
+  // telegram-notify.
   if (SUPABASE_URL && !photoUrl.startsWith("/")) {
-    return `${SUPABASE_URL}/storage/v1/object/public/listing-images/${photoUrl}`;
+    return storageThumb(`${SUPABASE_URL}/storage/v1/object/public/listing-images/${photoUrl}`);
   }
   return null;
 }
 
+/** Width-cap whichever CDN this absolute URL belongs to; others pass through. */
+function capPhotoUrl(url: string): string {
+  const marker = "/image/upload/";
+  const idx = url.indexOf(marker);
+  if (idx !== -1 && url.startsWith("https://res.cloudinary.com/")) {
+    return (
+      `${url.slice(0, idx + marker.length)}w_${TELEGRAM_PHOTO_WIDTH},q_auto,f_auto/` +
+      url.slice(idx + marker.length)
+    );
+  }
+  return storageThumb(url);
+}
+
+/**
+ * `…/storage/v1/object/public/<bucket>/<path>` → the same object through the
+ * image transformation endpoint. Anything else is returned unchanged.
+ */
+function storageThumb(url: string): string {
+  const marker = "/storage/v1/object/public/";
+  const idx = url.indexOf(marker);
+  if (idx === -1) return url;
+  const rendered =
+    url.slice(0, idx) + "/storage/v1/render/image/public/" + url.slice(idx + marker.length);
+  const sep = rendered.includes("?") ? "&" : "?";
+  return `${rendered}${sep}width=${TELEGRAM_PHOTO_WIDTH}&resize=contain&quality=80`;
+}
+
+/**
+ * Confirm a URL actually serves an image before handing it to Telegram, so a
+ * dead reference costs one cheap HEAD instead of a rejected send that has to be
+ * recovered as plain text. Stored references are a mix of bare storage paths,
+ * Cloudinary URLs and hand-entered third-party URLs, and any of them can point
+ * at a 404 or an HTML error page. Fails open: if the probe can't run, the
+ * existing photo → text fallback still covers us. Mirrors telegram-notify.
+ */
+async function isFetchableImage(url: string): Promise<boolean> {
+  try {
+    const res = await fetch(url, { method: "HEAD" });
+    if (!res.ok) return false;
+    return (res.headers.get("content-type") ?? "").startsWith("image/");
+  } catch {
+    return true;
+  }
+}
+
 // ReplyMarkup carries the request_contact keyboard during phone verification,
 // and { remove_keyboard: true } to clear it again afterwards.
-async function sendMessage(chatId: number, text: string, replyMarkup?: unknown): Promise<boolean> {
-  if (!BOT_TOKEN) return false;
+//
+// `logResult: false` is for callers that are the tail of a longer fallback
+// chain (sendPhoto) and log the chain's overall outcome themselves — otherwise a
+// recovered send records both a failure and a success.
+async function sendMessage(
+  chatId: number,
+  text: string,
+  replyMarkup?: unknown,
+  logResult = true,
+): Promise<{ ok: boolean; error?: string }> {
+  if (!BOT_TOKEN) return { ok: false, error: "no bot token" };
   try {
     const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendMessage`, {
       method: "POST",
@@ -321,14 +412,17 @@ async function sendMessage(chatId: number, text: string, replyMarkup?: unknown):
       error_code?: number;
     } | null;
     if (!res.ok) {
-      await logSend("webhook", String(chatId), false, body?.description ?? `HTTP ${res.status}`);
-      if (body?.error_code === 403) await markBlocked(String(chatId));
-      return false;
+      const error = body?.description ?? `HTTP ${res.status}`;
+      if (logResult) await logSend("webhook", String(chatId), false, error);
+      if (isDeadChat(body?.error_code, body?.description)) await markBlocked(String(chatId));
+      return { ok: false, error };
     }
-    await logSend("webhook", String(chatId), true, null);
-    return true;
-  } catch {
-    return false;
+    if (logResult) await logSend("webhook", String(chatId), true, null);
+    return { ok: true };
+  } catch (err) {
+    const error = err instanceof Error ? `network: ${err.message}` : "network";
+    if (logResult) await logSend("webhook", String(chatId), false, error);
+    return { ok: false, error };
   }
 }
 
@@ -338,6 +432,11 @@ async function sendMessage(chatId: number, text: string, replyMarkup?: unknown):
  * and to a plain message when the photo fails to send (a dead photo URL must
  * never make a user lose the text). Returns the message_id when sent, so
  * callers can edit/delete the card later.
+ *
+ * Exactly ONE delivery-log row is written, for the outcome of the chain as a
+ * whole. The photo attempt used to log its own failure and the text fallback its
+ * own success, so a card that lost its image but delivered fine counted as both
+ * — inflating the admin health view's failure rate with sends that arrived.
  */
 async function sendPhoto(
   chatId: number,
@@ -346,7 +445,14 @@ async function sendPhoto(
   replyMarkup?: unknown,
 ): Promise<number | null> {
   if (!BOT_TOKEN) return null;
-  const photo = absolutizePhotoUrl(photoUrl) || ADDISFURNISH_LOGO_URL;
+  const resolved = absolutizePhotoUrl(photoUrl);
+  // Check the reference before spending a send on it — see isFetchableImage.
+  // The logo is our own static asset and is never probed.
+  const usable = resolved ? await isFetchableImage(resolved) : false;
+  const photo = usable ? resolved! : LOGO_URL;
+  const photoNote = resolved && !usable ? `photo unreachable: ${resolved}` : null;
+
+  let photoError: string | null = null;
   try {
     const res = await fetch(`https://api.telegram.org/bot${BOT_TOKEN}/sendPhoto`, {
       method: "POST",
@@ -365,19 +471,28 @@ async function sendPhoto(
       description?: string;
       error_code?: number;
     } | null;
-    if (!res.ok || !body?.ok) {
-      await logSend("webhook", String(chatId), false, body?.description ?? `HTTP ${res.status}`);
-      if (body?.error_code === 403) await markBlocked(String(chatId));
-      // Never let a rejected photo swallow the message: inline keyboards work
-      // on plain messages too, so resend as text and still return the id.
-      const textRes = await sendMessage(chatId, caption, replyMarkup);
-      return textRes ? -1 : null;
+    if (res.ok && body?.ok) {
+      await logSend("webhook", String(chatId), true, photoNote);
+      return body.result?.message_id ?? null;
     }
-    await logSend("webhook", String(chatId), true, null);
-    return body.result?.message_id ?? null;
-  } catch {
-    return null;
+    photoError = body?.description ?? `HTTP ${res.status}`;
+    if (isDeadChat(body?.error_code, body?.description)) await markBlocked(String(chatId));
+  } catch (err) {
+    photoError = err instanceof Error ? `network: ${err.message}` : "network";
   }
+
+  // Never let a rejected photo swallow the message: inline keyboards work
+  // on plain messages too, so resend as text and still return the id.
+  const reasons = [photoNote, `photo: ${photoError}`].filter(Boolean).join("; ");
+  const text = await sendMessage(chatId, caption, replyMarkup, false);
+  if (text.ok) {
+    // Delivered, just without the photo — recorded as a success with the reason
+    // so the health view can show that cards are silently losing their images.
+    await logSend("webhook", String(chatId), true, `text fallback — ${reasons}`);
+    return -1;
+  }
+  await logSend("webhook", String(chatId), false, `${reasons}; text: ${text.error ?? "failed"}`);
+  return null;
 }
 
 /** Delete a bot message (used to clear the onboarding card after verify). */
@@ -712,7 +827,7 @@ Deno.serve(async (req) => {
       .eq("chat_id", String(cbChatId))
       .maybeSingle();
     if (!session) {
-      await answerCallback(callback.id ?? "", "Send /sell to start.");
+      await answerCallback(callback.id ?? "", sCopy.sellNoSession);
       return new Response("ok", { status: 200 });
     }
     const data = callback.data;
@@ -776,11 +891,14 @@ Deno.serve(async (req) => {
     // failure the last round of fixes was for. The inner helpers already
     // swallow their own errors, but any unexpected throw must still ack the
     // callback and say what happened instead of returning a bare 500.
+    // `cbLang` is hoisted so the catch can answer in the user's own language
+    // instead of falling back to English (item 41).
+    let cbLang: Lang = "en";
     try {
       const cbChatId = (callback.message?.chat?.id ?? callback.from?.id) as number | undefined;
       const cbUserId = (callback.from?.id ?? cbChatId) as number | undefined;
       if (!cbChatId || !cbUserId) {
-        await answerCallback(callback.id ?? "", "Something went wrong — try again.");
+        await answerCallback(callback.id ?? "", COPY.en.genericError);
         return new Response("ok", { status: 200 });
       }
 
@@ -792,6 +910,7 @@ Deno.serve(async (req) => {
         .eq("telegram_chat_id", String(cbChatId))
         .maybeSingle();
       const cbCopy = COPY[cbProfile?.preferred_language === "am" ? "am" : "en"];
+      cbLang = cbProfile?.preferred_language === "am" ? "am" : "en";
       const cbLogo =
         (cbProfile?.shop_logo_url as string | null | undefined) ?? null;
 
@@ -849,8 +968,8 @@ Deno.serve(async (req) => {
     } catch (err) {
       console.error("verify_channel_join failed:", err);
       const errChat = (callback.message?.chat?.id ?? callback.from?.id) as number | undefined;
-      await answerCallback(callback.id ?? "", "Something went wrong — try again in a moment.");
-      if (errChat) await sendMessage(errChat, COPY.en.joinFailed);
+      await answerCallback(callback.id ?? "", COPY[cbLang].genericError);
+      if (errChat) await sendMessage(errChat, COPY[cbLang].joinFailed);
       return new Response("ok", { status: 200 });
     }
   }

@@ -116,12 +116,21 @@ export const SUB_CITY_COORDS: Record<string, { latitude: number; longitude: numb
 };
 
 export const CONDITIONS = ["like new", "good", "fair", "needs repair"] as const;
+/**
+ * Browse's material filter. Must stay a superset of the seeded `material`
+ * attribute options, or a seller can pick a material on the sell form that no
+ * buyer can then filter by — `marble` and `rattan` were exactly that gap.
+ * `mesh` has no seeded option but predates the attribute table, so listings
+ * still carry it.
+ */
 export const MATERIALS = [
   "wood",
   "leather",
   "fabric",
   "metal",
   "glass",
+  "marble",
+  "rattan",
   "mesh",
   "plastic",
 ] as const;

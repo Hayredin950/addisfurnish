@@ -37,8 +37,11 @@ import {
   adminTrendQuery,
   adminVerificationDecisionsQuery,
   adminVerificationQueueQuery,
+  adminReviewEmailChange,
+  adminSetUserEmail,
   categoriesQuery,
   categoryCountsQuery,
+  emailChangeQueueQuery,
   isAdminQuery,
   type AdminUser,
   type Category,
@@ -52,6 +55,7 @@ import {
 } from "@/lib/admin";
 import { useAuth } from "@/lib/auth";
 import { useLang } from "@/lib/i18n";
+import { friendlyError } from "@/lib/friendly-error";
 import { RequireAuth } from "@/components/RequireAuth";
 import { UserAvatar } from "@/components/UserAvatar";
 import { ListingImage } from "@/components/ListingImage";
@@ -176,7 +180,7 @@ function ReportsTab() {
     const report = (reports ?? []).find((r) => r.id === id);
     const { error } = await supabase.from("reports").update({ status }).eq("id", id);
     if (error) {
-      toast.error(error.message);
+      toast.error(friendlyError(error, t, "toast.updateFailed"));
       return;
     }
     // Close the loop with whoever reported it — they never heard back before.
@@ -258,6 +262,78 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
   const [detailUser, setDetailUser] = useState<AdminUser | null>(null);
   const [busy, setBusy] = useState(false);
 
+  // ── Email changes (item 43) ──────────────────────────────────────────
+  // Two ways in: approve what a user asked for, or set an address directly.
+  // Both are audited by the same `email_change_requests` table.
+  const { data: emailQueue } = useQuery(emailChangeQueueQuery());
+  const [emailTarget, setEmailTarget] = useState<{
+    id: string;
+    name: string;
+    current: string | null;
+  } | null>(null);
+  const [emailValue, setEmailValue] = useState("");
+  const [emailReason, setEmailReason] = useState("");
+  const [rejectTarget, setRejectTarget] = useState<{ id: string; email: string } | null>(null);
+  const [rejectReason, setRejectReason] = useState("");
+
+  /** Turns the RPC's error code into something a human can act on. */
+  const emailError = (code: string | undefined) =>
+    code === "invalid_email"
+      ? t("error.emailInvalid")
+      : code === "email_taken"
+        ? t("error.emailTaken")
+        : code === "unchanged"
+          ? t("error.emailUnchanged")
+          : t("admin.emailChangeFailed");
+
+  const refreshEmailQueue = () => {
+    queryClient.invalidateQueries({ queryKey: ["admin-email-change-queue"] });
+    queryClient.invalidateQueries({ queryKey: ["admin-all-users"] });
+  };
+
+  const approveEmail = async (id: string) => {
+    setBusy(true);
+    const res = await adminReviewEmailChange(id, true);
+    setBusy(false);
+    if (!res.ok) {
+      toast.error(emailError(res.error));
+      return;
+    }
+    toast.success(t("admin.emailApplied"));
+    refreshEmailQueue();
+  };
+
+  const rejectEmail = async () => {
+    if (!rejectTarget) return;
+    setBusy(true);
+    const res = await adminReviewEmailChange(rejectTarget.id, false, rejectReason.trim());
+    setBusy(false);
+    if (!res.ok) {
+      toast.error(emailError(res.error));
+      return;
+    }
+    toast.success(t("admin.emailRejected"));
+    setRejectTarget(null);
+    setRejectReason("");
+    refreshEmailQueue();
+  };
+
+  const applyDirectEmail = async () => {
+    if (!emailTarget || !emailValue.trim()) return;
+    setBusy(true);
+    const res = await adminSetUserEmail(emailTarget.id, emailValue.trim(), emailReason.trim());
+    setBusy(false);
+    if (!res.ok) {
+      toast.error(emailError(res.error));
+      return;
+    }
+    toast.success(t("admin.emailApplied"));
+    setEmailTarget(null);
+    setEmailValue("");
+    setEmailReason("");
+    refreshEmailQueue();
+  };
+
   const term = search.trim().toLowerCase();
   const visible = (users ?? []).filter((u) =>
     !term
@@ -273,7 +349,7 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
     const res = await adminBanUser({ data: { userId: banTarget.id, hours, reason } });
     setBusy(false);
     if (!res.ok) {
-      toast.error(res.error ?? t("toast.updateFailed"));
+      toast.error(friendlyError(res.error, t, "toast.updateFailed"));
       return;
     }
     toast.success(t("admin.banned"));
@@ -284,7 +360,7 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
   const unban = async (id: string) => {
     const res = await adminUnbanUser({ data: { userId: id } });
     if (!res.ok) {
-      toast.error(res.error ?? t("toast.updateFailed"));
+      toast.error(friendlyError(res.error, t, "toast.updateFailed"));
       return;
     }
     toast.success(t("admin.unbanned"));
@@ -294,7 +370,7 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
   const revoke = async (id: string) => {
     const res = await adminRevokeSessions({ data: { userId: id } });
     if (!res.ok) {
-      toast.error(res.error ?? t("toast.updateFailed"));
+      toast.error(friendlyError(res.error, t, "toast.updateFailed"));
       return;
     }
     toast.success(t("admin.sessionsRevoked"));
@@ -306,6 +382,12 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
   // Step 1: send the 6-digit code to the acting admin's email.
   const requestRoleChange = async () => {
     if (!roleTarget) return;
+    // Belt and braces: the button is hidden on your own row and the RPC
+    // rejects a self-target, but never let the request leave the client.
+    if (roleTarget.id === user?.id) {
+      toast.error(t("admin.roleChangeSelf"));
+      return;
+    }
     setBusy(true);
     const { data, error } = await supabase.rpc("admin_request_role_change", {
       _target_user_id: roleTarget.id,
@@ -317,13 +399,15 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
       toast.error(
         err === "super_admin"
           ? t("admin.superAdminProtected")
-          : err === "no_email"
-            ? t("admin.roleChangeNoEmail")
-            : err === "already_admin"
-              ? t("admin.roleChangeAlreadyAdmin")
-              : err === "not_admin"
-                ? t("admin.roleChangeNotAdmin")
-                : t("admin.roleChangeFailed"),
+          : err === "self" || err === "self_demote"
+            ? t("admin.roleChangeSelf")
+            : err === "no_email"
+              ? t("admin.roleChangeNoEmail")
+              : err === "already_admin"
+                ? t("admin.roleChangeAlreadyAdmin")
+                : err === "not_admin"
+                  ? t("admin.roleChangeNotAdmin")
+                  : t("admin.roleChangeFailed"),
       );
       return;
     }
@@ -348,7 +432,9 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
             ? t("admin.roleChangeInvalidCode")
             : err === "super_admin"
               ? t("admin.superAdminProtected")
-              : t("admin.roleChangeFailed"),
+              : err === "self" || err === "self_demote"
+                ? t("admin.roleChangeSelf")
+                : t("admin.roleChangeFailed"),
       );
       return;
     }
@@ -363,6 +449,56 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
 
   return (
     <>
+      {/* Pending email-change requests. Shown above the user list because it
+          is a queue: it needs clearing, the list below is just a directory.
+          Hidden entirely when empty so it does not add permanent chrome. */}
+      {emailQueue && emailQueue.length > 0 ? (
+        <div className="mb-6 rounded-lg border border-primary/30 bg-primary/5 p-4">
+          <p className="flex items-center gap-2 font-display text-sm font-semibold">
+            <Mail className="h-4 w-4 text-primary" /> {t("admin.emailQueue")} ({emailQueue.length})
+          </p>
+          <ul className="mt-3 space-y-2">
+            {emailQueue.map((r) => (
+              <li
+                key={r.id}
+                className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-card p-3 text-sm"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="truncate font-medium">
+                    {r.profiles?.shop_name ?? r.profiles?.full_name ?? "—"}
+                  </p>
+                  <p className="truncate text-xs text-muted-foreground">
+                    {t("admin.emailQueueFrom", {
+                      old: r.old_email ?? "—",
+                      new: r.new_email,
+                    })}
+                  </p>
+                  {r.reason ? <p className="mt-1 text-xs italic">{r.reason}</p> : null}
+                  <p className="text-xs text-muted-foreground">{timeAgo(r.created_at)}</p>
+                </div>
+                <div className="flex shrink-0 gap-2">
+                  <Button size="sm" disabled={busy} onClick={() => approveEmail(r.id)}>
+                    <ShieldCheck className="mr-1.5 h-3.5 w-3.5" /> {t("admin.emailApprove")}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="text-destructive"
+                    disabled={busy}
+                    onClick={() => {
+                      setRejectTarget({ id: r.id, email: r.new_email });
+                      setRejectReason("");
+                    }}
+                  >
+                    {t("admin.emailReject")}
+                  </Button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
       <div className="flex flex-wrap items-center gap-2">
         {(["all", "sellers", "buyers"] as const).map((f) => (
           <Button
@@ -452,8 +588,28 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
                   <Button size="sm" variant="outline" onClick={() => revoke(u.id)}>
                     <LogOut className="mr-1.5 h-3.5 w-3.5" /> {t("admin.revokeSessions")}
                   </Button>
-                  {/* Promote / demote admin — the change requires email confirmation. */}
-                  {!u.is_super_admin && (u.role_names ?? []).includes("admin") ? (
+                  {/* Direct email change. The address lives in auth.users, so
+                      only the checked RPC can move it — and it audits itself. */}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      setEmailTarget({ id: u.id, name, current: u.email ?? null });
+                      setEmailValue("");
+                      setEmailReason("");
+                    }}
+                  >
+                    <Mail className="mr-1.5 h-3.5 w-3.5" /> {t("admin.emailChangeUser")}
+                  </Button>
+                  {/* Promote / demote admin — the change requires email
+                      confirmation. Never offered on your own row: demoting
+                      yourself would drop you out of this panel mid-session, and
+                      if you were the last admin nobody could undo it. The RPC
+                      rejects a self-target too ({ok:false, error:"self"}); this
+                      only keeps the button from lying about being available. */}
+                  {!u.is_super_admin &&
+                  u.id !== user?.id &&
+                  (u.role_names ?? []).includes("admin") ? (
                     <Button
                       size="sm"
                       variant="outline"
@@ -462,7 +618,9 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
                       <Mail className="mr-1.5 h-3.5 w-3.5" /> {t("admin.removeAdmin")}
                     </Button>
                   ) : null}
-                  {!u.is_super_admin && !(u.role_names ?? []).includes("admin") ? (
+                  {!u.is_super_admin &&
+                  u.id !== user?.id &&
+                  !(u.role_names ?? []).includes("admin") ? (
                     <Button
                       size="sm"
                       variant="outline"
@@ -577,6 +735,108 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
                 {busy ? t("admin.roleChangeSending") : t("admin.roleChangeSendCode")}
               </AlertDialogAction>
             )}
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Reject a queued request — a reason is optional but it reaches the
+          user verbatim in their notification, so it is worth writing. */}
+      <AlertDialog
+        open={!!rejectTarget}
+        onOpenChange={(open) => {
+          if (!open) {
+            setRejectTarget(null);
+            setRejectReason("");
+          }
+        }}
+      >
+        <AlertDialogContent className="max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="font-display">{t("admin.emailReject")}</AlertDialogTitle>
+            <AlertDialogDescription>{rejectTarget?.email}</AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-1.5">
+            <Label htmlFor="email-reject-reason">{t("admin.emailRejectReason")}</Label>
+            <Textarea
+              id="email-reject-reason"
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              rows={3}
+            />
+          </div>
+          <AlertDialogFooter className="gap-2 sm:gap-2">
+            <AlertDialogCancel disabled={busy}>{t("admin.cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={busy}
+              onClick={(e) => {
+                e.preventDefault();
+                rejectEmail();
+              }}
+              className="bg-destructive text-white shadow-sm hover:bg-destructive/90"
+            >
+              {t("admin.emailReject")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Change an address directly, without waiting for a request. */}
+      <AlertDialog
+        open={!!emailTarget}
+        onOpenChange={(open) => {
+          if (!open) {
+            setEmailTarget(null);
+            setEmailValue("");
+            setEmailReason("");
+          }
+        }}
+      >
+        <AlertDialogContent className="max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="font-display">
+              {t("admin.emailChangeUser")}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("admin.emailChangeUserBody", {
+                name: emailTarget?.name ?? "",
+                email: emailTarget?.current ?? "—",
+              })}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="admin-new-email">{t("profile.emailChangeNew")}</Label>
+              <Input
+                id="admin-new-email"
+                type="email"
+                autoComplete="off"
+                value={emailValue}
+                onChange={(e) => setEmailValue(e.target.value)}
+                placeholder="name@example.com"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="admin-email-reason">{t("profile.emailChangeReason")}</Label>
+              <Textarea
+                id="admin-email-reason"
+                value={emailReason}
+                onChange={(e) => setEmailReason(e.target.value)}
+                rows={2}
+              />
+            </div>
+          </div>
+          <AlertDialogFooter className="gap-2 sm:gap-2">
+            <AlertDialogCancel disabled={busy}>{t("admin.cancel")}</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={busy || !emailValue.trim()}
+              onClick={(e) => {
+                e.preventDefault();
+                applyDirectEmail();
+              }}
+              className="bg-primary text-primary-foreground shadow-sm hover:bg-primary/90"
+            >
+              {t("admin.emailChangeUser")}
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
@@ -989,9 +1249,27 @@ function CategoriesTab() {
     </select>
   );
 
+  /** "Furniture → Living Room" for a level-2 row; empty for a root. */
+  const ancestorPath = (cat: Category): string => {
+    const names: string[] = [];
+    let cursor = cat.parent_id ? (categories ?? []).find((c) => c.id === cat.parent_id) : undefined;
+    // Bounded by the 3-level taxonomy, but guard anyway: a cycle introduced by
+    // a bad parent_id would otherwise hang the render.
+    let hops = 0;
+    while (cursor && hops < 5) {
+      names.unshift(cursor.name);
+      cursor = cursor.parent_id
+        ? (categories ?? []).find((c) => c.id === cursor!.parent_id)
+        : undefined;
+      hops += 1;
+    }
+    return names.join(" → ");
+  };
+
   const Row = ({ cat, depth }: { cat: Category; depth: number }) => {
     const IconComp = categoryIcon(cat.icon);
     const n = counts?.[cat.id] ?? 0;
+    const path = ancestorPath(cat);
     const idx = (categories ?? [])
       .filter((c) => c.parent_id === cat.parent_id)
       .sort((a, b) => a.sort_order - b.sort_order)
@@ -999,7 +1277,9 @@ function CategoriesTab() {
     const sibs = (categories ?? []).filter((c) => c.parent_id === cat.parent_id);
     return (
       <li
-        className={`flex flex-wrap items-center gap-2 rounded-lg border bg-card p-3 ${depth > 0 ? "ml-6" : ""}`}
+        className={`flex flex-wrap items-center gap-2 rounded-lg border bg-card p-3 ${
+          depth === 1 ? "ml-6 border-l-2 border-l-primary/40" : ""
+        } ${depth >= 2 ? "ml-12 border-l-2 border-l-primary/20" : ""}`}
       >
         {renamingId === cat.id ? (
           <>
@@ -1015,15 +1295,31 @@ function CategoriesTab() {
           </>
         ) : (
           <>
+            {/* Tree guide (spec §16): an "L2" badge told you the depth but not
+                where the row sits, so a "Sofas" under the wrong parent looked
+                identical to a correct one. The glyph shows the nesting and the
+                breadcrumb names the parents. */}
+            {depth > 0 ? (
+              <span
+                aria-hidden
+                className="shrink-0 select-none font-mono text-xs text-muted-foreground"
+              >
+                └─
+              </span>
+            ) : null}
             <span className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-secondary">
               <IconComp className="h-4 w-4 text-primary" />
             </span>
-            <span className="min-w-0 flex-1 text-sm font-medium">{cat.name}</span>
-            {cat.level != null ? (
-              <span className="rounded bg-secondary px-1.5 py-0.5 text-[10px] text-muted-foreground">L{cat.level}</span>
-            ) : null}
+            <span className="min-w-0 flex-1">
+              <span className="block truncate text-sm font-medium">{cat.name}</span>
+              {path ? (
+                <span className="block truncate text-[11px] text-muted-foreground">{path}</span>
+              ) : null}
+            </span>
             {cat.is_active === false ? (
-              <span className="rounded bg-destructive/10 px-1.5 py-0.5 text-[10px] text-destructive">inactive</span>
+              <span className="rounded bg-destructive/10 px-1.5 py-0.5 text-[10px] text-destructive">
+                inactive
+              </span>
             ) : null}
             {n > 0 ? (
               <span
@@ -1735,16 +2031,26 @@ function StatsTab({
               const pct = Math.round((s.count / maxCount) * 100);
               return (
                 <li key={s.name}>
-                  <div className="flex items-center justify-between text-xs text-muted-foreground">
-                    <span className="font-medium text-foreground">{s.name}</span>
-                    <span>{s.count}</span>
-                  </div>
-                  <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-secondary">
-                    <div
-                      className="h-full rounded-full bg-orange-500"
-                      style={{ width: `${Math.max(4, pct)}%` }}
-                    />
-                  </div>
+                  {/* Item 40: a chart you cannot follow is just decoration. Each
+                      bar runs the search it is reporting on. */}
+                  <Link
+                    to="/browse"
+                    search={{ q: s.name }}
+                    className="group block rounded-md p-1 -m-1 transition-colors hover:bg-secondary"
+                  >
+                    <div className="flex items-center justify-between text-xs text-muted-foreground">
+                      <span className="font-medium text-foreground group-hover:underline">
+                        {s.name}
+                      </span>
+                      <span>{s.count}</span>
+                    </div>
+                    <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-secondary">
+                      <div
+                        className="h-full rounded-full bg-orange-500"
+                        style={{ width: `${Math.max(4, pct)}%` }}
+                      />
+                    </div>
+                  </Link>
                 </li>
               );
             })}
@@ -1763,10 +2069,12 @@ function StatsTab({
           <ul className="mt-4 space-y-2 text-sm">
             {topCategories!.map((c) => {
               const pct = Math.round((c.count / (stats.listings || 1)) * 100);
-              return (
-                <li key={c.name}>
+              const bar = (
+                <>
                   <div className="flex items-center justify-between text-xs text-muted-foreground">
-                    <span className="font-medium text-foreground">{c.name}</span>
+                    <span className="font-medium text-foreground group-hover:underline">
+                      {c.name}
+                    </span>
                     <span>
                       {c.count} · {pct}%
                     </span>
@@ -1777,6 +2085,23 @@ function StatsTab({
                       style={{ width: `${Math.max(4, pct)}%` }}
                     />
                   </div>
+                </>
+              );
+              return (
+                <li key={c.name}>
+                  {/* Uncategorised listings have no slug to filter by, so that
+                      row stays plain text rather than linking nowhere. */}
+                  {c.slug ? (
+                    <Link
+                      to="/browse"
+                      search={{ category: c.slug }}
+                      className="group block rounded-md p-1 -m-1 transition-colors hover:bg-secondary"
+                    >
+                      {bar}
+                    </Link>
+                  ) : (
+                    <div className="p-1 -m-1">{bar}</div>
+                  )}
                 </li>
               );
             })}
@@ -1834,13 +2159,30 @@ function StatsTab({
             {t("admin.tgBlocked")}: <b className="text-foreground">{stats.telegramBlockedUsers}</b>
           </span>
           <span>{t("admin.tgFailures7d")}</span>
+          <span>
+            {t("admin.tgDegraded")}: <b className="text-foreground">{stats.telegramDegraded7d}</b>
+          </span>
         </div>
-        {stats.telegramFailureReasons.length > 0 ? (
-          <ul className="mt-2 space-y-1 text-xs text-muted-foreground">
-            {stats.telegramFailureReasons.map((r) => (
-              <li key={r}>· {r}</li>
-            ))}
-          </ul>
+        {stats.telegramFailureBreakdown.length > 0 ? (
+          <div className="mt-4">
+            <p className="text-xs font-medium text-foreground">{t("admin.tgFailureBreakdown")}</p>
+            <ul className="mt-1.5 space-y-1">
+              {stats.telegramFailureBreakdown.map((r) => (
+                <li
+                  key={`${r.kind} ${r.error}`}
+                  className="flex items-start gap-2 text-xs text-muted-foreground"
+                >
+                  <span className="mt-px shrink-0 rounded bg-destructive/10 px-1.5 py-0.5 font-mono font-semibold text-destructive">
+                    {r.count}×
+                  </span>
+                  <span className="shrink-0 rounded bg-secondary px-1.5 py-0.5 font-mono">
+                    {r.kind}
+                  </span>
+                  <span className="min-w-0 break-words">{r.error}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
         ) : null}
       </div>
     </div>

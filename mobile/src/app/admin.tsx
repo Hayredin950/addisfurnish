@@ -13,6 +13,7 @@ import {
   View,
 } from "react-native";
 import { router } from "expo-router";
+import * as Clipboard from "expo-clipboard";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../lib/auth";
 import { useLang } from "../lib/lang";
@@ -35,13 +36,15 @@ import {
   fetchAdminTopSearches,
   fetchAdminTrend,
   fetchAdminUsers,
+  fetchEmailChangeQueue,
   fetchVerificationDecisions,
   fetchVerificationQueue,
   isAdmin,
   moveCategory,
   renameCategory,
   resolveReport,
-  revokeSessions,
+  reviewEmailChange,
+  setUserEmail,
   toggleFeatured,
   unbanUser,
   type AdminReport,
@@ -65,15 +68,40 @@ function DetailRow({
   label,
   value,
   danger,
+  copyable,
 }: {
   label: string;
   value: string;
   danger?: boolean;
+  /** Long-press-free copy for the values an admin actually retypes. */
+  copyable?: boolean;
 }) {
+  const [copied, setCopied] = useState(false);
+  const canCopy = !!copyable && value !== "—" && !!value.trim();
   return (
     <View style={{ marginTop: 2 }}>
       <Text style={styles.detailRowLabel}>{label}</Text>
-      <Text style={[styles.detailRowValue, danger && { color: colors.danger }]}>{value}</Text>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+        <Text style={[styles.detailRowValue, danger && { color: colors.danger }, { flexShrink: 1 }]}>
+          {value}
+        </Text>
+        {canCopy ? (
+          <Pressable
+            hitSlop={8}
+            onPress={async () => {
+              await Clipboard.setStringAsync(value);
+              setCopied(true);
+              setTimeout(() => setCopied(false), 1500);
+            }}
+          >
+            <Ionicons
+              name={copied ? "checkmark" : "copy-outline"}
+              size={13}
+              color={copied ? colors.success : colors.textMuted}
+            />
+          </Pressable>
+        ) : null}
+      </View>
     </View>
   );
 }
@@ -444,6 +472,62 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
   const [detailUser, setDetailUser] = useState<AdminUser | null>(null);
   const [busy, setBusy] = useState(false);
 
+  // ── Email changes (item 43) ─────────────────────────────────────────────
+  // Approve what a user asked for, or set an address directly. Both write an
+  // audit row in `email_change_requests`.
+  const emailQueue = useAsync(fetchEmailChangeQueue, []);
+  const [emailTarget, setEmailTarget] = useState<{
+    id: string;
+    name: string;
+    current: string | null;
+  } | null>(null);
+  const [emailValue, setEmailValue] = useState("");
+  const [emailReason, setEmailReason] = useState("");
+  const [rejectId, setRejectId] = useState<string | null>(null);
+  const [rejectReason, setRejectReason] = useState("");
+
+  /** RPC error code → something a human can act on. */
+  const emailErrorText = (code: string | undefined) =>
+    code === "invalid_email"
+      ? t("emailInvalid")
+      : code === "email_taken"
+        ? t("emailTaken")
+        : code === "unchanged"
+          ? t("emailUnchanged")
+          : t("adminEmailChangeFailed");
+
+  const decideEmail = async (id: string, approve: boolean, reason?: string) => {
+    setBusy(true);
+    const res = await reviewEmailChange(id, approve, reason);
+    setBusy(false);
+    if (!res.ok) {
+      toast.error(null, emailErrorText(res.error));
+      return;
+    }
+    toast.success(approve ? t("adminEmailApplied") : t("adminEmailRejected"));
+    setRejectId(null);
+    setRejectReason("");
+    emailQueue.refetch();
+    users.refetch();
+  };
+
+  const applyDirectEmail = async () => {
+    if (!emailTarget || !emailValue.trim()) return;
+    setBusy(true);
+    const res = await setUserEmail(emailTarget.id, emailValue, emailReason);
+    setBusy(false);
+    if (!res.ok) {
+      toast.error(null, emailErrorText(res.error));
+      return;
+    }
+    toast.success(t("adminEmailApplied"));
+    setEmailTarget(null);
+    setEmailValue("");
+    setEmailReason("");
+    emailQueue.refetch();
+    users.refetch();
+  };
+
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return (users.data ?? []).filter((u) => {
@@ -459,15 +543,6 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
       );
     });
   }, [users.data, filter, search]);
-
-  const revoke = async (id: string) => {
-    try {
-      await revokeSessions(id);
-      toast.success(t("adminSessionsRevoked"));
-    } catch (err) {
-      toast.error(err, t("oops"));
-    }
-  };
 
   const confirmBan = async () => {
     if (!banTarget) return;
@@ -493,8 +568,16 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
     } catch (err) {
       toast.error(err, t("oops"));
     }
-  };  const handleRoleChange = async () => {
+  };
+
+  const handleRoleChange = async () => {
     if (!roleTarget) return;
+    // Belt and braces: the button is hidden on your own row and the RPC
+    // rejects a self-target, but never let the request leave the client.
+    if (roleTarget.id === user?.id) {
+      toast.error(null, t("adminRoleChangeSelf"));
+      return;
+    }
     setBusy(true);
     try {
       const res = await requestRoleChange(roleTarget.id, roleTarget.action);
@@ -504,11 +587,13 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
           null,
           res.error === "super_admin"
             ? t("adminSuperAdminProtected")
-            : res.error === "already_admin"
-              ? t("adminRoleChangeAlreadyAdmin")
-              : res.error === "not_admin"
-                ? t("adminRoleChangeNotAdmin")
-                : t("adminRoleChangeFailed"),
+            : res.error === "self" || res.error === "self_demote"
+              ? t("adminRoleChangeSelf")
+              : res.error === "already_admin"
+                ? t("adminRoleChangeAlreadyAdmin")
+                : res.error === "not_admin"
+                  ? t("adminRoleChangeNotAdmin")
+                  : t("adminRoleChangeFailed"),
         );
         return;
       }
@@ -535,7 +620,9 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
               ? t("adminRoleChangeInvalidCode")
               : res.error === "super_admin"
                 ? t("adminSuperAdminProtected")
-                : t("adminRoleChangeFailed"),
+                : res.error === "self" || res.error === "self_demote"
+                  ? t("adminRoleChangeSelf")
+                  : t("adminRoleChangeFailed"),
         );
         return;
       }
@@ -590,6 +677,78 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
           </Pressable>
         ))}
       </View>
+
+      {/* Pending email-change requests — a queue that needs clearing, so it
+          sits above the directory. Hidden entirely when empty. */}
+      {(emailQueue.data ?? []).length > 0 ? (
+        <View style={[styles.card, { borderColor: colors.primary, borderWidth: 1 }]}>
+          <Text style={styles.cardTitle}>
+            {t("adminEmailQueue")} ({(emailQueue.data ?? []).length})
+          </Text>
+          {(emailQueue.data ?? []).map((r) => (
+            <View key={r.id} style={{ marginTop: 10, gap: 6 }}>
+              <Text style={[styles.cardTitle, { marginBottom: 0, fontSize: 14 }]} numberOfLines={1}>
+                {r.profiles?.shop_name ?? r.profiles?.full_name ?? "—"}
+              </Text>
+              <Text style={styles.muted} numberOfLines={2}>
+                {r.old_email ?? "—"} → {r.new_email}
+              </Text>
+              {r.reason ? <Text style={styles.muted}>{r.reason}</Text> : null}
+              <Text style={styles.muted}>{timeAgo(r.created_at)}</Text>
+              {rejectId === r.id ? (
+                <>
+                  <TextInput
+                    value={rejectReason}
+                    onChangeText={setRejectReason}
+                    placeholder={t("adminEmailRejectReason")}
+                    placeholderTextColor={colors.textSoft}
+                    style={styles.input}
+                  />
+                  <View style={styles.rowBtns}>
+                    <Button
+                      title={t("cancel")}
+                      variant="outline"
+                      size="sm"
+                      style={{ flex: 1 }}
+                      onPress={() => setRejectId(null)}
+                    />
+                    <Button
+                      title={t("adminEmailReject")}
+                      variant="danger"
+                      size="sm"
+                      style={{ flex: 1 }}
+                      loading={busy}
+                      disabled={busy}
+                      onPress={() => decideEmail(r.id, false, rejectReason)}
+                    />
+                  </View>
+                </>
+              ) : (
+                <View style={styles.rowBtns}>
+                  <Button
+                    title={t("adminEmailApprove")}
+                    size="sm"
+                    style={{ flex: 1 }}
+                    disabled={busy}
+                    onPress={() => decideEmail(r.id, true)}
+                  />
+                  <Button
+                    title={t("adminEmailReject")}
+                    variant="outline"
+                    size="sm"
+                    style={{ flex: 1 }}
+                    disabled={busy}
+                    onPress={() => {
+                      setRejectId(r.id);
+                      setRejectReason("");
+                    }}
+                  />
+                </View>
+              )}
+            </View>
+          ))}
+        </View>
+      ) : null}
 
       {filtered.length === 0 ? <Text style={styles.muted}>{t("adminNoUsers")}</Text> : null}
 
@@ -686,14 +845,11 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
               </View>
             ) : (
               <View style={styles.rowBtns}>
-                <Button
-                  title={t("adminRevokeSessions")}
-                  variant="outline"
-                  size="sm"
-                  onPress={() => revoke(u.id)}
-                  style={{ flex: 1 }}
-                />
-                {!u.is_super_admin && (u.role_names ?? []).includes("admin") ? (
+                {/* Promote / demote admin — never on your own row. Demoting
+                    yourself would drop you out of this panel mid-session, and
+                    if you were the last admin nobody could undo it. The RPC
+                    rejects a self-target as well. */}
+                {!u.is_super_admin && u.id !== user?.id && (u.role_names ?? []).includes("admin") ? (
                   <Button
                     title={t("adminRemoveAdmin")}
                     variant="outline"
@@ -702,7 +858,7 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
                     style={{ flex: 1 }}
                   />
                 ) : null}
-                {!u.is_super_admin && !(u.role_names ?? []).includes("admin") ? (
+                {!u.is_super_admin && u.id !== user?.id && !(u.role_names ?? []).includes("admin") ? (
                   <Button
                     title={t("adminMakeAdmin")}
                     variant="outline"
@@ -711,6 +867,19 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
                     style={{ flex: 1 }}
                   />
                 ) : null}
+                {/* Direct email change. Only the admin-gated RPC can touch
+                    auth.users, and it audits itself. */}
+                <Button
+                  title={t("adminEmailChangeUser")}
+                  variant="outline"
+                  size="sm"
+                  style={{ flex: 1 }}
+                  onPress={() => {
+                    setEmailTarget({ id: u.id, name, current: u.email ?? null });
+                    setEmailValue("");
+                    setEmailReason("");
+                  }}
+                />
                 {suspended ? (
                   <Button
                     title={t("adminUnban")}
@@ -788,6 +957,57 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
         </Pressable>
       </Pressable>
     </Modal>
+    {/* Direct email change, no request needed. */}
+    <Modal
+      visible={!!emailTarget}
+      transparent
+      animationType="fade"
+      onRequestClose={() => setEmailTarget(null)}
+    >
+      <Pressable style={styles.backdrop} onPress={() => setEmailTarget(null)}>
+        <Pressable style={styles.modalCard} onPress={() => {}}>
+          <Text style={styles.title}>{t("adminEmailChangeUser")}</Text>
+          <Text style={styles.message}>
+            {emailTarget?.name} — {emailTarget?.current ?? "—"}
+          </Text>
+          <Text style={styles.message}>{t("adminEmailChangeUserBody")}</Text>
+          <TextInput
+            value={emailValue}
+            onChangeText={setEmailValue}
+            placeholder="name@example.com"
+            placeholderTextColor={colors.textSoft}
+            autoCapitalize="none"
+            keyboardType="email-address"
+            style={styles.input}
+          />
+          <TextInput
+            value={emailReason}
+            onChangeText={setEmailReason}
+            placeholder={t("emailChangeReason")}
+            placeholderTextColor={colors.textSoft}
+            style={[styles.input, { marginTop: 8 }]}
+          />
+          <View style={{ flexDirection: "row", gap: 10, marginTop: spacing.lg }}>
+            <Button
+              title={t("cancel")}
+              variant="outline"
+              size="sm"
+              style={{ flex: 1 }}
+              disabled={busy}
+              onPress={() => setEmailTarget(null)}
+            />
+            <Button
+              title={t("adminEmailChangeUser")}
+              size="sm"
+              style={{ flex: 1 }}
+              loading={busy}
+              disabled={busy || !emailValue.trim()}
+              onPress={applyDirectEmail}
+            />
+          </View>
+        </Pressable>
+      </Pressable>
+    </Modal>
     {/* User detail view — opens when tapping a user card. */}
     <Modal visible={!!detailUser} transparent animationType="fade" onRequestClose={() => setDetailUser(null)}>
       <Pressable style={styles.backdrop} onPress={() => setDetailUser(null)}>
@@ -802,8 +1022,11 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
             const suspendedUser = !!du.banned_until && new Date(du.banned_until) > new Date();
             const lang = du.preferred_language === "am" ? "አማርኛ" : du.preferred_language === "en" ? "English" : du.preferred_language || "—";
             return (
-              <ScrollView contentContainerStyle={{ gap: 4 }}>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+              <>
+                {/* Pinned header: identity plus an explicit close. Tapping the
+                    backdrop was the only way out, which isn't obvious once the
+                    sheet is tall enough to fill the screen. */}
+                <View style={styles.detailHeader}>
                   <View style={styles.avatarCircle}>
                     <Text style={styles.avatarText}>{(who || "?").slice(0, 1).toUpperCase()}</Text>
                   </View>
@@ -819,16 +1042,42 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
                             {du.is_super_admin ? t("adminRoleSuperAdmin") : t("adminRoleAdmin")}
                           </Text>
                         </View>
-                      ) : null}
+                      ) : (
+                        // Web shows buyer/seller here too; without it a normal
+                        // account's row read as having no role at all.
+                        <View style={styles.chip}>
+                          <Text style={[styles.chipText, { fontSize: 10 }]}>
+                            {du.is_seller ? t("adminRoleSeller") : t("adminRoleBuyer")}
+                          </Text>
+                        </View>
+                      )}
                     </View>
-                    {du.email ? <Text style={styles.muted}>{du.email}</Text> : null}
+                    {du.email ? (
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                        <Text style={[styles.muted, { flexShrink: 1 }]} numberOfLines={1}>
+                          {du.email}
+                        </Text>
+                        {du.email_confirmed_at ? (
+                          <Ionicons name="checkmark-circle" size={12} color={colors.success} />
+                        ) : null}
+                      </View>
+                    ) : null}
+                    {du.is_online ? (
+                      <View style={styles.onlineChip}>
+                        <View style={styles.onlineDot} />
+                        <Text style={styles.onlineText}>{t("adminOnlineNow")}</Text>
+                      </View>
+                    ) : null}
                   </View>
+                  <Pressable onPress={() => setDetailUser(null)} hitSlop={10}>
+                    <Ionicons name="close" size={20} color={colors.text} />
+                  </Pressable>
                 </View>
-
-                <DetailSection title={t("adminContact")}>
-                  <DetailRow label={t("adminEmail")} value={du.email ?? "—"} />
-                  <DetailRow label={t("adminPhone")} value={du.phone ?? "—"} />
-                  <DetailRow label={t("adminWhatsapp")} value={du.whatsapp ?? "—"} />
+                <ScrollView contentContainerStyle={{ gap: 4, paddingBottom: 4 }}>
+                  <DetailSection title={t("adminContact")}>
+                  <DetailRow label={t("adminEmail")} value={du.email ?? "—"} copyable />
+                  <DetailRow label={t("adminPhone")} value={du.phone ?? "—"} copyable />
+                  <DetailRow label={t("adminWhatsapp")} value={du.whatsapp ?? "—"} copyable />
                   <DetailRow
                     label={t("adminTelegram")}
                     value={
@@ -836,6 +1085,7 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
                         ? `@${du.telegram}${du.telegram_blocked ? ` (${t("adminBlocked")})` : ""}`
                         : "—"
                     }
+                    copyable
                   />
                   <DetailRow label={t("adminLocation")} value={du.city ?? "—"} />
                 </DetailSection>
@@ -884,7 +1134,8 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
                     <Text style={styles.muted}>{du.bio}</Text>
                   </DetailSection>
                 ) : null}
-              </ScrollView>
+                </ScrollView>
+              </>
             );
           })() : null}
         </Pressable>
@@ -969,6 +1220,22 @@ function CategoriesTab() {
     }
   };
 
+  /** "Furniture → Living Room" for a level-2 row; empty for a root. */
+  const ancestorPath = (parentId: string | null): string => {
+    const names: string[] = [];
+    let cursor = parentId ? (cats.data ?? []).find((c) => c.id === parentId) : undefined;
+    // The taxonomy is only 3 deep, but a bad parent_id could form a cycle and
+    // hang the render, so bound the walk.
+    let hops = 0;
+    while (cursor && hops < 5) {
+      names.unshift(cursor.name);
+      const next: string | null = cursor.parent_id;
+      cursor = next ? (cats.data ?? []).find((c) => c.id === next) : undefined;
+      hops += 1;
+    }
+    return names.join(" → ");
+  };
+
   const Row = ({
     cat,
     depth,
@@ -979,8 +1246,15 @@ function CategoriesTab() {
     const n = counts.data?.[cat.id] ?? 0;
     const siblings = (cats.data ?? []).filter((c) => c.parent_id === cat.parent_id);
     const idx = siblings.findIndex((c) => c.id === cat.id);
+    const path = ancestorPath(cat.parent_id);
     return (
-      <View style={[styles.catRow, depth > 0 && { marginLeft: 18 }]}>
+      <View
+        style={[
+          styles.catRow,
+          depth === 1 && styles.catRowChild,
+          depth >= 2 && styles.catRowGrandchild,
+        ]}
+      >
         {renamingId === cat.id ? (
           <>
             <TextInput
@@ -992,17 +1266,17 @@ function CategoriesTab() {
           </>
         ) : (
           <>
+            {/* Tree guide (spec §16): an "L2" badge gave the depth but not the
+                place — a "Sofas" hanging off the wrong parent looked identical
+                to a correct one. The glyph shows the nesting, the breadcrumb
+                names the parents. */}
+            {depth > 0 ? <Text style={styles.catGuide}>└─</Text> : null}
             <View style={styles.catIconWrap}>
               <Ionicons name={categoryIcon(cat.icon)} size={15} color={colors.primary} />
             </View>
             <View style={{ flex: 1 }}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                 <Text style={styles.catName}>{cat.name}</Text>
-                {cat.level != null ? (
-                  <View style={[styles.countBadge, { backgroundColor: colors.primary + "20" }]}>
-                    <Text style={[styles.countBadgeText, { color: colors.primary }]}>L{cat.level}</Text>
-                  </View>
-                ) : null}
                 {cat.is_active === false ? (
                   <View style={[styles.countBadge, { backgroundColor: colors.danger + "20" }]}>
                     <Text style={[styles.countBadgeText, { color: colors.danger }]}>off</Text>
@@ -1014,6 +1288,11 @@ function CategoriesTab() {
                   </View>
                 ) : null}
               </View>
+              {path ? (
+                <Text style={styles.catPath} numberOfLines={1}>
+                  {path}
+                </Text>
+              ) : null}
               <Text style={styles.catSlug}>/{cat.slug}</Text>
             </View>
             <Pressable
@@ -1316,7 +1595,9 @@ function StatsTab({ onOpenUsers, onOpenListings }: { onOpenUsers?: (f: "all" | "
   const topSearches = useAsync(fetchAdminTopSearches, []);
   const [range, setRange] = useState(14);
   const [metric, setMetric] = useState<"views" | "listings" | "users" | "messages">("views");
-  const trend = useAsync(() => fetchAdminTrend(range), [range]);
+  // At least 14 days are fetched so the hero cards can compare this week with
+  // the one before it; the chart then shows only the selected window.
+  const trend = useAsync(() => fetchAdminTrend(Math.max(range, 14)), [range]);
 
   if (stats.loading && !stats.data) {
     return (
@@ -1337,17 +1618,32 @@ function StatsTab({ onOpenUsers, onOpenListings }: { onOpenUsers?: (f: "all" | "
     { label: t("adminStatusSold"), value: s?.soldListings ?? 0, color: colors.success },
     { label: t("adminStatusOther"), value: s?.otherListings ?? 0, color: colors.textSoft },
   ].filter((x) => x.value > 0);
-  const trendMax = Math.max(1, ...(trend.data ?? []).map((d) => d[metric]));
+  const series = trend.data ?? [];
+  const half = Math.max(1, Math.floor(series.length / 2));
+  const sumOf = (k: typeof metric, arr: typeof series) => arr.reduce((n, d) => n + d[k], 0);
+  const deltaOf = (k: typeof metric) => sumOf(k, series.slice(half)) - sumOf(k, series.slice(0, half));
+  const chartData = series.slice(-range);
+  const trendMax = Math.max(1, ...chartData.map((d) => d[metric]));
 
   return (
     <ScrollView contentContainerStyle={{ padding: spacing.lg, gap: 12 }}>
       {/* Hero row — big numbers + verified ratio; cards open the Users tab. */}
       <View style={styles.statGrid}>
         <Pressable onPress={() => onOpenListings?.()} style={({ pressed }) => [pressed && { opacity: 0.8 }]}>
-          <StatBox label={t("adminStatListings")} value={s?.listings ?? 0} icon="pricetags" />
+          <StatBox
+            label={t("adminStatListings")}
+            value={s?.listings ?? 0}
+            icon="pricetags"
+            delta={deltaOf("listings")}
+          />
         </Pressable>
         <Pressable onPress={() => onOpenUsers?.("all")} style={({ pressed }) => [pressed && { opacity: 0.8 }]}>
-          <StatBox label={t("adminStatUsers")} value={s?.users ?? 0} icon="people" />
+          <StatBox
+            label={t("adminStatUsers")}
+            value={s?.users ?? 0}
+            icon="people"
+            delta={deltaOf("users")}
+          />
         </Pressable>
         <Pressable onPress={() => onOpenUsers?.("sellers")} style={({ pressed }) => [pressed && { opacity: 0.8 }]}>
           <View style={styles.statBox}>
@@ -1370,6 +1666,7 @@ function StatsTab({ onOpenUsers, onOpenListings }: { onOpenUsers?: (f: "all" | "
           label={t("adminThisWeek")}
           value={`+${s?.newListings7d ?? 0}`}
           icon="trending-up"
+          sub={`+${s?.newUsers7d ?? 0} ${t("adminUsersLabel")}`}
         />
       </View>
 
@@ -1417,11 +1714,11 @@ function StatsTab({ onOpenUsers, onOpenListings }: { onOpenUsers?: (f: "all" | "
             </Pressable>
           ))}
         </View>
-        {(trend.data ?? []).length === 0 ? (
+        {chartData.length === 0 ? (
           <Text style={styles.muted}>{t("adminNoListings")}</Text>
         ) : (
           <View style={{ flexDirection: "row", alignItems: "flex-end", gap: 3, height: 118 }}>
-            {(trend.data ?? []).map((d) => (
+            {chartData.map((d) => (
               <View key={d.date} style={{ flex: 1, alignItems: "center", gap: 4 }}>
                 <View style={{ width: "100%", height: 96, justifyContent: "flex-end", alignItems: "center" }}>
                   <View
@@ -1477,8 +1774,17 @@ function StatsTab({ onOpenUsers, onOpenListings }: { onOpenUsers?: (f: "all" | "
         {(topCats.data ?? []).length === 0 ? (
           <Text style={styles.muted}>{t("adminNoListings")}</Text>
         ) : (
+          // Item 40: each bar opens Browse filtered to what it counts.
+          // Uncategorised has no slug, so that row is not pressable.
           (topCats.data ?? []).map((c) => (
-            <View key={c.name} style={{ marginBottom: 8 }}>
+            <Pressable
+              key={c.name}
+              style={{ marginBottom: 8 }}
+              disabled={!c.slug}
+              onPress={() =>
+                router.push({ pathname: "/(tabs)/browse", params: { category: c.slug! } })
+              }
+            >
               <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
                 <Text style={styles.catName}>{c.name}</Text>
                 <Text style={styles.catSlug}>{c.count}</Text>
@@ -1486,7 +1792,7 @@ function StatsTab({ onOpenUsers, onOpenListings }: { onOpenUsers?: (f: "all" | "
               <View style={styles.barTrack}>
                 <View style={[styles.barFill, { width: `${(c.count / maxCat) * 100}%` }]} />
               </View>
-            </View>
+            </Pressable>
           ))
         )}
       </View>
@@ -1497,7 +1803,11 @@ function StatsTab({ onOpenUsers, onOpenListings }: { onOpenUsers?: (f: "all" | "
           <Text style={styles.muted}>{t("adminNoListings")}</Text>
         ) : (
           (topSearches.data ?? []).map((x) => (
-            <View key={x.name} style={{ marginBottom: 8 }}>
+            <Pressable
+              key={x.name}
+              style={{ marginBottom: 8 }}
+              onPress={() => router.push({ pathname: "/(tabs)/browse", params: { q: x.name } })}
+            >
               <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
                 <Text style={styles.catName}>{x.name}</Text>
                 <Text style={styles.catSlug}>{x.count}</Text>
@@ -1505,7 +1815,7 @@ function StatsTab({ onOpenUsers, onOpenListings }: { onOpenUsers?: (f: "all" | "
               <View style={styles.barTrack}>
                 <View style={[styles.barFill, { width: `${(x.count / maxSearch) * 100}%` }]} />
               </View>
-            </View>
+            </Pressable>
           ))
         )}
       </View>
@@ -1540,8 +1850,19 @@ function StatsTab({ onOpenUsers, onOpenListings }: { onOpenUsers?: (f: "all" | "
           <Text style={styles.muted}>
             {t("adminTgBlocked")}: <Text style={styles.catName}>{s?.telegramBlockedUsers ?? 0}</Text>
           </Text>
-          {(s?.telegramFailureReasons ?? []).length > 0 ? (
-            <Text style={[styles.muted, { marginTop: 4 }]}>· {(s?.telegramFailureReasons ?? []).join(" · ")}</Text>
+          <Text style={styles.muted}>
+            {t("adminTgDegraded")}: <Text style={styles.catName}>{s?.telegramDegraded7d ?? 0}</Text>
+          </Text>
+          {(s?.telegramFailureBreakdown ?? []).length > 0 ? (
+            <View style={{ marginTop: 8, gap: 4 }}>
+              <Text style={styles.catName}>{t("adminTgFailureBreakdown")}</Text>
+              {(s?.telegramFailureBreakdown ?? []).map((r) => (
+                <Text key={`${r.kind} ${r.error}`} style={styles.muted}>
+                  <Text style={{ color: colors.danger, fontWeight: "700" }}>{r.count}×</Text>{" "}
+                  <Text style={styles.catName}>{r.kind}</Text> · {r.error}
+                </Text>
+              ))}
+            </View>
           ) : null}
         </View>
       </View>
@@ -1553,16 +1874,40 @@ function StatBox({
   label,
   value,
   icon,
+  delta,
+  sub,
 }: {
   label: string;
   value: number | string;
   icon: keyof typeof Ionicons.glyphMap;
+  /** This-week-vs-prior-week change, matching web's hero cards. */
+  delta?: number | undefined;
+  sub?: string | undefined;
 }) {
   return (
     <View style={styles.statBox}>
       <Ionicons name={icon} size={18} color={colors.primary} />
       <Text style={styles.statValue}>{value}</Text>
       <Text style={styles.statLabel}>{label}</Text>
+      {typeof delta === "number" ? <DeltaPill d={delta} /> : null}
+      {sub ? <Text style={{ fontSize: 10, color: colors.textMuted, marginTop: 2 }}>{sub}</Text> : null}
+    </View>
+  );
+}
+
+/** Up / down / flat change pill — the mobile half of web's DeltaPill. */
+function DeltaPill({ d }: { d: number }) {
+  const up = d > 0;
+  const flat = d === 0;
+  const tint = flat ? colors.textMuted : up ? colors.success : colors.danger;
+  return (
+    <View style={[styles.deltaPill, { backgroundColor: tint + "1A" }]}>
+      {flat ? null : (
+        <Ionicons name={up ? "trending-up" : "trending-down"} size={10} color={tint} />
+      )}
+      <Text style={[styles.deltaText, { color: tint }]}>
+        {up ? `+${d}` : String(d)}
+      </Text>
     </View>
   );
 }
@@ -1669,6 +2014,26 @@ const styles = StyleSheet.create({
   chipActive: { backgroundColor: colors.primary },
   chipText: { fontSize: 12, color: colors.textMuted, fontWeight: "600" },
   chipTextActive: { color: colors.onPrimary },
+  onlineChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    alignSelf: "flex-start",
+    marginTop: 3,
+  },
+  onlineDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: colors.success },
+  onlineText: { fontSize: 11, color: colors.success, fontWeight: "600" },
+  deltaPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
+    alignSelf: "flex-start",
+    borderRadius: radius.full,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    marginTop: 4,
+  },
+  deltaText: { fontSize: 10, fontWeight: "700" },
   shopLink: {
     flexDirection: "row",
     alignItems: "center",
@@ -1717,7 +2082,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
+  // Depth is carried by the indent plus a coloured left edge, so the level of a
+  // row is readable at a glance without counting badges.
+  catRowChild: { marginLeft: 16, borderLeftWidth: 3, borderLeftColor: colors.primary + "66" },
+  catRowGrandchild: { marginLeft: 32, borderLeftWidth: 3, borderLeftColor: colors.primary + "33" },
+  catGuide: { fontSize: 11, color: colors.textSoft, marginRight: -2 },
   catName: { fontSize: 14, fontWeight: "600", color: colors.text },
+  catPath: { fontSize: 10, color: colors.textSoft, marginTop: 2 },
   catSlug: { fontSize: 11, color: colors.textSoft, marginTop: 1 },
   catIconWrap: {
     width: 28,
@@ -1807,6 +2178,15 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   avatarText: { fontSize: 20, fontWeight: "700", color: colors.text },
+  detailHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingBottom: 12,
+    marginBottom: 8,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+  },
   detailSectionLabel: {
     fontSize: 12,
     fontWeight: "700",

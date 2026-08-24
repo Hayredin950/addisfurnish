@@ -167,7 +167,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                   Text(
-                    'Furnish',
+                    'Home',
                     style: theme.textTheme.titleLarge?.copyWith(
                       fontFamily: 'Fraunces',
                       fontWeight: FontWeight.w800,

@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { useLang } from "@/lib/i18n";
+import { friendlyError } from "@/lib/friendly-error";
 import { RequireAuth } from "@/components/RequireAuth";
 import { LocationPicker, type Coords } from "@/components/LocationPicker";
 import { PhotoPicker, type ExistingPhoto } from "@/components/PhotoPicker";
@@ -15,11 +16,15 @@ import {
   categoryAttributesQuery,
   collectAttributeValues,
   fetchListingAttributeValues,
+  nativeFacetValues,
+  optionIdForLegacyValue,
   saveListingAttributeValues,
+  COLOR_SWATCHES,
+  type AttributeOption,
   type CategoryAttributeDef,
   type ListingAttributeValueRow,
 } from "@/lib/attributes";
-import { CITIES, CONDITIONS, MATERIALS, ROOM_TYPES, SUB_CITY_COORDS } from "@/lib/format";
+import { CITIES, CONDITIONS, ROOM_TYPES, SUB_CITY_COORDS } from "@/lib/format";
 import { announceListing, syncListingChannel } from "@/lib/telegram";
 import { ChevronDown, Video } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -111,6 +116,19 @@ function Sell() {
     return m;
   }, [existingAttrRows]);
 
+  /**
+   * Prefill for material/colour/brand when editing a listing written before
+   * these became dynamic attributes: the value only exists in the `listings`
+   * column, so seed the control from there when no attribute row was saved.
+   */
+  const legacyFacet = (def: CategoryAttributeDef): string | null => {
+    if (existingByAttr.has(def.attribute_id)) return null;
+    if (def.slug === "material") return editing?.material ?? null;
+    if (def.slug === "color") return editing?.color ?? null;
+    if (def.slug === "brand") return editing?.brand ?? null;
+    return null;
+  };
+
   /** Existing photos minus pending removals, cover-first. */
   const existingPhotos = useMemo(() => {
     const rows = (editing?.listing_images ?? []) as ExistingPhoto[];
@@ -156,6 +174,10 @@ function Sell() {
       const picked = coords ?? fallback ?? null;
       const discountExpiry = (form.get("discount_expires_at") as string) || null;
       const deliveryFeeRaw = form.get("delivery_fee") as string;
+      // Material/colour/brand arrive as dynamic attributes now; mirror them
+      // into their `listings` columns so the browse filters keep working.
+      const defs = attrDefs ?? [];
+      const facets = nativeFacetValues(form, defs);
       // Upload the showcase video first (it fails the whole submit, unlike a
       // photo miss which only warns). A removed video stays removed.
       let videoUrl: string | null = null;
@@ -175,10 +197,10 @@ function Sell() {
         original_price: form.get("original_price") ? Number(form.get("original_price")) : null,
         negotiable: form.get("negotiable") === "on",
         condition: String(form.get("condition")),
-        material: (form.get("material") as string) || null,
-        color: (form.get("color") as string) || null,
+        material: facets.material,
+        color: facets.color,
         room_type: (form.get("room_type") as string) || null,
-        brand: (form.get("brand") as string) || null,
+        brand: facets.brand,
         city: String(form.get("city")),
         sub_city: subCity,
         category_id: (form.get("category_id") as string) || null,
@@ -194,7 +216,6 @@ function Sell() {
 
       // Dynamic category attributes (spec §12/§15): required ones must be
       // provided before publishing — the backend enforces the same rule.
-      const defs = attrDefs ?? [];
       const { rows: attrRows, missingRequired } = collectAttributeValues(form, defs);
       if (missingRequired.length) {
         toast.error(
@@ -287,7 +308,7 @@ function Sell() {
       else toast.success(t(editId ? "toast.listingUpdated" : "toast.listingLive"));
       navigate({ to: "/listing/$id", params: { id: listing.id } });
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : t("toast.couldNotPublish"));
+      toast.error(friendlyError(err, t, "toast.couldNotPublish"));
     } finally {
       setBusy(false);
     }
@@ -526,28 +547,27 @@ function Sell() {
           </div>
         </SectionCard>
 
-        {/* Attributes — material, room, colour, brand. */}
+        {/* Attributes — whatever the chosen category declares (spec §15).
+            Material, colour and brand used to be hardcoded and always visible,
+            so a sofa was asked for its brand and a fridge was asked for its
+            material. They are ordinary `category_attributes` rows now; only
+            room stays fixed, being a cross-category facet with no attribute of
+            its own. */}
         <SectionCard title={t("sell.attributes")}>
           <div className="grid gap-4 sm:grid-cols-2">
-            <SelectField
-              label={t("sell.material")}
-              name="material"
-              defaultValue={editing?.material ?? ""}
-              options={MATERIALS.map((c) => ({ value: c, label: c }))}
-            />
             <SelectField
               label={t("sell.room")}
               name="room_type"
               defaultValue={editing?.room_type ?? ""}
               options={ROOM_TYPES.map((c) => ({ value: c, label: c }))}
             />
-            <Field label={t("sell.colour")} name="color" defaultValue={editing?.color ?? ""} />
-            <Field label={t("sell.brand")} name="brand" defaultValue={editing?.brand ?? ""} />
           </div>
 
-          {/* Dynamic attributes for the selected category (spec §15) — loaded
-              from the backend, so admin changes appear here without a release. */}
-          {attrDefs?.length ? (
+          {/* Loaded from the backend, so admin changes appear here without a
+              release. */}
+          {!categoryId ? (
+            <p className="text-xs text-muted-foreground">{t("sell.attrPickCategory")}</p>
+          ) : attrDefs?.length ? (
             <div className="space-y-4 border-t pt-4">
               <p className="text-xs text-muted-foreground">{t("sell.attrHint")}</p>
               <div className="grid gap-4 sm:grid-cols-2">
@@ -556,11 +576,14 @@ function Sell() {
                     key={def.attribute_id}
                     def={def}
                     existing={existingByAttr.get(def.attribute_id) ?? []}
+                    legacy={legacyFacet(def)}
                   />
                 ))}
               </div>
             </div>
-          ) : null}
+          ) : (
+            <p className="text-xs text-muted-foreground">{t("sell.attrNone")}</p>
+          )}
         </SectionCard>
 
         <div className="flex gap-2">
@@ -694,13 +717,19 @@ function SelectField({
  * One dynamically-configured attribute input (spec §15). The control matches
  * the attribute's type; every field is named `attr_<attribute-id>` so
  * `collectAttributeValues` can map submissions back to typed value rows.
+ *
+ * `legacy` is the value from the matching `listings` column for a listing
+ * saved before these attributes were dynamic — used as the prefill when no
+ * attribute row exists yet.
  */
 function AttributeInput({
   def,
   existing,
+  legacy,
 }: {
   def: CategoryAttributeDef;
   existing: ListingAttributeValueRow[];
+  legacy?: string | null;
 }) {
   const { t, lang } = useLang();
   const name = `attr_${def.attribute_id}`;
@@ -708,12 +737,33 @@ function AttributeInput({
     def.unit ? ` (${def.unit})` : ""
   }${def.is_required ? " *" : ""}`;
   const first = existing[0];
+  const fromLegacy = legacy ? optionIdForLegacyValue(def, legacy) : null;
+  const selectedOption = first?.option_id ?? fromLegacy?.optionId ?? "";
+  const selectedText = first?.value_text ?? fromLegacy?.text ?? "";
 
   if (def.type === "boolean") {
     return (
       <div className="flex items-center gap-3">
         <Switch id={name} name={name} defaultChecked={first?.value_boolean === true} />
         <Label htmlFor={name}>{label}</Label>
+      </div>
+    );
+  }
+  // Colour gets swatches instead of a dropdown (spec §10): a shopper thinks in
+  // colours, not in words, and the free-text box keeps "Walnut" or "Slate
+  // Blue" possible without an admin adding an option first.
+  if (def.slug === "color" && (def.type === "single_select" || def.type === "multi_select")) {
+    return (
+      <div className="space-y-2 sm:col-span-2">
+        <Label>{label}</Label>
+        <ColorSwatchField
+          name={name}
+          options={def.options}
+          defaultOptionId={selectedOption}
+          defaultText={selectedText}
+          lang={lang}
+          otherLabel={t("sell.colourOther")}
+        />
       </div>
     );
   }
@@ -724,8 +774,8 @@ function AttributeInput({
         <select
           id={name}
           name={name}
-          required={def.is_required}
-          defaultValue={first?.option_id ?? ""}
+          required={def.is_required && !selectedText}
+          defaultValue={selectedOption}
           className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm capitalize"
         >
           <option value="">{t("sell.select")}</option>
@@ -735,6 +785,9 @@ function AttributeInput({
             </option>
           ))}
         </select>
+        {/* A listing saved before this attribute existed can hold a value no
+            option matches; keep it rather than silently dropping it. */}
+        {selectedText ? <input type="hidden" name={`${name}_text`} value={selectedText} /> : null}
       </div>
     );
   }
@@ -776,6 +829,102 @@ function AttributeInput({
               ? String(first.value_number)
               : ""
         }
+      />
+    </div>
+  );
+}
+
+/**
+ * The colour control (spec §10): a grid of swatches sourced from
+ * `attribute_options` plus a free-text box for anything not in the grid.
+ *
+ * Radio inputs rather than a `<select>` so the choice is visible at a glance —
+ * "Beige" and "Brown" read the same in a dropdown. The text box writes
+ * `attr_<id>_text`, which `collectAttributeValues` stores as `value_text` when
+ * no swatch is picked, so an unusual colour is kept instead of forced into the
+ * nearest option.
+ */
+function ColorSwatchField({
+  name,
+  options,
+  defaultOptionId,
+  defaultText,
+  lang,
+  otherLabel,
+}: {
+  name: string;
+  options: AttributeOption[];
+  defaultOptionId: string;
+  defaultText: string;
+  lang: "en" | "am";
+  otherLabel: string;
+}) {
+  const [picked, setPicked] = useState(defaultOptionId);
+  const [text, setText] = useState(defaultText);
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap gap-2">
+        {options.map((o) => {
+          const swatch = COLOR_SWATCHES[o.value.toLowerCase()];
+          const label = lang === "am" && o.label_am ? o.label_am : o.label;
+          const active = picked === o.id;
+          return (
+            <label
+              key={o.id}
+              title={label}
+              className={`flex cursor-pointer items-center gap-2 rounded-full border px-2 py-1 text-xs transition-colors ${
+                active ? "border-primary bg-primary/10 font-medium" : "hover:bg-secondary"
+              }`}
+            >
+              <input
+                type="radio"
+                name={name}
+                value={o.id}
+                checked={active}
+                onChange={() => {
+                  setPicked(o.id);
+                  // A swatch wins over typed text; clearing it avoids saving
+                  // "Blue" alongside a picked "Green".
+                  setText("");
+                }}
+                className="sr-only"
+              />
+              <span
+                aria-hidden
+                className="h-4 w-4 shrink-0 rounded-full border"
+                style={
+                  swatch === "multi"
+                    ? {
+                        background:
+                          "conic-gradient(#dc2626, #eab308, #16a34a, #2563eb, #7e22ce, #dc2626)",
+                      }
+                    : { backgroundColor: swatch ?? "transparent" }
+                }
+              />
+              {label}
+            </label>
+          );
+        })}
+        {picked ? (
+          <button
+            type="button"
+            onClick={() => setPicked("")}
+            className="rounded-full border px-2 py-1 text-xs text-muted-foreground hover:bg-secondary"
+          >
+            ×
+          </button>
+        ) : null}
+      </div>
+      <Input
+        name={`${name}_text`}
+        value={text}
+        placeholder={otherLabel}
+        onChange={(e) => {
+          setText(e.target.value);
+          if (e.target.value) setPicked("");
+        }}
+        className="h-9 max-w-64"
       />
     </div>
   );

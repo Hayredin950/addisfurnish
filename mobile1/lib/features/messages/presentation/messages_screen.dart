@@ -259,6 +259,7 @@ class _ConversationTile extends StatelessWidget {
                 width: 48,
                 height: 48,
                 icon: Icons.person_outline,
+                targetWidth: 144,
               ),
             ),
             if (other?.isOnline == true)

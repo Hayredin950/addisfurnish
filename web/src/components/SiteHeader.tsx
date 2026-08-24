@@ -13,6 +13,7 @@ import {
   Shield,
   TrendingUp,
   User,
+  X,
 } from "lucide-react";
 import { useLang } from "@/lib/i18n";
 import { formatBirr } from "@/lib/format";
@@ -42,14 +43,20 @@ function DefaultAvatar() {
   );
 }
 
-export function SiteHeader() {
-  const { user, profile, signOut } = useAuth();
+/**
+ * The header search field plus its trending / suggestion dropdown.
+ *
+ * Extracted so the same box can serve the desktop header *and* the phone-width
+ * expanded row — the app has a search field on its home screen, and before this
+ * the web header hid search entirely below `lg`, leaving phones with no way to
+ * search except walking to /browse first (item 12).
+ */
+function SearchBox({ autoFocus, onDone }: { autoFocus?: boolean; onDone?: () => void }) {
   const { t } = useLang();
   const navigate = useNavigate();
   const [term, setTerm] = useState("");
   const [open, setOpen] = useState(false);
   const blurTimer = useRef<number | null>(null);
-  const { data: isAdmin } = useQuery(isAdminQuery(user?.id));
   const { data: suggestions } = useQuery(searchSuggestionsQuery(term));
   const { data: trending } = useQuery(trendingSearchesQuery(5));
 
@@ -57,12 +64,14 @@ export function SiteHeader() {
     e.preventDefault();
     if (!term.trim()) return;
     setOpen(false);
+    onDone?.();
     navigate({ to: "/browse", search: { q: term.trim() } });
   }
 
   function goToBrowse(q: string) {
     setOpen(false);
     setTerm(q);
+    onDone?.();
     navigate({ to: "/browse", search: { q } });
   }
 
@@ -71,11 +80,98 @@ export function SiteHeader() {
   // exactly why "clicking a suggestion did nothing".
   function goToListing(id: string) {
     setOpen(false);
+    onDone?.();
     navigate({ to: "/listing/$id", params: { id } });
   }
 
   const showTrending = open && term.trim().length < 2;
   const showSuggestions = open && term.trim().length >= 2;
+
+  return (
+    <>
+      <form onSubmit={submitSearch} role="search">
+        <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          value={term}
+          onChange={(e) => setTerm(e.target.value)}
+          onFocus={() => setOpen(true)}
+          onBlur={() => {
+            if (blurTimer.current) window.clearTimeout(blurTimer.current);
+            blurTimer.current = window.setTimeout(() => setOpen(false), 150);
+          }}
+          placeholder={t("nav.searchPlaceholder")}
+          className="pl-9"
+          aria-label={t("nav.searchPlaceholder")}
+          autoFocus={autoFocus ?? false}
+        />
+      </form>
+
+      {showSuggestions || showTrending ? (
+        <div className="absolute left-0 right-0 top-full z-50 mt-2 overflow-hidden rounded-lg border bg-card shadow-lift">
+          {showSuggestions ? (
+            <div>
+              {(suggestions ?? []).length > 0 ? (
+                <ul className="max-h-72 overflow-y-auto py-1">
+                  {suggestions!.map((s) => (
+                    <li key={s.id}>
+                      <button
+                        type="button"
+                        onMouseDown={() => goToListing(s.id)}
+                        className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm transition-colors hover:bg-secondary"
+                      >
+                        <span className="truncate font-medium">{s.title}</span>
+                        <span className="shrink-0 text-xs text-muted-foreground">
+                          {formatBirr(s.price)}
+                        </span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="px-3 py-3 text-xs text-muted-foreground">{t("browse.loading")}</p>
+              )}
+              <div className="border-t px-3 py-2">
+                <button
+                  type="button"
+                  onMouseDown={() => goToBrowse(term.trim())}
+                  className="text-xs font-medium text-primary"
+                >
+                  {t("browse.title")} · “{term.trim()}”
+                </button>
+              </div>
+            </div>
+          ) : null}
+          {showTrending && trending && trending.length > 0 ? (
+            <div className="px-3 py-2.5">
+              <p className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                <TrendingUp className="h-3 w-3" /> {t("browse.popular")}
+              </p>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {trending.map((q) => (
+                  <button
+                    key={q}
+                    type="button"
+                    onMouseDown={() => goToBrowse(q)}
+                    className="rounded-full bg-secondary px-2.5 py-1 text-xs transition-colors hover:bg-accent hover:text-accent-foreground"
+                  >
+                    {q}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+export function SiteHeader() {
+  const { user, profile, signOut } = useAuth();
+  const { t } = useLang();
+  const navigate = useNavigate();
+  const [mobileSearch, setMobileSearch] = useState(false);
+  const { data: isAdmin } = useQuery(isAdminQuery(user?.id));
 
   const NAV: readonly { to: string; label: string }[] = [
     { to: "/browse", label: t("nav.browse") },
@@ -120,81 +216,23 @@ export function SiteHeader() {
         </nav>
 
         <div className="relative ml-auto hidden max-w-sm flex-1 lg:block">
-          <form onSubmit={submitSearch} role="search">
-            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-            <Input
-              value={term}
-              onChange={(e) => setTerm(e.target.value)}
-              onFocus={() => setOpen(true)}
-              onBlur={() => {
-                if (blurTimer.current) window.clearTimeout(blurTimer.current);
-                blurTimer.current = window.setTimeout(() => setOpen(false), 150);
-              }}
-              placeholder={t("nav.searchPlaceholder")}
-              className="pl-9"
-              aria-label={t("nav.searchPlaceholder")}
-            />
-          </form>
-
-          {showSuggestions || showTrending ? (
-            <div className="absolute left-0 right-0 top-full z-50 mt-2 overflow-hidden rounded-lg border bg-card shadow-lift">
-              {showSuggestions ? (
-                <div>
-                  {(suggestions ?? []).length > 0 ? (
-                    <ul className="max-h-72 overflow-y-auto py-1">
-                      {suggestions!.map((s) => (
-                        <li key={s.id}>
-                          <button
-                            type="button"
-                            onMouseDown={() => goToListing(s.id)}
-                            className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm transition-colors hover:bg-secondary"
-                          >
-                            <span className="truncate font-medium">{s.title}</span>
-                            <span className="shrink-0 text-xs text-muted-foreground">
-                              {formatBirr(s.price)}
-                            </span>
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="px-3 py-3 text-xs text-muted-foreground">{t("browse.loading")}</p>
-                  )}
-                  <div className="border-t px-3 py-2">
-                    <button
-                      type="button"
-                      onMouseDown={() => goToBrowse(term.trim())}
-                      className="text-xs font-medium text-primary"
-                    >
-                      {t("browse.title")} · “{term.trim()}”
-                    </button>
-                  </div>
-                </div>
-              ) : null}
-              {showTrending && trending && trending.length > 0 ? (
-                <div className="px-3 py-2.5">
-                  <p className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                    <TrendingUp className="h-3 w-3" /> {t("browse.popular")}
-                  </p>
-                  <div className="mt-2 flex flex-wrap gap-1.5">
-                    {trending.map((q) => (
-                      <button
-                        key={q}
-                        type="button"
-                        onMouseDown={() => goToBrowse(q)}
-                        className="rounded-full bg-secondary px-2.5 py-1 text-xs transition-colors hover:bg-accent hover:text-accent-foreground"
-                      >
-                        {q}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-            </div>
-          ) : null}
+          <SearchBox />
         </div>
 
         <div className="ml-auto flex items-center gap-2 lg:ml-2">
+          {/* Phone-width search: the field itself doesn't fit beside the logo,
+              so it opens as a second header row (item 12). */}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="lg:hidden"
+            aria-label={t("nav.searchPlaceholder")}
+            aria-expanded={mobileSearch}
+            onClick={() => setMobileSearch((v) => !v)}
+          >
+            {mobileSearch ? <X className="h-5 w-5" /> : <Search className="h-5 w-5" />}
+          </Button>
+
           <LanguageToggle />
 
           <Button asChild size="sm" className="hidden sm:inline-flex">
@@ -353,6 +391,13 @@ export function SiteHeader() {
           </Sheet>
         </div>
       </div>
+      {mobileSearch ? (
+        <div className="mx-auto max-w-6xl px-4 pb-3 lg:hidden">
+          <div className="relative">
+            <SearchBox autoFocus onDone={() => setMobileSearch(false)} />
+          </div>
+        </div>
+      ) : null}
     </header>
   );
 }

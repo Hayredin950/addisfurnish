@@ -229,6 +229,7 @@ class _ShopScreenState extends State<ShopScreen> with AppStateMixin {
                 width: 76,
                 height: 76,
                 icon: Icons.storefront_outlined,
+                targetWidth: 228,
               ),
             ),
           ),

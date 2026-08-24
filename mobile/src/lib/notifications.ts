@@ -121,6 +121,8 @@ export function notificationText(
     messagePreview?: string;
     phone?: string;
     amount?: number;
+    name?: string;
+    newEmail?: string;
   } | null,
 ): { title: string; body: string } {
   const p = payload ?? {};
@@ -163,6 +165,20 @@ export function notificationText(
       };
     case "seller_verified":
       return { title: translate(lang, "shopVerified"), body: "" };
+    // Email changes (item 43): the request goes to every admin, the outcome
+    // back to the user.
+    case "email_change_requested":
+      return {
+        title: translate(lang, "notifEmailChangeRequested"),
+        body: [p.name, p.newEmail].filter(Boolean).join(" → "),
+      };
+    case "email_change_approved":
+      return { title: translate(lang, "notifEmailChangeApproved"), body: p.newEmail ?? "" };
+    case "email_change_rejected":
+      return {
+        title: translate(lang, "notifEmailChangeRejected"),
+        body: p.reason ?? "",
+      };
     case "seller_rejected":
       return { title: translate(lang, "docStatusRejected"), body: p.reason ?? "" };
     default:

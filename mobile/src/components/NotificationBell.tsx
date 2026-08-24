@@ -1,6 +1,6 @@
-import { useEffect } from "react";
+import { useCallback, useEffect } from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useAuth } from "../lib/auth";
 import { useAsync } from "../hooks/use-async";
@@ -27,6 +27,16 @@ export function NotificationBell() {
     return subscribeNotifications(user.id, () => refetch());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.id]);
+
+  // Re-read the count whenever the host screen comes back into focus. Reading
+  // notifications happens on another screen, so without this the badge kept
+  // showing a stale unread count until the app was restarted.
+  useFocusEffect(
+    useCallback(() => {
+      if (user) refetch();
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [user?.id]),
+  );
 
   if (!user) return null;
 

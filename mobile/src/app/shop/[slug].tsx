@@ -12,6 +12,7 @@ import { useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useLang } from "../../lib/lang";
 import { useAsync } from "../../hooks/use-async";
+import { useFavorites } from "../../hooks/use-favorites";
 import { fetchListings, fetchReviews, fetchShop } from "../../lib/api";
 import { ListingCard } from "../../components/ListingCard";
 import { EmptyState } from "../../components/EmptyState";
@@ -36,6 +37,7 @@ function Stars({ value }: { value: number }) {
 export default function ShopScreen() {
   const { slug } = useLocalSearchParams<{ slug: string }>();
   const { t, lang } = useLang();
+  const favs = useFavorites();
 
   const shop = useAsync(() => fetchShop(slug ?? ""), [slug]);
   const listings = useAsync(
@@ -143,7 +145,13 @@ export default function ShopScreen() {
         ) : (
           <View style={styles.grid}>
             {(listings.data ?? []).map((l) => (
-              <ListingCard key={l.id} listing={l} lang={lang} />
+              <ListingCard
+                key={l.id}
+                listing={l}
+                lang={lang}
+                isFav={favs.isFav(l.id)}
+                onToggleFav={favs.toggle}
+              />
             ))}
           </View>
         )}

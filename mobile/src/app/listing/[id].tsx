@@ -18,14 +18,15 @@ import { useVideoPlayer, VideoView } from "expo-video";
 import { Ionicons } from "@expo/vector-icons";
 import { useLang } from "../../lib/lang";
 import { useAsync } from "../../hooks/use-async";
+import { useFavorites } from "../../hooks/use-favorites";
 import { useAuth } from "../../lib/auth";
+import { isAdmin } from "../../lib/admin";
 import {
   ensureConversation,
   fetchListing,
   fetchListings,
   fetchMyProfile,
   fetchReviews,
-  fetchFavoriteIds,
   makeOffer,
   notifyUser,
   pingListingView,
@@ -34,7 +35,6 @@ import {
   sendMessage,
   submitReport,
   submitReview,
-  toggleFavorite,
   shareUrl,
   trackShare,
 } from "../../lib/api";
@@ -46,6 +46,7 @@ import { useToast } from "../../components/Toast";
 import { colors, radius, spacing, shadows, font } from "../../lib/theme";
 import { imageSource, imageUrl } from "../../lib/storage";
 import { formatBirr, timeAgo, ethiopianDate } from "../../lib/format";
+import { useDraft } from "../../lib/drafts";
 
 function Stars({ value, size = 14 }: { value: number; size?: number }) {
   return (
@@ -84,17 +85,19 @@ export default function ListingDetailScreen() {
   // Used to prefill the callback form with the buyer's own number.
   const myProfile = useAsync(() => fetchMyProfile(user!.id), [user?.id], !!user);
 
-  const [favIds, setFavIds] = useState<string[]>([]);
+  const favs = useFavorites();
   const [msgOpen, setMsgOpen] = useState(false);
-  const [message, setMessage] = useState("");
+  // The message to the seller and the offer are kept per listing (item 42), so
+  // a mistyped tap that closes the sheet doesn't discard what was written.
+  const [message, setMessage, clearMessage] = useDraft(`contact:${id}`);
   const [sending, setSending] = useState(false);
   const [callbackPhone, setCallbackPhone] = useState("");
   const [callbackOpen, setCallbackOpen] = useState(false);
   const [callbackBusy, setCallbackBusy] = useState(false);
   const [callbackSent, setCallbackSent] = useState(false);
   const [offerOpen, setOfferOpen] = useState(false);
-  const [offerAmount, setOfferAmount] = useState("");
-  const [offerMessage, setOfferMessage] = useState("");
+  const [offerAmount, setOfferAmount, clearOfferAmount] = useDraft(`offer-amount:${id}`);
+  const [offerMessage, setOfferMessage, clearOfferMessage] = useDraft(`offer-msg:${id}`);
   const [offerBusy, setOfferBusy] = useState(false);
   const [offerSent, setOfferSent] = useState(false);
   const [reviewOpen, setReviewOpen] = useState(false);
@@ -113,16 +116,22 @@ export default function ListingDetailScreen() {
     // The view must be recorded before the ping: the edge function's throttle
     // reads listing_views, and a ping that arrives first sees an empty window.
     void recordListingView(id).then(() => pingListingView(id));
-    if (user) {
-      void fetchFavoriteIds(user.id).then(setFavIds);
-    }
   }, [id, user]);
 
   const item = listing.data;
   const seller = item?.profiles ?? null;
-  const isFav = favIds.includes(id ?? "");
+  const isFav = favs.isFav(id ?? "");
   const sold = item?.status === "sold";
   const reserved = item?.status === "reserved";
+  // Item 36: you cannot deal with yourself. Messaging, callbacks, offers,
+  // reviews and reports are all blocked in the database too (self-chat since
+  // 20260803120000, the rest in 20260822010000) — this keeps the buttons from
+  // offering an action that would only come back as an error.
+  const isOwn = !!user && !!item && item.seller_id === user.id;
+  const [amAdmin, setAmAdmin] = useState(false);
+  useEffect(() => {
+    void isAdmin(user?.id).then(setAmAdmin);
+  }, [user?.id]);
   const off =
     item?.original_price && item.original_price > item.price
       ? Math.round(((item.original_price - item.price) / item.original_price) * 100)
@@ -152,14 +161,14 @@ export default function ListingDetailScreen() {
         });
       }
       setMsgOpen(false);
-      setMessage("");
+      clearMessage();
       router.push(`/chat/${conversationId}`);
     } catch {
       // ignore
     } finally {
       setSending(false);
     }
-  }, [user, item, message]);
+  }, [user, item, message, clearMessage]);
 
   // Buyer's display name for the callback notification (falls back to nothing
   // until the profile loads — the seller still gets the phone number).
@@ -182,15 +191,15 @@ export default function ListingDetailScreen() {
         buyerPhone: myProfile.data?.phone ?? null,
       });
       setOfferOpen(false);
-      setOfferAmount("");
-      setOfferMessage("");
+      clearOfferAmount();
+      clearOfferMessage();
       setOfferSent(true);
     } catch (err) {
       toast.error(err, t("oops"));
     } finally {
       setOfferBusy(false);
     }
-  }, [user, item, offerAmount, offerMessage, t, toast, myProfile]);
+  }, [user, item, offerAmount, offerMessage, t, toast, myProfile, clearOfferAmount, clearOfferMessage]);
 
   const sendCallback = useCallback(async () => {
     if (!user || !item || !callbackPhone.trim()) return;
@@ -222,10 +231,12 @@ export default function ListingDetailScreen() {
       setReviewOpen(false);
       setComment("");
       reviews.refetch();
-    } catch {
-      // ignore
+    } catch (e) {
+      // A swallowed failure looked like a successful post that vanished on
+      // reload. The self-review CHECK now rejects here too, so say so.
+      toast.error(e, t("reviewFailed"));
     }
-  }, [user, item, rating, comment, reviews]);
+  }, [user, item, rating, comment, reviews, t, toast]);
 
   const submitReportNow = useCallback(async () => {
     if (!user || !item) return;
@@ -250,8 +261,10 @@ export default function ListingDetailScreen() {
     }
   }, [user, item, reportReason, reportDetails]);
 
+  // Capped at 10: the row scrolls horizontally, so an unbounded list just costs
+  // image bandwidth for cards nobody scrolls to (web parity).
   const similarListings = useMemo(
-    () => (similar.data ?? []).filter((l) => l.id !== id),
+    () => (similar.data ?? []).filter((l) => l.id !== id).slice(0, 10),
     [similar.data, id],
   );
 
@@ -389,14 +402,7 @@ export default function ListingDetailScreen() {
                 router.push("/auth");
                 return;
               }
-              try {
-                await toggleFavorite(user.id, item.id, isFav);
-                setFavIds((prev) =>
-                  isFav ? prev.filter((x) => x !== item.id) : [...prev, item.id],
-                );
-              } catch {
-                // ignore
-              }
+              await favs.toggle(item.id, isFav);
             }}
           >
             <Ionicons
@@ -478,7 +484,7 @@ export default function ListingDetailScreen() {
             </View>
             <Ionicons name="chevron-forward" size={18} color={colors.textSoft} />
           </View>
-          {!sold && !reserved ? (
+          {!sold && !reserved && !isOwn ? (
             <>
               <View style={styles.contactRow}>
                 <Button
@@ -531,11 +537,11 @@ export default function ListingDetailScreen() {
                 }}
               />
             </>
-          ) : (
-            <Text style={[styles.sellerMeta, { marginTop: 8, textAlign: "center" }]}>  
+          ) : sold || reserved ? (
+            <Text style={[styles.sellerMeta, { marginTop: 8, textAlign: "center" }]}>
               {sold ? t("soldOut") : t("reserved")} — {t("noLongerAvailable")}
             </Text>
-          )}
+          ) : null}
           {seller.whatsapp ? (
             <Pressable
               style={styles.socialRow}
@@ -638,7 +644,14 @@ export default function ListingDetailScreen() {
             contentContainerStyle={{ gap: 12 }}
           >
             {similarListings.map((l) => (
-              <ListingCard key={l.id} listing={l} lang={lang} compact />
+              <ListingCard
+                key={l.id}
+                listing={l}
+                lang={lang}
+                compact
+                isFav={favs.isFav(l.id)}
+                onToggleFav={favs.toggle}
+              />
             ))}
           </ScrollView>
         </View>
@@ -863,22 +876,26 @@ export default function ListingDetailScreen() {
         </SheetOverlay>
       </Modal>
 
-      {/* Report trigger */}
-      <View style={styles.reportRow}>
-        <Pressable
-          style={styles.reportBtn}
-          onPress={() => {
-            if (!user) {
-              router.push("/auth");
-              return;
-            }
-            setReportOpen(true);
-          }}
-        >
-          <Ionicons name="flag-outline" size={15} color={colors.danger} />
-          <Text style={styles.reportText}>{t("reportTitle")}</Text>
-        </Pressable>
-      </View>
+      {/* Report trigger. Not on your own listing (item 36), and not for
+          moderators (item 38) — they resolve reports, so authoring one puts the
+          same person on both sides. The reports INSERT policy rejects both. */}
+      {!isOwn && !amAdmin ? (
+        <View style={styles.reportRow}>
+          <Pressable
+            style={styles.reportBtn}
+            onPress={() => {
+              if (!user) {
+                router.push("/auth");
+                return;
+              }
+              setReportOpen(true);
+            }}
+          >
+            <Ionicons name="flag-outline" size={15} color={colors.danger} />
+            <Text style={styles.reportText}>{t("reportTitle")}</Text>
+          </Pressable>
+        </View>
+      ) : null}
     </ScrollView>
   );
 }

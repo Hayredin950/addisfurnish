@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { useLang } from "@/lib/i18n";
+import { friendlyError } from "@/lib/friendly-error";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -62,7 +63,7 @@ function AuthPage() {
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     setBusy(false);
     if (error) {
-      toast.error(error.message);
+      toast.error(friendlyError(error, t));
       return;
     }
     toast.success(t("toast.welcomeBack"));
@@ -82,7 +83,7 @@ function AuthPage() {
     });
     setBusy(false);
     if (error) {
-      toast.error(error.message);
+      toast.error(friendlyError(error, t));
       return;
     }
     if (!data.session) {
@@ -103,7 +104,7 @@ function AuthPage() {
     });
     setBusy(false);
     if (error) {
-      toast.error(error.message);
+      toast.error(friendlyError(error, t));
       return;
     }
     if (data.session) {
@@ -118,7 +119,7 @@ function AuthPage() {
     const { error } = await supabase.auth.resend({ type: "signup", email: pendingEmail });
     setBusy(false);
     if (error) {
-      toast.error(error.message);
+      toast.error(friendlyError(error, t));
       return;
     }
     toast.success(t("auth.confirmResent"));
@@ -132,7 +133,7 @@ function AuthPage() {
     });
     setBusy(false);
     if (error) {
-      toast.error(error.message);
+      toast.error(friendlyError(error, t));
       return;
     }
     setResetStep("otp");
@@ -149,7 +150,7 @@ function AuthPage() {
     });
     setBusy(false);
     if (error) {
-      toast.error(error.message);
+      toast.error(friendlyError(error, t));
       return;
     }
     if (data.session) {
@@ -163,7 +164,7 @@ function AuthPage() {
     const { error } = await supabase.auth.updateUser({ password: newPassword });
     setBusy(false);
     if (error) {
-      toast.error(error.message);
+      toast.error(friendlyError(error, t));
       return;
     }
     toast.success(t("auth.resetDone"));
@@ -177,7 +178,7 @@ function AuthPage() {
     });
     setBusy(false);
     if (error) {
-      toast.error(error.message);
+      toast.error(friendlyError(error, t));
       return;
     }
     toast.success(t("auth.resetSent"));
@@ -189,7 +190,7 @@ function AuthPage() {
       options: { redirectTo: window.location.origin },
     });
     if (error) {
-      toast.error("Google sign-in failed");
+      toast.error(t("err.generic"));
       return;
     }
     // The browser redirects to Google; the session is picked up on return via

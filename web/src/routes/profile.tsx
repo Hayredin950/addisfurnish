@@ -6,6 +6,7 @@ import { BadgeCheck, ChevronDown, Heart, LayoutDashboard, Send, ShieldCheck } fr
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/lib/auth";
 import { useLang } from "@/lib/i18n";
+import { friendlyError } from "@/lib/friendly-error";
 import { RequireAuth } from "@/components/RequireAuth";
 import { LocationPicker, type Coords } from "@/components/LocationPicker";
 import { getTelegramConnectUrl, disconnectTelegram, telegramConfigured } from "@/lib/telegram";
@@ -13,6 +14,8 @@ import { startPhoneVerification, verifyPhoneOtp } from "@/lib/otp";
 import {
   buyerPreferencesQuery,
   categoriesQuery,
+  myEmailChangeRequestsQuery,
+  requestEmailChange,
   saveBuyerPreferences,
   sellerVerificationDocsQuery,
   submitVerificationDocument,
@@ -30,6 +33,14 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 export const Route = createFileRoute("/profile")({
   // Deep link from the Telegram bot: /profile?connect=telegram scrolls to and
@@ -81,6 +92,13 @@ function ProfilePage() {
   const { data: verificationDocs } = useQuery(sellerVerificationDocsQuery(user?.id ?? ""));
   const [docType, setDocType] = useState("business_license");
   const [docBusy, setDocBusy] = useState(false);
+  // Email changes go through an admin (item 43): auth.users is not writable
+  // from a client, so the user files a request and it lands in the admin queue.
+  const { data: emailRequests } = useQuery(myEmailChangeRequestsQuery(user?.id));
+  const [emailDialog, setEmailDialog] = useState(false);
+  const [newEmail, setNewEmail] = useState("");
+  const [emailReason, setEmailReason] = useState("");
+  const [emailBusy, setEmailBusy] = useState(false);
   const logoUrl = useImageUrl(profile?.shop_logo_url ?? null);
   const [prefCategoryIds, setPrefCategoryIds] = useState<string[]>(prefs?.category_ids ?? []);
   const [prefCities, setPrefCities] = useState<string[]>(prefs?.preferred_cities ?? []);
@@ -125,8 +143,9 @@ function ProfilePage() {
       })
       .eq("id", user!.id);
     if (error) {
-      // Show the real reason instead of a generic failure.
-      toast.error(error.message);
+      // Mapped, not raw: a unique-constraint message would otherwise print the
+      // table and column name straight into the toast.
+      toast.error(friendlyError(error, t, "toast.couldNotSave"));
       return;
     }
     toast.success(t("toast.profileUpdated"));
@@ -159,8 +178,9 @@ function ProfilePage() {
       })
       .eq("id", user!.id);
     if (error) {
-      // Show the real reason instead of a generic failure.
-      toast.error(error.message);
+      // Mapped, not raw: a unique-constraint message would otherwise print the
+      // table and column name straight into the toast.
+      toast.error(friendlyError(error, t, "toast.couldNotSave"));
       return;
     }
     toast.success(t("toast.profileUpdated"));
@@ -188,9 +208,9 @@ function ProfilePage() {
     try {
       path = await uploadShopLogo(user.id, file);
     } catch (error) {
-      // Surface the real reason — a missing bucket and a rejected file type look
-      // identical otherwise.
-      toast.error(error instanceof Error ? error.message : t("toast.couldNotSave"));
+      // Distinguishes the cases people can act on (file too large, not signed
+      // in, offline) without printing storage internals.
+      toast.error(friendlyError(error, t, "toast.couldNotSave"));
       return;
     }
     const { error: updateError } = await supabase
@@ -198,7 +218,8 @@ function ProfilePage() {
       .update({ shop_logo_url: path })
       .eq("id", user.id);
     if (updateError) {
-      toast.error(updateError.message);
+      // Postgres error text names the table and column — translate instead.
+      toast.error(friendlyError(updateError, t, "toast.couldNotSave"));
       return;
     }
     // The old logo leaves with the swap — it would otherwise stay on
@@ -273,6 +294,36 @@ function ProfilePage() {
     return () => clearTimeout(scroll);
   }, [connect]);
 
+  const pendingEmailRequest = (emailRequests ?? []).find((r) => r.status === "pending") ?? null;
+  const lastRejectedEmail = (emailRequests ?? []).find((r) => r.status === "rejected") ?? null;
+
+  const submitEmailChange = async () => {
+    const address = newEmail.trim();
+    if (!address) return;
+    setEmailBusy(true);
+    const res = await requestEmailChange(address, emailReason.trim());
+    setEmailBusy(false);
+    if (!res.ok) {
+      toast.error(
+        res.error === "invalid_email"
+          ? t("error.emailInvalid")
+          : res.error === "email_taken"
+            ? t("error.emailTaken")
+            : res.error === "unchanged"
+              ? t("error.emailUnchanged")
+              : res.error === "already_pending"
+                ? t("error.emailAlreadyPending")
+                : t("toast.requestFailed"),
+      );
+      return;
+    }
+    toast.success(t("toast.emailChangeSent"));
+    setEmailDialog(false);
+    setNewEmail("");
+    setEmailReason("");
+    queryClient.invalidateQueries({ queryKey: ["my-email-change-requests"] });
+  };
+
   const latestDoc =
     verificationDocs?.find((d) => d.status === "pending") ?? verificationDocs?.[0] ?? null;
   const docStatus = latestDoc?.status ?? null;
@@ -341,13 +392,40 @@ function ProfilePage() {
         }
       >
         <form className="mt-4 space-y-4" onSubmit={saveAccount}>
-          {/* The email is the login identity and can't be edited here — show it
-              read-only so the account is identifiable. */}
+          {/* The email is the login identity: it lives in auth.users, which no
+              client can write, so it stays read-only here and a change is
+              requested from an admin instead (item 43). */}
           {user?.email ? (
             <div className="space-y-2">
               <Label htmlFor="email">{t("auth.email")}</Label>
               <Input id="email" value={user.email} readOnly disabled className="bg-muted" />
-              <p className="text-xs text-muted-foreground">{t("profile.emailHint")}</p>
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <p className="text-xs text-muted-foreground">{t("profile.emailHint")}</p>
+                {pendingEmailRequest ? (
+                  <span className="text-xs font-medium text-amber-600">
+                    {t("profile.emailChangePending", { email: pendingEmailRequest.new_email })}
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    className="text-xs font-medium text-primary underline"
+                    onClick={() => {
+                      setNewEmail("");
+                      setEmailReason("");
+                      setEmailDialog(true);
+                    }}
+                  >
+                    {t("profile.emailChange")}
+                  </button>
+                )}
+              </div>
+              {!pendingEmailRequest && lastRejectedEmail ? (
+                <p className="text-xs text-destructive">
+                  {t("profile.emailChangeRejected", {
+                    reason: lastRejectedEmail.rejection_reason ?? "—",
+                  })}
+                </p>
+              ) : null}
             </div>
           ) : null}
           <div className="space-y-2">
@@ -764,6 +842,46 @@ function ProfilePage() {
           </Button>
         </div>
       </ProfileSection>
+
+      {/* Email-change request (item 43). The address itself is only ever
+          written by an admin-gated RPC; this collects the ask. */}
+      <Dialog open={emailDialog} onOpenChange={setEmailDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{t("profile.emailChangeTitle")}</DialogTitle>
+            <DialogDescription>{t("profile.emailChangeBody")}</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="new_email">{t("profile.emailChangeNew")}</Label>
+              <Input
+                id="new_email"
+                type="email"
+                value={newEmail}
+                onChange={(e) => setNewEmail(e.target.value)}
+                placeholder="name@example.com"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="email_reason">{t("profile.emailChangeReason")}</Label>
+              <Textarea
+                id="email_reason"
+                rows={2}
+                value={emailReason}
+                onChange={(e) => setEmailReason(e.target.value)}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEmailDialog(false)}>
+              {t("report.cancel")}
+            </Button>
+            <Button disabled={!newEmail.trim() || emailBusy} onClick={submitEmailChange}>
+              {t("profile.emailChangeSubmit")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
