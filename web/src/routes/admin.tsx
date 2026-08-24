@@ -33,6 +33,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import type { Json } from "@/integrations/supabase/types";
 import {
   adminAllUsersQuery,
   adminListingsQuery,
@@ -69,7 +70,7 @@ import { UserDetailDialog } from "@/components/admin/UserDetailDialog";
 import { DocumentViewer } from "@/components/admin/DocumentViewer";
 import { deleteCloudinaryAssets, useImageUrl } from "@/lib/storage";
 import { timeAgo, formatBirr } from "@/lib/format";
-import { syncListingChannel } from "@/lib/telegram";
+import { announceListing, syncListingChannel, telegramConfigured } from "@/lib/telegram";
 import { logAdminAction } from "@/lib/admin-audit";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Button } from "@/components/ui/button";
@@ -151,8 +152,17 @@ function AdminPage() {
           <TabsTrigger value="analytics">
             <Globe className="mr-1.5 h-3.5 w-3.5" /> {t("admin.analytics")}
           </TabsTrigger>
+          <TabsTrigger value="telegram">
+            <Radio className="mr-1.5 h-3.5 w-3.5" /> {t("admin.telegramTab")}
+          </TabsTrigger>
+          <TabsTrigger value="featured">
+            <Star className="mr-1.5 h-3.5 w-3.5" /> {t("admin.featuredListings")}
+          </TabsTrigger>
           <TabsTrigger value="audit">
             <ScrollText className="mr-1.5 h-3.5 w-3.5" /> {t("admin.auditLog")}
+          </TabsTrigger>
+          <TabsTrigger value="settings">
+            <ShieldCheck className="mr-1.5 h-3.5 w-3.5" /> {t("admin.settings")}
           </TabsTrigger>
         </TabsList>
 
@@ -184,8 +194,17 @@ function AdminPage() {
         <TabsContent value="analytics" className="mt-6">
           <AnalyticsTab />
         </TabsContent>
+        <TabsContent value="telegram" className="mt-6">
+          <TelegramTab />
+        </TabsContent>
+        <TabsContent value="featured" className="mt-6">
+          <FeaturedTab />
+        </TabsContent>
         <TabsContent value="audit" className="mt-6">
           <AuditLogTab />
+        </TabsContent>
+        <TabsContent value="settings" className="mt-6">
+          <SettingsTab />
         </TabsContent>
       </Tabs>
     </div>
@@ -256,13 +275,18 @@ function DashboardTab({
     },
   });
 
-  const { data: health } = useQuery({
+  const {
+    data: health,
+    isError: healthFailed,
+    refetch: retryHealth,
+  } = useQuery({
     queryKey: ["admin-health-stats"],
     queryFn: async () => {
       const { data, error } = await supabase.rpc("admin_health_stats");
       if (error) throw error;
       return (data ?? null) as unknown as HealthStats | null;
     },
+    retry: 1,
   });
 
   // Tier 3 — category performance: root-category rollup of supply vs demand.
@@ -362,7 +386,14 @@ function DashboardTab({
           title={t("admin.marketplaceHealth")}
           accent="bg-emerald-500"
         />
-        {!health ? (
+        {healthFailed ? (
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <p className="text-sm text-destructive">{t("admin.healthUnavailable")}</p>
+            <Button size="sm" variant="outline" onClick={() => void retryHealth()}>
+              {t("admin.retry")}
+            </Button>
+          </div>
+        ) : !health ? (
           <p className="mt-3 text-sm text-muted-foreground">{t("browse.loading")}</p>
         ) : (
           <>
@@ -532,15 +563,15 @@ function ActionCard({
 }
 
 /**
- * Moderation center (spec §10): reports and disputes in one place, each a
- * dedicated queue so time-sensitive disputes are not buried.
+ * Moderation center (spec §10): reports, disputes and flagged listings in one
+ * place, each a dedicated queue so time-sensitive items are not buried.
  */
 function ModerationTab() {
   const { t } = useLang();
-  const [queue, setQueue] = useState<"reports" | "disputes">("reports");
+  const [queue, setQueue] = useState<"reports" | "disputes" | "flagged">("reports");
   return (
     <div className="space-y-4">
-      <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         <Button
           size="sm"
           variant={queue === "reports" ? "default" : "outline"}
@@ -555,9 +586,145 @@ function ModerationTab() {
         >
           <Gavel className="mr-1.5 h-3.5 w-3.5" /> {t("admin.disputes")}
         </Button>
+        <Button
+          size="sm"
+          variant={queue === "flagged" ? "default" : "outline"}
+          onClick={() => setQueue("flagged")}
+        >
+          <AlertTriangle className="mr-1.5 h-3.5 w-3.5" /> {t("admin.flaggedListings")}
+        </Button>
       </div>
-      {queue === "reports" ? <ReportsTab /> : <DisputesTab />}
+      {queue === "reports" ? (
+        <ReportsTab />
+      ) : queue === "disputes" ? (
+        <DisputesTab />
+      ) : (
+        <FlaggedListingsTab />
+      )}
     </div>
+  );
+}
+
+/** Listings grouped by their open reports — triage at the listing level. */
+function FlaggedListingsTab() {
+  const { t } = useLang();
+  const queryClient = useQueryClient();
+  const { data: flagged } = useQuery({
+    queryKey: ["admin-flagged-listings"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("reports")
+        .select(
+          "id,reason,details,status,created_at,listing_id," + "listings(id,title,status,featured)",
+        )
+        .eq("status", "pending")
+        .not("listing_id", "is", null)
+        .order("created_at", { ascending: false })
+        .limit(200);
+      if (error) throw error;
+      type Row = {
+        id: string;
+        reason: string;
+        details: string | null;
+        status: string;
+        created_at: string;
+        listing_id: string | null;
+        listings: { id: string; title: string; status: string; featured: boolean } | null;
+      };
+      const rows = (data ?? []) as unknown as Row[];
+      const groups = new Map<string, { listing: Row["listings"]; reports: Row[] }>();
+      for (const r of rows) {
+        const key = r.listing_id!;
+        const g = groups.get(key) ?? { listing: r.listings, reports: [] };
+        g.reports.push(r);
+        groups.set(key, g);
+      }
+      return [...groups.entries()];
+    },
+  });
+
+  if (!flagged || flagged.length === 0) {
+    return <p className="text-sm text-muted-foreground">{t("admin.noFlagged")}</p>;
+  }
+
+  const dismissAll = async (reportIds: string[]) => {
+    const { error } = await supabase
+      .from("reports")
+      .update({ status: "dismissed" })
+      .in("id", reportIds);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    toast.success(t("toast.listingUpdated"));
+    queryClient.invalidateQueries({ queryKey: ["admin-flagged-listings"] });
+    queryClient.invalidateQueries({ queryKey: ["admin-action-required"] });
+  };
+
+  return (
+    <ul className="space-y-3">
+      {flagged.map(([listingId, g]) => (
+        <li key={listingId} className="rounded-lg border bg-card p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="flex items-center gap-1.5 text-sm font-medium">
+                <AlertTriangle className="h-3.5 w-3.5 text-destructive" />
+                {g.listing?.title ?? listingId}
+                <span className="rounded-full bg-destructive/10 px-2 py-0.5 text-xs text-destructive">
+                  {g.reports.length}{" "}
+                  {g.reports.length === 1
+                    ? t("admin.reports").toLowerCase().replace(/s$/, "")
+                    : t("admin.reports").toLowerCase()}
+                </span>
+              </p>
+              <ul className="mt-1 space-y-0.5">
+                {g.reports.slice(0, 4).map((r) => (
+                  <li key={r.id} className="text-xs text-muted-foreground">
+                    • {r.reason}
+                    {r.details ? ` — ${r.details}` : ""} · {timeAgo(r.created_at)}
+                  </li>
+                ))}
+              </ul>
+              {g.listing ? (
+                <Link
+                  to="/listing/$id"
+                  params={{ id: g.listing.id }}
+                  className="mt-1 inline-block text-xs text-primary"
+                >
+                  {t("listing.back")}
+                </Link>
+              ) : null}
+            </div>
+            <div className="flex shrink-0 flex-wrap gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => dismissAll(g.reports.map((r) => r.id))}
+              >
+                {t("admin.dismiss")}
+              </Button>
+              {g.listing && !g.listing.featured ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={async () => {
+                    await supabase.from("listings").update({ featured: true }).eq("id", listingId);
+                    void logAdminAction({
+                      action: "listing_featured",
+                      entityType: "listing",
+                      entityId: listingId,
+                    });
+                    toast.success(t("toast.listingUpdated"));
+                  }}
+                >
+                  <Star className="mr-1.5 h-3.5 w-3.5" /> Feature
+                </Button>
+              ) : null}
+            </div>
+          </div>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -572,8 +739,20 @@ type DisputeRow = {
   conversation_id: string | null;
   listing_id: string | null;
   listings: { id: string; title: string } | null;
-  buyer: { full_name: string | null; shop_name: string | null } | null;
-  seller: { full_name: string | null; shop_name: string | null } | null;
+  buyer: {
+    full_name: string | null;
+    shop_name: string | null;
+    phone: string | null;
+    telegram: string | null;
+    whatsapp: string | null;
+  } | null;
+  seller: {
+    full_name: string | null;
+    shop_name: string | null;
+    phone: string | null;
+    telegram: string | null;
+    whatsapp: string | null;
+  } | null;
 };
 
 /** Dedicated dispute queue with deadline visibility (spec §12). */
@@ -592,17 +771,37 @@ function DisputesTab() {
         .select(
           "id,reason,description,status,deadline_at,resolution,created_at,conversation_id,listing_id," +
             "listings(id,title)," +
-            "buyer:profiles!disputes_buyer_id_fkey(full_name,shop_name)," +
-            "seller:profiles!disputes_seller_id_fkey(full_name,shop_name)",
+            "buyer:profiles!disputes_buyer_id_fkey(full_name,shop_name,phone,telegram,whatsapp)," +
+            "seller:profiles!disputes_seller_id_fkey(full_name,shop_name,phone,telegram,whatsapp)",
         )
         .order("created_at", { ascending: false })
         .limit(100);
       if (error) throw error;
-      return ((data ?? []) as unknown as DisputeRow[]).sort((a, b) => {
-        const open = (s: string) =>
-          s === "pending" || s === "investigating" || s === "escalated" ? 0 : 1;
-        return open(a.status) - open(b.status);
-      });
+      const rows = (data ?? []) as unknown as DisputeRow[];
+      // Evidence counts (spec §12): messages in the linked conversation.
+      const convIds = rows.map((r) => r.conversation_id).filter(Boolean) as string[];
+      const msgCounts = new Map<string, number>();
+      if (convIds.length > 0) {
+        const { data: msgs } = await supabase
+          .from("messages")
+          .select("conversation_id")
+          .in("conversation_id", convIds)
+          .limit(2000);
+        for (const m of msgs ?? []) {
+          msgCounts.set(m.conversation_id, (msgCounts.get(m.conversation_id) ?? 0) + 1);
+        }
+      }
+      return rows
+        .map((r) => ({
+          row: r,
+          messages: r.conversation_id ? (msgCounts.get(r.conversation_id) ?? 0) : 0,
+        }))
+        .sort((a, b) => {
+          const open = (s: string) =>
+            s === "pending" || s === "investigating" || s === "escalated" ? 0 : 1;
+          return open(a.row.status) - open(b.row.status);
+        })
+        .map((x) => ({ ...x.row, messageCount: x.messages }));
     },
   });
 
@@ -698,7 +897,7 @@ function DisputesTab() {
                 {d.resolution ? (
                   <p className="mt-1 text-sm italic text-muted-foreground">“{d.resolution}”</p>
                 ) : null}
-                <div className="mt-1 flex gap-3">
+                <div className="mt-1 flex flex-wrap gap-3">
                   {d.listings ? (
                     <Link
                       to="/listing/$id"
@@ -709,14 +908,43 @@ function DisputesTab() {
                     </Link>
                   ) : null}
                   {d.conversation_id ? (
-                    <Link
-                      to="/messages"
-                      search={{ conv: d.conversation_id }}
-                      className="text-xs text-primary"
-                    >
-                      {t("admin.viewConversation")}
-                    </Link>
+                    <>
+                      <Link
+                        to="/messages"
+                        search={{ conv: d.conversation_id }}
+                        className="text-xs text-primary"
+                      >
+                        {t("admin.viewConversation")}
+                      </Link>
+                      <span className="text-xs text-muted-foreground">
+                        {d.messageCount} {t("admin.messages").toLowerCase()}
+                      </span>
+                    </>
                   ) : null}
+                  {/* Direct contact actions (spec §12). */}
+                  {(["buyer", "seller"] as const).map((side) => {
+                    const p = d[side];
+                    if (!p) return null;
+                    return (
+                      <span key={side} className="flex gap-2 text-xs text-primary">
+                        {p.phone ? (
+                          <a href={`tel:${p.phone}`}>
+                            {t("admin.contact")}{" "}
+                            {t(`admin.dispute${side === "buyer" ? "Buyer" : "Seller"}`)}
+                          </a>
+                        ) : p.telegram ? (
+                          <a
+                            href={`https://t.me/${p.telegram.replace(/^@/, "")}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            {t("admin.contact")}{" "}
+                            {t(`admin.dispute${side === "buyer" ? "Buyer" : "Seller"}`)}
+                          </a>
+                        ) : null}
+                      </span>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -808,81 +1036,252 @@ function DisputesTab() {
 function ReportsTab() {
   const { t } = useLang();
   const queryClient = useQueryClient();
-  const { data: reports } = useQuery(adminReportsQuery());
+  const [statusFilter, setStatusFilter] = useState<string>("open");
+  const [resolving, setResolving] = useState<{ id: string; status: string } | null>(null);
+  const [note, setNote] = useState("");
+  const [busy, setBusy] = useState(false);
 
-  const resolve = async (id: string, status: "reviewed" | "dismissed") => {
+  // Full lifecycle (spec SS11): open queue by default, history on demand.
+  const { data: reports } = useQuery({
+    queryKey: ["admin-reports-v2"],
+    queryFn: async () => {
+      let q = supabase
+        .from("reports")
+        .select(
+          "id,reason,details,status,resolution,created_at,listing_id,reported_user_id,reporter_id," +
+            "listings(id,title)," +
+            "profiles!reports_reporter_id_fkey(full_name,shop_name)",
+        )
+        .order("created_at", { ascending: false })
+        .limit(200);
+      if (statusFilter === "open") q = q.eq("status", "pending");
+      else if (statusFilter !== "all") q = q.eq("status", statusFilter);
+      const { data, error } = await q;
+      if (error) throw error;
+      return (data ?? []) as unknown as {
+        id: string;
+        reason: string;
+        details: string | null;
+        status: string;
+        resolution: string | null;
+        created_at: string;
+        listing_id: string | null;
+        reported_user_id: string | null;
+        reporter_id: string;
+        listings: { id: string; title: string } | null;
+        profiles: { full_name: string | null; shop_name: string | null } | null;
+      }[];
+    },
+  });
+
+  const setStatus = async (id: string, status: string, resolution?: string) => {
+    setBusy(true);
+    const me = await supabase.auth.getUser();
     const report = (reports ?? []).find((r) => r.id === id);
-    const { error } = await supabase.from("reports").update({ status }).eq("id", id);
+    const { error } = await supabase
+      .from("reports")
+      .update({
+        status,
+        resolution: resolution ?? null,
+        assigned_admin: me.data.user?.id ?? null,
+      })
+      .eq("id", id);
+    setBusy(false);
     if (error) {
-      toast.error(friendlyError(error, t, "toast.updateFailed"));
+      toast.error(error.message);
       return;
     }
-    // Close the loop with whoever reported it — they never heard back before.
-    if (report?.reporter_id) {
+    if ((status === "resolved" || status === "dismissed") && report?.reporter_id) {
       await supabase.rpc("admin_notify_user", {
         _user_id: report.reporter_id,
-        _type: status === "reviewed" ? "report_resolved" : "report_dismissed",
+        _type: status === "resolved" ? "report_resolved" : "report_dismissed",
         _payload: {
-          title: report.listings?.title ?? report.profiles?.shop_name ?? report.reason,
-          ...(report.listings?.id ? { listingId: report.listings.id } : {}),
+          title: report.listings?.title ?? report.reason,
+          ...(report.listings ? { listingId: report.listings.id } : {}),
         },
       });
     }
-    toast.success(t("admin.reporterNotified"));
     void logAdminAction({
-      action: status === "reviewed" ? "report_resolved" : "report_dismissed",
+      action: "report_" + status,
       entityType: "report",
       entityId: id,
       oldValue: { status: report?.status },
-      newValue: { status },
+      newValue: { status, resolution: resolution ?? null },
     });
-    queryClient.invalidateQueries({ queryKey: ["admin-reports"] });
+    setResolving(null);
+    setNote("");
+    toast.success(t("toast.listingUpdated"));
+    queryClient.invalidateQueries({ queryKey: ["admin-reports-v2"] });
+    queryClient.invalidateQueries({ queryKey: ["admin-flagged-listings"] });
     queryClient.invalidateQueries({ queryKey: ["admin-action-required"] });
   };
 
-  if (!reports || reports.length === 0) {
-    return <p className="text-sm text-muted-foreground">{t("admin.noReports")}</p>;
-  }
+  const STATUS_CHIPS = [
+    ["open", t("admin.pendingReports")],
+    ["investigating", t("admin.statusInvestigating")],
+    ["escalated", t("admin.statusEscalated")],
+    ["resolved", t("admin.resolved")],
+    ["dismissed", t("admin.dismiss")],
+    ["all", t("admin.allStatuses")],
+  ] as const;
 
   return (
-    <ul className="space-y-3">
-      {reports.map((r) => (
-        <li key={r.id} className="rounded-lg border bg-card p-4">
-          <div className="flex items-start justify-between gap-3">
-            <div>
-              <p className="flex items-center gap-1.5 text-sm font-medium">
-                <Flag className="h-3.5 w-3.5 text-destructive" />
-                {r.listings?.title ?? r.profiles?.shop_name ?? r.profiles?.full_name ?? r.reason}
-              </p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {t("report.reason")}: {r.reason} · {timeAgo(r.created_at)}
-              </p>
-              {r.details ? <p className="mt-1 text-sm text-muted-foreground">{r.details}</p> : null}
-              {r.listings ? (
-                <Link
-                  to="/listing/$id"
-                  params={{ id: r.listings.id }}
-                  className="mt-1 inline-block text-xs text-primary"
-                >
-                  {t("listing.back")}
-                </Link>
+    <div className="space-y-4">
+      <div className="flex flex-wrap gap-2">
+        {STATUS_CHIPS.map(([value, label]) => (
+          <Button
+            key={value}
+            size="sm"
+            variant={statusFilter === value ? "default" : "outline"}
+            onClick={() => setStatusFilter(value)}
+          >
+            {label}
+          </Button>
+        ))}
+      </div>
+
+      {!reports || reports.length === 0 ? (
+        <p className="text-sm text-muted-foreground">{t("admin.noReports")}</p>
+      ) : (
+        <ul className="space-y-3">
+          {reports.map((r) => (
+            <li key={r.id} className="rounded-lg border bg-card p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="flex flex-wrap items-center gap-1.5 text-sm font-medium">
+                    <Flag className="h-3.5 w-3.5 text-destructive" />
+                    <span className="font-mono text-xs text-muted-foreground">
+                      #{r.id.slice(0, 8)}
+                    </span>
+                    {r.listings?.title ??
+                      r.profiles?.shop_name ??
+                      r.profiles?.full_name ??
+                      r.reason}
+                    <span
+                      className={
+                        "rounded-full px-2 py-0.5 text-xs capitalize " +
+                        (r.status === "pending"
+                          ? "bg-amber-500/15 text-amber-700"
+                          : r.status === "resolved" || r.status === "reviewed"
+                            ? "bg-success/10 text-success"
+                            : r.status === "dismissed"
+                              ? "bg-secondary text-muted-foreground"
+                              : "bg-destructive/10 text-destructive")
+                      }
+                    >
+                      {r.status}
+                    </span>
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {t("report.reason")}: {r.reason} · {t("admin.reportedBy")}:{" "}
+                    {r.profiles?.shop_name ?? r.profiles?.full_name ?? "—"} ·{" "}
+                    {timeAgo(r.created_at)}
+                  </p>
+                  {r.details ? (
+                    <p className="mt-1 text-sm text-muted-foreground">{r.details}</p>
+                  ) : null}
+                  {r.resolution ? (
+                    <p className="mt-1 text-sm italic text-muted-foreground">
+                      &ldquo;{r.resolution}&rdquo;
+                    </p>
+                  ) : null}
+                  {r.listings ? (
+                    <Link
+                      to="/listing/$id"
+                      params={{ id: r.listings.id }}
+                      className="mt-1 inline-block text-xs text-primary"
+                    >
+                      {t("listing.back")}
+                    </Link>
+                  ) : null}
+                </div>
+                <div className="flex shrink-0 flex-wrap gap-2">
+                  {r.status === "pending" ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={busy}
+                      onClick={() => setStatus(r.id, "investigating")}
+                    >
+                      {t("admin.investigate")}
+                    </Button>
+                  ) : null}
+                  {["pending", "investigating"].includes(r.status) && r.status !== "escalated" ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={busy}
+                      onClick={() => setStatus(r.id, "escalated")}
+                    >
+                      {t("admin.escalate")}
+                    </Button>
+                  ) : null}
+                  {!["resolved", "reviewed", "dismissed"].includes(r.status) ? (
+                    <>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={busy}
+                        onClick={() => setStatus(r.id, "dismissed")}
+                      >
+                        {t("admin.dismissDispute")}
+                      </Button>
+                      <Button
+                        size="sm"
+                        disabled={busy}
+                        onClick={() => {
+                          setResolving({ id: r.id, status: "resolved" });
+                          setNote("");
+                        }}
+                      >
+                        {t("admin.resolveDispute")}
+                      </Button>
+                    </>
+                  ) : null}
+                </div>
+              </div>
+
+              {resolving?.id === r.id ? (
+                <div className="mt-3 rounded-md border border-primary/30 bg-primary/5 p-3">
+                  <Label htmlFor={"report-resolution-" + r.id} className="text-xs font-medium">
+                    {t("admin.resolutionNote")}
+                  </Label>
+                  <Textarea
+                    id={"report-resolution-" + r.id}
+                    value={note}
+                    onChange={(e) => setNote(e.target.value)}
+                    rows={2}
+                    placeholder={t("admin.resolutionPlaceholder")}
+                    className="mt-2"
+                  />
+                  <div className="mt-2 flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={busy}
+                      onClick={() => setResolving(null)}
+                    >
+                      {t("report.cancel")}
+                    </Button>
+                    <Button
+                      size="sm"
+                      disabled={busy || note.trim().length < 3}
+                      onClick={() =>
+                        resolving && setStatus(resolving.id, resolving.status, note.trim())
+                      }
+                    >
+                      {t("admin.resolveDispute")}
+                    </Button>
+                  </div>
+                </div>
               ) : null}
-            </div>
-            <div className="flex shrink-0 gap-2">
-              <Button size="sm" variant="outline" onClick={() => resolve(r.id, "dismissed")}>
-                {t("admin.dismiss")}
-              </Button>
-              <Button size="sm" onClick={() => resolve(r.id, "reviewed")}>
-                {t("admin.resolved")}
-              </Button>
-            </div>
-          </div>
-        </li>
-      ))}
-    </ul>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   );
 }
-
 /** Every account, with suspension controls. */
 function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
   const { t } = useLang();
@@ -2224,13 +2623,60 @@ function ListingsTab() {
   const [deleting, setDeleting] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>("all");
 
-  const filtered = (listings ?? []).filter((l) =>
-    statusFilter === "all"
-      ? true
-      : statusFilter === "other"
-        ? !["active", "reserved", "sold"].includes(l.status)
-        : l.status === statusFilter,
-  );
+  // Listing IDs that have at least one inquiry (spec §14 dead-listing rule).
+  const { data: inquiredIds } = useQuery({
+    queryKey: ["admin-inquired-listing-ids"],
+    queryFn: async () => {
+      const { data } = await supabase.from("conversations").select("listing_id").limit(5000);
+      return new Set((data ?? []).map((c) => c.listing_id as string));
+    },
+    staleTime: 60_000,
+  });
+
+  const filtered = (listings ?? []).filter((l) => {
+    if (statusFilter === "dead") {
+      // Active > 30 days AND views < 10 AND zero inquiries.
+      const ageDays = (Date.now() - new Date(l.created_at).getTime()) / 86400000;
+      return l.status === "active" && ageDays > 30 && l.view_count < 10 && !inquiredIds?.has(l.id);
+    }
+    if (statusFilter === "all") return true;
+    if (statusFilter === "other") return !["active", "reserved", "sold"].includes(l.status);
+    return l.status === statusFilter;
+  });
+
+  const notifySeller = async (listingId: string) => {
+    const target = (listings ?? []).find((l) => l.id === listingId);
+    if (!target) return;
+    const { error } = await supabase.rpc("admin_notify_user", {
+      _user_id: target.seller_id,
+      _type: "listing_stale",
+      _payload: { title: target.title, listingId },
+    });
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    void logAdminAction({
+      action: "listing_stale_notified",
+      entityType: "listing",
+      entityId: listingId,
+    });
+    toast.success(t("toast.listingUpdated"));
+  };
+
+  const archiveListing = async (listingId: string) => {
+    const { error } = await supabase
+      .from("listings")
+      .update({ status: "archived" })
+      .eq("id", listingId);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    void logAdminAction({ action: "listing_archived", entityType: "listing", entityId: listingId });
+    toast.success(t("toast.listingUpdated"));
+    queryClient.invalidateQueries({ queryKey: ["admin-listings"] });
+  };
 
   const toggleFeatured = async (id: string, featured: boolean) => {
     const { error } = await supabase.from("listings").update({ featured }).eq("id", id);
@@ -2274,7 +2720,7 @@ function ListingsTab() {
     <>
       {/* Status sub-tabs (spec §5) — client-side over the fetched page. */}
       <div className="mb-4 flex flex-wrap gap-2">
-        {(["all", "active", "reserved", "sold", "other"] as const).map((s) => (
+        {(["all", "active", "reserved", "sold", "other", "dead"] as const).map((s) => (
           <Button
             key={s}
             size="sm"
@@ -2289,7 +2735,9 @@ function ListingsTab() {
                   ? t("admin.statusSold")
                   : s === "reserved"
                     ? t("listing.statusReserved")
-                    : t("admin.statusOther")}
+                    : s === "dead"
+                      ? t("admin.deadListings")
+                      : t("admin.statusOther")}
           </Button>
         ))}
       </div>
@@ -2346,6 +2794,22 @@ function ListingsTab() {
                 <Star className={`mr-1.5 h-3.5 w-3.5 ${l.featured ? "fill-current" : ""}`} />
                 {l.featured ? "Featured" : "Feature"}
               </Button>
+              {/* Dead-listing nudges (spec §14) — shown when the dead filter is on. */}
+              {statusFilter === "dead" ? (
+                <>
+                  <Button size="sm" variant="outline" onClick={() => void notifySeller(l.id)}>
+                    <Send className="mr-1.5 h-3.5 w-3.5" /> {t("admin.notifySeller")}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={deleting}
+                    onClick={() => void archiveListing(l.id)}
+                  >
+                    {t("admin.archive")}
+                  </Button>
+                </>
+              ) : null}
               <Button
                 size="sm"
                 variant="ghost"
@@ -2402,15 +2866,16 @@ function ListingThumb({ images }: { images: { url: string; position: number }[] 
 /** Acquisition analytics (spec §8.2, §26): activity per source. */
 function AnalyticsTab() {
   const { t } = useLang();
+  const [rangeDays, setRangeDays] = useState<30 | 90>(90);
   const { data: sources } = useQuery({
-    queryKey: ["admin-acquisition"],
+    queryKey: ["admin-acquisition", rangeDays],
     queryFn: async () => {
       // Signups are recorded as analytics events by the auth flow; listings
       // carry their creation event too. Group client-side — volumes are small.
       const { data, error } = await supabase
         .from("analytics_events")
         .select("event_name,source")
-        .gte("created_at", new Date(Date.now() - 90 * 86400000).toISOString())
+        .gte("created_at", new Date(Date.now() - rangeDays * 86400000).toISOString())
         .limit(5000);
       if (error) throw error;
       type Row = { signups: number; listings: number };
@@ -2429,38 +2894,144 @@ function AnalyticsTab() {
     },
   });
 
+  // Seller performance (spec SS8.4 / SS16) — operational metrics per seller.
+  const { data: sellers } = useQuery({
+    queryKey: ["admin-seller-performance"],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("admin_seller_performance", { _limit: 15 });
+      if (error) throw error;
+      return (data ?? []) as unknown as {
+        seller_id: string;
+        name: string;
+        verified: boolean;
+        suspended: boolean;
+        listings: number;
+        views: number;
+        inquiries: number;
+        responded: number;
+        avg_response_minutes: number | null;
+        sales: number;
+        rating: number | null;
+        reports: number;
+      }[];
+    },
+  });
+
   return (
-    <div className="rounded-xl border bg-card p-5">
-      <PanelTitle
-        icon={<Globe className="h-5 w-5 text-primary" />}
-        title={t("admin.acquisitionSources")}
-        accent="bg-violet-500"
-      />
-      <p className="mt-1 text-xs text-muted-foreground">{t("admin.acquisitionHint")}</p>
-      {!sources ? (
-        <p className="mt-3 text-sm text-muted-foreground">{t("browse.loading")}</p>
-      ) : sources.length === 0 ? (
-        <p className="mt-3 text-sm text-muted-foreground">{t("admin.noSourceData")}</p>
-      ) : (
-        <table className="mt-3 w-full max-w-lg text-left text-sm">
-          <thead>
-            <tr className="border-b text-xs uppercase tracking-wide text-muted-foreground">
-              <th className="py-2 pr-4">{t("admin.sourceCol")}</th>
-              <th className="px-2 py-2">{t("admin.signupsCol")}</th>
-              <th className="px-2 py-2">{t("admin.listingsCol")}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {sources.map((s) => (
-              <tr key={s.source} className="border-b last:border-0">
-                <td className="py-2 pr-4 font-medium capitalize">{s.source}</td>
-                <td className="px-2 py-2 tabular-nums">{s.signups}</td>
-                <td className="px-2 py-2 tabular-nums">{s.listings}</td>
-              </tr>
+    <div className="space-y-8">
+      <div className="rounded-xl border bg-card p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <PanelTitle
+            icon={<Globe className="h-5 w-5 text-primary" />}
+            title={t("admin.acquisitionSources")}
+            accent="bg-violet-500"
+          />
+          <div className="flex items-center gap-0.5 rounded-lg bg-secondary p-0.5 text-xs">
+            {([30, 90] as const).map((r) => (
+              <button
+                key={r}
+                type="button"
+                onClick={() => setRangeDays(r)}
+                className={
+                  "rounded-md px-2.5 py-1 font-medium transition " +
+                  (rangeDays === r
+                    ? "bg-card text-foreground shadow-sm"
+                    : "text-muted-foreground hover:text-foreground")
+                }
+              >
+                {r}d
+              </button>
             ))}
-          </tbody>
-        </table>
-      )}
+          </div>
+        </div>
+        <p className="mt-1 text-xs text-muted-foreground">{t("admin.acquisitionHint")}</p>
+        {!sources ? (
+          <p className="mt-3 text-sm text-muted-foreground">{t("browse.loading")}</p>
+        ) : sources.length === 0 ? (
+          <p className="mt-3 text-sm text-muted-foreground">{t("admin.noSourceData")}</p>
+        ) : (
+          <table className="mt-3 w-full max-w-lg text-left text-sm">
+            <thead>
+              <tr className="border-b text-xs uppercase tracking-wide text-muted-foreground">
+                <th className="py-2 pr-4">{t("admin.sourceCol")}</th>
+                <th className="px-2 py-2">{t("admin.signupsCol")}</th>
+                <th className="px-2 py-2">{t("admin.listingsCol")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sources.map((s) => (
+                <tr key={s.source} className="border-b last:border-0">
+                  <td className="py-2 pr-4 font-medium capitalize">{s.source}</td>
+                  <td className="px-2 py-2 tabular-nums">{s.signups}</td>
+                  <td className="px-2 py-2 tabular-nums">{s.listings}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      <div className="rounded-xl border bg-card p-5">
+        <PanelTitle
+          icon={<Users className="h-5 w-5 text-primary" />}
+          title={t("admin.sellerPerformance")}
+          accent="bg-emerald-500"
+        />
+        {!sellers ? (
+          <p className="mt-3 text-sm text-muted-foreground">{t("browse.loading")}</p>
+        ) : sellers.length === 0 ? (
+          <p className="mt-3 text-sm text-muted-foreground">{t("admin.noUsers")}</p>
+        ) : (
+          <div className="mt-3 overflow-x-auto">
+            <table className="w-full text-left text-sm">
+              <thead>
+                <tr className="border-b text-xs uppercase tracking-wide text-muted-foreground">
+                  <th className="py-2 pr-4">—</th>
+                  <th className="px-2 py-2">{t("admin.cat.listings")}</th>
+                  <th className="px-2 py-2">{t("admin.cat.views")}</th>
+                  <th className="px-2 py-2">{t("admin.cat.inquiries")}</th>
+                  <th className="px-2 py-2">{t("admin.responseRate")}</th>
+                  <th className="px-2 py-2">{t("admin.avgResponse")}</th>
+                  <th className="px-2 py-2">{t("admin.cat.sold")}</th>
+                  <th className="px-2 py-2">★</th>
+                  <th className="px-2 py-2">{t("admin.reports")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {sellers.map((s) => (
+                  <tr key={s.seller_id} className="border-b last:border-0">
+                    <td className="py-2 pr-4 font-medium">
+                      {s.name}
+                      {s.verified ? (
+                        <BadgeCheck className="ml-1 inline h-3.5 w-3.5 text-primary" />
+                      ) : null}
+                      {s.suspended ? (
+                        <span className="ml-1 rounded bg-destructive/10 px-1.5 py-0.5 text-[10px] text-destructive">
+                          {t("admin.suspendedSegment")}
+                        </span>
+                      ) : null}
+                    </td>
+                    <td className="px-2 py-2 tabular-nums">{s.listings}</td>
+                    <td className="px-2 py-2 tabular-nums">{s.views.toLocaleString()}</td>
+                    <td className="px-2 py-2 tabular-nums">{s.inquiries}</td>
+                    <td className="px-2 py-2 tabular-nums">
+                      {s.inquiries > 0 ? `${Math.round((s.responded / s.inquiries) * 100)}%` : "—"}
+                    </td>
+                    <td className="px-2 py-2 tabular-nums">
+                      {s.avg_response_minutes != null
+                        ? `${s.avg_response_minutes} ${t("admin.minutesShort")}`
+                        : "—"}
+                    </td>
+                    <td className="px-2 py-2 tabular-nums">{s.sales}</td>
+                    <td className="px-2 py-2 tabular-nums">{s.rating ?? "—"}</td>
+                    <td className="px-2 py-2 tabular-nums">{s.reports}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -2517,6 +3088,526 @@ function AuditLogTab() {
         </li>
       ))}
     </ul>
+  );
+}
+
+/** Telegram management (spec SS19): bot health, post history, attribution. */
+function TelegramTab() {
+  const { t } = useLang();
+  const queryClient = useQueryClient();
+
+  const { data: stats } = useQuery({
+    queryKey: ["admin-telegram-tab"],
+    queryFn: async () => {
+      const weekAgo = new Date(Date.now() - 7 * 86400000).toISOString();
+      const [linked, blocked, delivery, posts, tgEvents, unposted] = await Promise.all([
+        supabase
+          .from("profiles")
+          .select("id", { count: "exact", head: true })
+          .not("telegram_chat_id", "is", null),
+        supabase
+          .from("profiles")
+          .select("id", { count: "exact", head: true })
+          .eq("telegram_blocked", true),
+        supabase.from("telegram_delivery_log").select("ok,error").gte("created_at", weekAgo),
+        supabase
+          .from("telegram_channel_posts")
+          .select("listing_id,message_id,posted_at,listings(title,status)")
+          .order("posted_at", { ascending: false })
+          .limit(20),
+        supabase
+          .from("analytics_events")
+          .select("event_name")
+          .eq("source", "telegram")
+          .gte("created_at", new Date(Date.now() - 30 * 86400000).toISOString())
+          .limit(5000),
+        supabase
+          .from("listings")
+          .select("id,title,telegram_posted_at")
+          .eq("status", "active")
+          .is("telegram_posted_at", null)
+          .order("created_at", { ascending: false })
+          .limit(5),
+      ]);
+      const okCount = (delivery.data ?? []).filter((d) => d.ok).length;
+      return {
+        linked: linked.count ?? 0,
+        blocked: blocked.count ?? 0,
+        sends7d: (delivery.data ?? []).length,
+        successPct:
+          (delivery.data ?? []).length > 0
+            ? Math.round((okCount / (delivery.data ?? []).length) * 100)
+            : 100,
+        errors: (delivery.data ?? []).filter((d) => !d.ok).slice(0, 5),
+        posts: (posts.data ?? []) as unknown as {
+          listing_id: string;
+          message_id: number;
+          posted_at: string;
+          listings: { title: string; status: string } | null;
+        }[],
+        tgSignups: (tgEvents.data ?? []).filter((e) => e.event_name.includes("signup")).length,
+        tgClicks: (tgEvents.data ?? []).filter((e) => e.event_name.includes("click")).length,
+        unposted: (unposted.data ?? []) as { id: string; title: string }[],
+      };
+    },
+  });
+
+  if (!stats) {
+    return <p className="text-sm text-muted-foreground">{t("browse.loading")}</p>;
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* Bot health */}
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
+        <MiniStat label={t("admin.tgLinked")} value={stats.linked} />
+        <MiniStat label={t("admin.tgBlocked")} value={stats.blocked} />
+        <MiniStat label={t("admin.tgSends")} value={stats.sends7d} />
+        <MiniStat label={t("admin.tgSuccess")} value={`${stats.successPct}%`} />
+      </div>
+
+      {/* Attribution funnel (spec SS25): telegram-sourced events, 30d. */}
+      <div className="rounded-xl border bg-card p-5">
+        <PanelTitle
+          icon={<Radio className="h-5 w-5 text-primary" />}
+          title={t("admin.tgAttribution")}
+          accent="bg-sky-500"
+        />
+        <p className="mt-3 text-sm text-muted-foreground">{t("admin.acquisitionHint")}</p>
+        <div className="mt-3 flex flex-wrap gap-x-8 gap-y-2">
+          <EngStat
+            icon={<Users className="h-4 w-4" />}
+            label={t("admin.tgSignups")}
+            value={stats.tgSignups}
+          />
+          <EngStat
+            icon={<Eye className="h-4 w-4" />}
+            label={t("admin.tgClicks")}
+            value={stats.tgClicks}
+          />
+        </div>
+      </div>
+
+      {/* Manual post trigger for fresh listings */}
+      <div className="rounded-xl border bg-card p-5">
+        <PanelTitle
+          icon={<Send className="h-5 w-5 text-primary" />}
+          title={t("admin.tgManualPost")}
+          accent="bg-primary"
+        />
+        {stats.unposted.length === 0 ? (
+          <p className="mt-3 text-sm text-muted-foreground">{t("admin.tgAllPosted")}</p>
+        ) : (
+          <ul className="mt-3 space-y-2">
+            {stats.unposted.map((l) => (
+              <li
+                key={l.id}
+                className="flex items-center justify-between gap-3 rounded-md border p-2.5"
+              >
+                <span className="min-w-0 truncate text-sm font-medium">{l.title}</span>
+                <Button size="sm" variant="outline" onClick={() => announceListing(l.id)}>
+                  <Send className="mr-1.5 h-3.5 w-3.5" /> {t("admin.tgPostNow")}
+                </Button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {/* Post history */}
+      <div className="rounded-xl border bg-card p-5">
+        <PanelTitle
+          icon={<FileText className="h-5 w-5 text-primary" />}
+          title={t("admin.tgPostHistory")}
+          accent="bg-violet-500"
+        />
+        {stats.posts.length === 0 ? (
+          <p className="mt-3 text-sm text-muted-foreground">{t("admin.noSourceData")}</p>
+        ) : (
+          <ul className="mt-3 space-y-2">
+            {stats.posts.map((p) => (
+              <li
+                key={p.listing_id}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm"
+              >
+                <Link
+                  to="/listing/$id"
+                  params={{ id: p.listing_id }}
+                  className="min-w-0 truncate font-medium hover:text-primary"
+                >
+                  {p.listings?.title ?? p.listing_id}
+                </Link>
+                <span className="text-xs text-muted-foreground">
+                  msg #{p.message_id} · {timeAgo(p.posted_at)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {/* Delivery errors */}
+      {stats.errors.length > 0 ? (
+        <div className="rounded-xl border bg-card p-5">
+          <PanelTitle
+            icon={<AlertTriangle className="h-5 w-5 text-destructive" />}
+            title={t("admin.tgFailures7d")}
+            accent="bg-destructive"
+          />
+          <ul className="mt-3 space-y-1.5">
+            {stats.errors.map((e, i) => (
+              <li
+                key={i}
+                className="truncate rounded bg-destructive/5 px-3 py-1.5 text-xs text-destructive"
+              >
+                {e.error ?? t("toast.requestFailed")}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function MiniStat({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="rounded-lg border bg-card p-4">
+      <p className="text-xs text-muted-foreground">{label}</p>
+      <p className="mt-1 font-display text-2xl font-semibold tabular-nums">{value}</p>
+    </div>
+  );
+}
+
+/** Featured listing management with scheduling (spec SS20). */
+function FeaturedTab() {
+  const { t } = useLang();
+  const queryClient = useQueryClient();
+
+  const { data: rows } = useQuery({
+    queryKey: ["admin-featured"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("listings")
+        .select(
+          "id,title,price,status,featured,featured_until,seller_id,profiles(full_name,shop_name)",
+        )
+        .eq("featured", true)
+        .order("featured_until", { ascending: true, nullsFirst: false })
+        .limit(50);
+      if (error) throw error;
+      return (data ?? []) as unknown as {
+        id: string;
+        title: string;
+        price: number;
+        status: string;
+        featured_until: string | null;
+        profiles: { full_name: string | null; shop_name: string | null } | null;
+      }[];
+    },
+  });
+
+  const setUntil = async (id: string, days: number | null) => {
+    const until = days == null ? null : new Date(Date.now() + days * 86400000).toISOString();
+    const { error } = await supabase
+      .from("listings")
+      .update({ featured_until: until, ...(until == null ? {} : {}) })
+      .eq("id", id);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    void logAdminAction({
+      action: "listing_featured_scheduled",
+      entityType: "listing",
+      entityId: id,
+      newValue: { featured_until: until },
+    });
+    toast.success(t("toast.listingUpdated"));
+    queryClient.invalidateQueries({ queryKey: ["admin-featured"] });
+  };
+
+  const expireNow = async (id: string) => {
+    const { error } = await supabase
+      .from("listings")
+      .update({ featured: false, featured_until: null })
+      .eq("id", id);
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    void logAdminAction({ action: "listing_unfeatured", entityType: "listing", entityId: id });
+    toast.success(t("toast.listingUpdated"));
+    queryClient.invalidateQueries({ queryKey: ["admin-featured"] });
+  };
+
+  if (!rows) {
+    return <p className="text-sm text-muted-foreground">{t("browse.loading")}</p>;
+  }
+
+  const active = rows.filter((r) => !r.featured_until || new Date(r.featured_until) > new Date());
+  const expired = rows.filter((r) => r.featured_until && new Date(r.featured_until) <= new Date());
+
+  return (
+    <div className="space-y-6">
+      {(
+        [
+          ["admin.featuredActive", active],
+          ["admin.featuredExpired", expired],
+        ] as const
+      ).map(([key, list]) =>
+        list.length === 0 ? null : (
+          <div key={key}>
+            <p className="font-display text-lg font-semibold">{t(key)}</p>
+            <ul className="mt-3 space-y-2">
+              {list.map((r) => {
+                const expiredRow = !!r.featured_until && new Date(r.featured_until) <= new Date();
+                return (
+                  <li
+                    key={r.id}
+                    className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card p-3"
+                  >
+                    <div className="min-w-0">
+                      <Link
+                        to="/listing/$id"
+                        params={{ id: r.id }}
+                        className="block truncate text-sm font-medium hover:text-primary"
+                      >
+                        {r.title}
+                      </Link>
+                      <p className="text-xs text-muted-foreground">
+                        {formatBirr(r.price)} ·{" "}
+                        {r.profiles?.shop_name ?? r.profiles?.full_name ?? "—"} ·{" "}
+                        {expiredRow
+                          ? `${t("admin.featuredExpired")} ${timeAgo(r.featured_until!)}`
+                          : r.featured_until
+                            ? t("admin.featuredUntil", {
+                                date: new Date(r.featured_until).toLocaleDateString(),
+                              })
+                            : t("admin.featuredPermanent")}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 flex-wrap gap-2">
+                      {!expiredRow ? (
+                        <>
+                          <Button size="sm" variant="outline" onClick={() => setUntil(r.id, 7)}>
+                            +7d
+                          </Button>
+                          <Button size="sm" variant="outline" onClick={() => setUntil(r.id, 30)}>
+                            +30d
+                          </Button>
+                          <Button size="sm" variant="outline" onClick={() => setUntil(r.id, null)}>
+                            ∞
+                          </Button>
+                          <Button size="sm" variant="destructive" onClick={() => expireNow(r.id)}>
+                            {t("admin.featureExpire")}
+                          </Button>
+                        </>
+                      ) : (
+                        <Button size="sm" variant="outline" onClick={() => setUntil(r.id, 7)}>
+                          {t("admin.featureRenew")}
+                        </Button>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        ),
+      )}
+      {rows.length === 0 ? (
+        <p className="text-sm text-muted-foreground">{t("admin.noFeatured")}</p>
+      ) : null}
+    </div>
+  );
+}
+
+/** Settings (spec SS22-23): roles matrix, system health, marketplace rules. */
+function SettingsTab() {
+  const { t } = useLang();
+  const queryClient = useQueryClient();
+  const { user } = useAuth();
+  const { data: isAdminUser } = useQuery(isAdminQuery(user?.id));
+  const { data: isSuper } = useQuery({
+    queryKey: ["admin-is-super", user?.id],
+    enabled: !!isAdminUser,
+    queryFn: async () => {
+      if (!user) return false;
+      // admin_get_profile_details returns role metadata for every account.
+      const { data } = await supabase.rpc("admin_get_profile_details", {});
+      const me = ((data ?? []) as unknown as AdminUser[]).find((u) => u.id === user.id);
+      return !!me?.is_super_admin;
+    },
+  });
+
+  // System health (spec SS23) — lightweight probes.
+  const { data: health } = useQuery({
+    queryKey: ["admin-system-health"],
+    queryFn: async () => {
+      const todayIso = new Date().setHours(0, 0, 0, 0);
+      const [db, storage] = await Promise.all([
+        supabase.from("listings").select("id", { count: "exact", head: true }).limit(1),
+        supabase.storage.from("listing-images").list("", { limit: 1 }),
+      ]);
+      const { count: tgErrors } = await supabase
+        .from("telegram_delivery_log")
+        .select("ok", { count: "exact", head: true })
+        .eq("ok", false)
+        .gte("created_at", new Date(todayIso).toISOString());
+      return {
+        db: !db.error,
+        storage: !storage.error,
+        telegram: telegramConfigured(),
+        email: true,
+        tgErrorsToday: tgErrors ?? 0,
+      };
+    },
+    refetchInterval: 5 * 60_000,
+  });
+
+  const { data: settings } = useQuery({
+    queryKey: ["admin-app-settings"],
+    enabled: !!isAdminUser,
+    queryFn: async () => {
+      const { data, error } = await supabase.from("app_settings").select("key,value");
+      if (error) throw error;
+      return Object.fromEntries((data ?? []).map((r) => [r.key, r.value])) as Record<
+        string,
+        unknown
+      >;
+    },
+  });
+
+  const setSetting = async (key: string, value: Json) => {
+    const me = await supabase.auth.getUser();
+    const { error } = await supabase
+      .from("app_settings")
+      .upsert({ key, value, updated_by: me.data.user?.id ?? null });
+    if (error) {
+      toast.error(error.message);
+      return;
+    }
+    void logAdminAction({
+      action: "setting_changed",
+      entityType: "app_settings",
+      entityId: key,
+      newValue: { value },
+    });
+    queryClient.invalidateQueries({ queryKey: ["admin-app-settings"] });
+  };
+
+  const boolSetting = (key: string) => settings?.[key] === true;
+
+  return (
+    <div className="space-y-8">
+      {/* System health */}
+      <div className="rounded-xl border bg-card p-5">
+        <PanelTitle
+          icon={<Activity className="h-5 w-5 text-primary" />}
+          title={t("admin.systemHealth")}
+          accent="bg-emerald-500"
+        />
+        <ul className="mt-3 space-y-1.5 text-sm">
+          {[
+            ["API / Database", health?.db],
+            ["Storage", health?.storage],
+            ["Telegram Bot", health ? health.telegram : null],
+            ["Email", health ? health.email : null],
+          ].map(([label, ok]) => (
+            <li key={label as string} className="flex items-center gap-2">
+              <span aria-hidden>{ok == null ? "⚪" : ok ? "🟢" : "🔴"}</span>
+              <span>{label}</span>
+            </li>
+          ))}
+        </ul>
+        <p className="mt-2 text-xs text-muted-foreground">
+          {t("admin.tgFailures")}: {health?.tgErrorsToday ?? 0}
+        </p>
+      </div>
+
+      {/* Roles & permissions — matrix per spec SS22. */}
+      <div className="rounded-xl border bg-card p-5">
+        <PanelTitle
+          icon={<ShieldCheck className="h-5 w-5 text-primary" />}
+          title={t("admin.rolesPermissions")}
+          accent="bg-sky-500"
+        />
+        <div className="mt-3 overflow-x-auto">
+          <table className="w-full text-left text-sm">
+            <thead>
+              <tr className="border-b text-xs uppercase tracking-wide text-muted-foreground">
+                <th className="py-2 pr-4">{t("admin.role")}</th>
+                <th className="px-2 py-2">{t("admin.permScope")}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {[
+                ["Super Admin", t("admin.permAll")],
+                ["Moderator", `${t("admin.moderation")} · Listings · ${t("admin.disputes")}`],
+                ["Verification Admin", t("admin.verification")],
+                ["Category Manager", t("nav.categories")],
+                ["Analytics Viewer", t("admin.analytics")],
+              ].map(([role, scope]) => (
+                <tr key={role} className="border-b last:border-0">
+                  <td className="py-2 pr-4 font-medium">{role}</td>
+                  <td className="px-2 py-2 text-muted-foreground">{scope}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <p className="mt-2 text-xs text-muted-foreground">
+          {isSuper ? t("admin.superAdminYou") : t("admin.rolesNote")}
+        </p>
+      </div>
+
+      {/* Marketplace & moderation rules */}
+      <div className="rounded-xl border bg-card p-5">
+        <PanelTitle
+          icon={<FolderTree className="h-5 w-5 text-primary" />}
+          title={t("admin.marketplaceSettings")}
+          accent="bg-primary"
+        />
+        {!settings ? (
+          <p className="mt-3 text-sm text-muted-foreground">{t("browse.loading")}</p>
+        ) : (
+          <ul className="mt-3 space-y-2">
+            {(
+              [
+                ["moderation.auto_flag_views", t("admin.setAutoFlag")],
+                ["notifications.email_enabled", t("admin.setEmailNotifs")],
+                ["notifications.telegram_enabled", t("admin.setTgNotifs")],
+              ] as const
+            ).map(([key, label]) => (
+              <li
+                key={key}
+                className="flex items-center justify-between gap-3 rounded-md border px-3 py-2.5"
+              >
+                <span className="text-sm">{label}</span>
+                <button
+                  type="button"
+                  onClick={() => setSetting(key, !boolSetting(key))}
+                  className={
+                    "relative h-6 w-11 shrink-0 rounded-full transition-colors " +
+                    (boolSetting(key) ? "bg-primary" : "bg-secondary")
+                  }
+                  aria-label={label}
+                >
+                  <span
+                    className={
+                      "absolute top-0.5 h-5 w-5 rounded-full bg-white shadow transition-all " +
+                      (boolSetting(key) ? "left-[22px]" : "left-0.5")
+                    }
+                  />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <p className="mt-2 text-xs text-muted-foreground">{t("admin.settingsNote")}</p>
+      </div>
+    </div>
   );
 }
 

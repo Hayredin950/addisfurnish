@@ -489,6 +489,7 @@ export type Database = {
           description: string;
           discount_expires_at: string | null;
           featured: boolean;
+          featured_until: string | null;
           id: string;
           latitude: number | null;
           longitude: number | null;
@@ -534,6 +535,7 @@ export type Database = {
           updated_at?: string;
           view_count?: number;
           video_url?: string | null;
+          featured_until?: string | null;
         };
         Update: {
           brand?: string | null;
@@ -563,6 +565,7 @@ export type Database = {
           updated_at?: string;
           view_count?: number;
           video_url?: string | null;
+          featured_until?: string | null;
         };
         Relationships: [
           {
@@ -874,9 +877,11 @@ export type Database = {
       };
       reports: {
         Row: {
+          assigned_admin: string | null;
           created_at: string;
           details: string | null;
           id: string;
+          resolution: string | null;
           listing_id: string | null;
           reason: string;
           reported_user_id: string | null;
@@ -884,6 +889,7 @@ export type Database = {
           status: string;
         };
         Insert: {
+          assigned_admin?: string | null;
           created_at?: string;
           details?: string | null;
           id?: string;
@@ -891,9 +897,11 @@ export type Database = {
           reason: string;
           reported_user_id?: string | null;
           reporter_id: string;
+          resolution?: string | null;
           status?: string;
         };
         Update: {
+          assigned_admin?: string | null;
           created_at?: string;
           details?: string | null;
           id?: string;
@@ -901,6 +909,7 @@ export type Database = {
           reason?: string;
           reported_user_id?: string | null;
           reporter_id?: string;
+          resolution?: string | null;
           status?: string;
         };
         Relationships: [
@@ -1040,6 +1049,26 @@ export type Database = {
             referencedColumns: ["id"];
           },
         ];
+      };
+      app_settings: {
+        Row: {
+          key: string;
+          value: Json;
+          updated_by: string | null;
+          updated_at: string;
+        };
+        Insert: {
+          key: string;
+          value: Json;
+          updated_by?: string | null;
+          updated_at?: string;
+        };
+        Update: {
+          value?: Json;
+          updated_by?: string | null;
+          updated_at?: string;
+        };
+        Relationships: [];
       };
       buyer_preferences: {
         Row: {
@@ -1577,6 +1606,10 @@ export type Database = {
       };
     };
     Functions: {
+      admin_seller_performance: {
+        Args: { _limit?: number };
+        Returns: Json;
+      };
       admin_health_stats: {
         Args: Record<string, never>;
         Returns: Json;

@@ -226,7 +226,10 @@ export function listingsQuery(filters: ListingFilters = {}) {
       if (typeof filters.max === "number" && filters.max > 0)
         query = query.lte("price", filters.max);
       if (filters.discounted) query = query.not("original_price", "is", null);
-      if (filters.featured) query = query.eq("featured", true);
+      // Featured placements can be scheduled (spec §20): an expired slot no
+      // longer counts as featured on the storefront.
+      if (filters.featured)
+        query = query.eq("featured", true).or("featured_until.is.null,featured_until.gte.now");
       if (filters.category) {
         const ids = await categoryDescendantIds(filters.category);
         if (ids.length) query = query.in("category_id", ids);
@@ -418,7 +421,7 @@ export function adminListingsQuery() {
       const { data, error } = await supabase
         .from("listings")
         .select(
-          "id,title,price,status,view_count,featured,created_at,listing_images(id,url,position)",
+          "id,title,price,status,view_count,featured,featured_until,seller_id,created_at,listing_images(id,url,position)",
         )
         .order("created_at", { ascending: false })
         .limit(50);
