@@ -44,15 +44,28 @@ const SCOPE_FOLDER: Record<string, string> = {
 
 const encoder = new TextEncoder();
 
+// Browsers send an OPTIONS preflight before the signed-upload POST; without
+// these headers the request dies before it ever reaches the handler.
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
+};
+
 async function sha1Hex(input: string): Promise<string> {
   const data = await crypto.subtle.digest("SHA-1", encoder.encode(input));
   return [...new Uint8Array(data)].map((b) => b.toString(16).padStart(2, "0")).join("");
 }
 
 Deno.serve(async (req) => {
-  if (req.method !== "POST") return new Response("Method not allowed", { status: 405 });
+  if (req.method === "OPTIONS") {
+    return new Response("ok", { headers: corsHeaders });
+  }
+  const corsed = (body: unknown, status: number) =>
+    Response.json(body, { status, headers: corsHeaders });
+  if (req.method !== "POST") return corsed("Method not allowed", 405);
   if (!CLOUD_NAME || !API_KEY || !API_SECRET || !SUPABASE_URL || !SERVICE_ROLE) {
-    return new Response("server misconfigured", { status: 500 });
+    return corsed({ error: "server misconfigured" }, 500);
   }
 
   // Only signed-in users may mint signatures.
@@ -63,24 +76,27 @@ Deno.serve(async (req) => {
   });
   const { data: userData } = await supabase.auth.getUser(jwt);
   const userId = userData?.user?.id;
-  if (!userId) return new Response("unauthorized", { status: 401 });
+  if (!userId) return corsed({ error: "unauthorized" }, 401);
 
   const body = await req.json().catch(() => null);
   const scope = (body?.scope as string | undefined) ?? "listing";
   const folderName = SCOPE_FOLDER[scope];
-  if (!folderName) return new Response("bad scope", { status: 400 });
+  if (!folderName) return corsed({ error: "bad scope" }, 400);
 
   const folder = `addisfurnish/${userId}/${folderName}`;
   const timestamp = Math.floor(Date.now() / 1000).toString();
   const toSign = `folder=${folder}&timestamp=${timestamp}`;
   const signature = await sha1Hex(toSign + API_SECRET);
 
-  return Response.json({
-    cloud_name: CLOUD_NAME,
-    api_key: API_KEY,
-    timestamp,
-    signature,
-    folder,
-    upload_url: `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/auto/upload`,
-  });
+  return corsed(
+    {
+      cloud_name: CLOUD_NAME,
+      api_key: API_KEY,
+      timestamp,
+      signature,
+      folder,
+      upload_url: `https://api.cloudinary.com/v1_1/${CLOUD_NAME}/auto/upload`,
+    },
+    200,
+  );
 });

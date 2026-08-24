@@ -64,10 +64,21 @@ function publicIdFromUrl(url: string): string | null {
   }
 }
 
+// Browser preflight (OPTIONS) must be answered with CORS headers or the
+// client\'s delete request never leaves the ground.
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
+
+const corsed = (body: unknown, status: number) =>
+  Response.json(body, { status, headers: corsHeaders });
+
 Deno.serve(async (req) => {
-  if (req.method !== "POST") return new Response("Method not allowed", { status: 405 });
+  if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
+  if (req.method !== "POST") return corsed({ error: "Method not allowed" }, 405);
   if (!CLOUD_NAME || !API_KEY || !API_SECRET || !SUPABASE_URL || !SERVICE_ROLE) {
-    return new Response("server misconfigured", { status: 500 });
+    return corsed({ error: "server misconfigured" }, 500);
   }
 
   const authHeader = req.headers.get("Authorization") ?? "";
@@ -77,7 +88,7 @@ Deno.serve(async (req) => {
   });
   const { data: userData } = await supabase.auth.getUser(jwt);
   const userId = userData?.user?.id;
-  if (!userId) return new Response("unauthorized", { status: 401 });
+  if (!userId) return corsed({ error: "unauthorized" }, 401);
 
   // Admins can delete anyone's assets; regular users only their own folder.
   const { data: profile } = await supabase
