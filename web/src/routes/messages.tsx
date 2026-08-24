@@ -280,7 +280,17 @@ function Messages() {
 
   const send = useMutation({
     mutationFn: async () => {
-      const imageUrl = pendingFile ? await uploadListingImage(user!.id, pendingFile) : null;
+      let imageUrl: string | null = null;
+      if (pendingFile) {
+        try {
+          imageUrl = await uploadListingImage(user!.id, pendingFile);
+        } catch (err) {
+          // Rethrow with a marker so the toast says "image upload" instead of
+          // the generic "could not be sent" — and the console keeps the cause.
+          console.error("[chat] image upload failed", err);
+          throw new Error(`image_upload_failed: ${err instanceof Error ? err.message : ""}`);
+        }
+      }
       const { error } = await supabase
         .from("messages")
         .insert({ conversation_id: current!, sender_id: user!.id, body, image_url: imageUrl });
@@ -313,7 +323,16 @@ function Messages() {
       queryClient.invalidateQueries({ queryKey: ["conversation-unread"] });
     },
     // Keep the typed text and the staged image so the send can be retried.
-    onError: (error: Error) => toast.error(friendlyError(error, t, "msg.sendFailed")),
+    onError: (error: Error) => {
+      if (error.message.startsWith("image_upload_failed")) {
+        toast.error(t("msg.imageUploadFailed"));
+        return;
+      }
+      // Surface the underlying reason (RLS, column, network…) alongside the
+      // friendly line so failures are diagnosable instead of a dead end.
+      const detail = friendlyError(error, t, "msg.sendFailed");
+      toast.error(error.message ? `${detail} (${error.message})` : detail);
+    },
   });
 
   /** Hide the conversation from the caller's own inbox. */
