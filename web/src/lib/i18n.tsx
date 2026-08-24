@@ -1314,13 +1314,11 @@ const am: Record<keyof Dict, string> = {
   "admin.suspendedSegment": "ታግደዋል",
   "admin.businessSellers": "የቢዝነስ ሻጮች",
   "admin.comingSoon": "በቅርቡ",
-  "admin.businessSellersSoon":
-    "የቢዝነስ ሻጮ መሣሪያዎች (ማረጋገጫ፣ የመደብር መገለጫ፣ የቢዝነስ ትንታኔ) በቀጣዩ ዙር ይመጣሉ።",
+  "admin.businessSellersSoon": "የቢዝነስ ሻጮ መሣሪያዎች (ማረጋገጫ፣ የመደብር መገለጫ፣ የቢዝነስ ትንታኔ) በቀጣዩ ዙር ይመጣሉ።",
   "admin.allStatuses": "ሁሉም",
   "admin.analytics": "ትንታኔ",
   "admin.acquisitionSources": "የመግቢያ ምንጮች",
-  "admin.acquisitionHint":
-    "የገበያ እንቅስቃሴ የሚመጣበት ቦታ — በተመዘገቡና በተለጠፉ ቁጥር፣ በተከታታይ አይደለም።",
+  "admin.acquisitionHint": "የገበያ እንቅስቃሴ የሚመጣበት ቦታ — በተመዘገቡና በተለጠፉ ቁጥር፣ በተከታታይ አይደለም።",
   "admin.sourceCol": "ምንጭ",
   "admin.signupsCol": "ምዝገባዎች",
   "admin.listingsCol": "ማስታወቂያዎች",
