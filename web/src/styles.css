@@ -185,3 +185,10 @@
     box-shadow: var(--shadow-lift);
   }
 }
+
+/* Phones: nothing should ever pan the page horizontally. `clip` (not hidden)
+   still allows internal scroll containers (galleries, tables) to work. */
+html,
+body {
+  overflow-x: clip;
+}

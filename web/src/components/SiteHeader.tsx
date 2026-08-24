@@ -183,7 +183,7 @@ export function SiteHeader() {
 
   return (
     <header className="sticky top-0 z-50 border-b bg-background/90 backdrop-blur">
-      <div className="mx-auto flex h-16 max-w-6xl items-center gap-3 px-4">
+      <div className="mx-auto flex h-16 max-w-6xl items-center gap-2 px-3 sm:gap-3 sm:px-4">
         <Link
           to="/"
           className="flex shrink-0 items-center gap-2 font-display text-xl font-semibold tracking-tight"
@@ -197,7 +197,9 @@ export function SiteHeader() {
             // Above the fold on every page, so don't defer it.
             loading="eager"
           />
-          <span>
+          {/* Wordmark hides on very narrow phones so bell/profile/burger stay
+              on screen without horizontal panning. */}
+          <span className="hidden min-[400px]:inline">
             Addis<span className="text-primary">Home</span>
           </span>
         </Link>
@@ -219,7 +221,7 @@ export function SiteHeader() {
           <SearchBox />
         </div>
 
-        <div className="ml-auto flex items-center gap-2 lg:ml-2">
+        <div className="ml-auto flex items-center gap-1.5 lg:ml-2 sm:gap-2">
           {/* Phone-width search: the field itself doesn't fit beside the logo,
               so it opens as a second header row (item 12). */}
           <Button

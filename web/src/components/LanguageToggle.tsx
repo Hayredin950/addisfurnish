@@ -22,13 +22,16 @@ export function LanguageToggle() {
         persistLanguage(user?.id, v as "en" | "am");
       }}
     >
-      {/* w-[108px] clipped "አማርኛ" — Ethiopic glyphs are wider than their Latin
-          counterparts at the same font size, and the trigger also has to fit
-          the globe icon plus the chevron. Sized to content with a floor
-          instead, and the icon is kept from shrinking. */}
-      <SelectTrigger className="h-9 w-[128px] gap-1.5 px-2.5" aria-label="Language">
+      {/* Full label from `sm`; below that only the globe fits a 360px header
+          alongside logo, bell, avatar and burger without horizontal scroll. */}
+      <SelectTrigger
+        className="h-9 w-9 justify-center gap-0 px-0 sm:w-[128px] sm:justify-start sm:gap-1.5 sm:px-2.5"
+        aria-label="Language"
+      >
         <Globe className="h-3.5 w-3.5 shrink-0" />
-        <SelectValue />
+        <span className="hidden sm:inline-flex">
+          <SelectValue />
+        </span>
       </SelectTrigger>
       <SelectContent>
         <SelectItem value="en">English</SelectItem>
