@@ -256,7 +256,9 @@ export function SiteHeader() {
                     variant="outline"
                     size="icon"
                     aria-label={t("nav.accountMenu")}
-                    className="overflow-hidden rounded-full p-0"
+                    /* shrink-0: when the desktop search bar takes its space,
+                        flex must not squeeze the avatar into an ellipse. */
+                    className="size-9 shrink-0 overflow-hidden rounded-full p-0"
                   >
                     {profile?.shop_logo_url || profile?.avatar_url ? (
                       <UserAvatar
@@ -325,7 +327,7 @@ export function SiteHeader() {
               asChild
               variant="outline"
               size="icon"
-              className="overflow-hidden rounded-full p-0"
+              className="size-9 shrink-0 overflow-hidden rounded-full p-0"
               aria-label={t("nav.signIn")}
             >
               <Link to="/auth">
