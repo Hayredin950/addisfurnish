@@ -134,7 +134,7 @@ function AdminPage() {
       <h1 className="font-display text-3xl font-semibold">{t("admin.title")}</h1>
 
       <Tabs value={tab} onValueChange={setTab} className="mt-8">
-        <TabsList className="flex-wrap">
+        <TabsList className="flex-wrap h-auto">
           <TabsTrigger value="dashboard">{t("admin.dashboard")}</TabsTrigger>
           <TabsTrigger value="listings">
             <LayoutList className="mr-1.5 h-3.5 w-3.5" /> Listings
