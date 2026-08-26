@@ -2618,7 +2618,7 @@ function CategoriesTab() {
 function ListingsTab() {
   const { t } = useLang();
   const queryClient = useQueryClient();
-  const { data: listings } = useQuery(adminListingsQuery());
+  const { data: listings, isLoading } = useQuery(adminListingsQuery());
   const [pendingDelete, setPendingDelete] = useState<{ id: string; title: string } | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>("all");
@@ -2741,6 +2741,24 @@ function ListingsTab() {
           </Button>
         ))}
       </div>
+
+      {isLoading ? (
+        <ul className="space-y-2">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <li key={i} className="flex items-center gap-3 rounded-lg border bg-card p-3">
+              <span className="h-11 w-11 shrink-0 animate-pulse rounded-md bg-muted" />
+              <span className="min-w-0 flex-1 space-y-2">
+                <span className="block h-4 w-48 animate-pulse rounded bg-muted" />
+                <span className="block h-3 w-32 animate-pulse rounded bg-muted" />
+              </span>
+            </li>
+          ))}
+        </ul>
+      ) : filtered.length === 0 ? (
+        <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
+          {t("admin.noListings")}
+        </p>
+      ) : (
       <ul className="space-y-2">
         {filtered.map((l) => {
           // Listing health dot (spec §13): green = fresh/active interest,
@@ -2822,6 +2840,7 @@ function ListingsTab() {
           );
         })}
       </ul>
+      )}
 
       <ConfirmDialog
         open={!!pendingDelete}
