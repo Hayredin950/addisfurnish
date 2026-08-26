@@ -1617,7 +1617,7 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
             return (
               <li
                 key={u.id}
-                className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card p-3"
+                className="flex flex-col gap-3 rounded-lg border bg-card p-3 sm:flex-row sm:items-center sm:justify-between"
               >
                 <button
                   type="button"
