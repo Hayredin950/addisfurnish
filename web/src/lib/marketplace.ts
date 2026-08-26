@@ -421,12 +421,29 @@ export function adminListingsQuery() {
       const { data, error } = await supabase
         .from("listings")
         .select(
-          "id,title,price,status,view_count,featured,featured_until,seller_id,created_at,listing_images(id,url,position)",
+          "id,title,price,status,view_count,featured,featured_until,seller_id,created_at",
         )
         .order("created_at", { ascending: false })
         .limit(50);
       if (error) throw error;
-      return data ?? [];
+      const listings = data ?? [];
+      if (listings.length === 0) return listings;
+      const ids = listings.map((l) => l.id);
+      const { data: images } = await supabase
+        .from("listing_images")
+        .select("listing_id,url,position")
+        .in("listing_id", ids)
+        .order("position");
+      const imagesByListing = new Map<string, { url: string; position: number }[]>();
+      for (const img of images ?? []) {
+        const arr = imagesByListing.get(img.listing_id) ?? [];
+        arr.push({ url: img.url, position: img.position });
+        imagesByListing.set(img.listing_id, arr);
+      }
+      return listings.map((l) => ({
+        ...l,
+        listing_images: imagesByListing.get(l.id) ?? [],
+      }));
     },
   });
 }
