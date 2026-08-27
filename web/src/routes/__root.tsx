@@ -3,6 +3,7 @@ import {
   Outlet,
   Link,
   createRootRouteWithContext,
+  useLocation,
   useRouter,
   HeadContent,
   Scripts,
@@ -157,6 +158,8 @@ function RootShell({ children }: { children: ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+  const { pathname } = useLocation();
+  const isHome = pathname === "/";
 
   return (
     <QueryClientProvider client={queryClient}>
@@ -171,7 +174,7 @@ function RootComponent() {
               {/* Required: nested routes render here. */}
               <Outlet />
             </main>
-            <SiteFooter />
+            {isHome ? <SiteFooter /> : null}
           </div>
           <MobileTabBar />
           <Toaster richColors position="top-center" />
