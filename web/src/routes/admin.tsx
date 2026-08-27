@@ -2204,6 +2204,7 @@ function ListingsTab() {
   const [pendingDelete, setPendingDelete] = useState<{ id: string; title: string } | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [search, setSearch] = useState("");
 
   // Listing IDs that have at least one inquiry (spec §14 dead-listing rule).
   const { data: inquiredIds } = useQuery({
@@ -2225,6 +2226,20 @@ function ListingsTab() {
     if (statusFilter === "other") return !["active", "reserved", "sold"].includes(l.status);
     return l.status === statusFilter;
   });
+
+  const term = search.trim().toLowerCase();
+  const searched = term
+    ? filtered.filter((l) => {
+        const row = l as Record<string, unknown>;
+        const desc = (row["description"] as string | null)?.toLowerCase() ?? "";
+        const cat = (row["category"] as string | null)?.toLowerCase() ?? "";
+        return (
+          (l.title as string).toLowerCase().includes(term) ||
+          desc.includes(term) ||
+          cat.includes(term)
+        );
+      })
+    : filtered;
 
   const notifySeller = async (listingId: string) => {
     const target = (listings ?? []).find((l) => l.id === listingId);
@@ -2324,6 +2339,15 @@ function ListingsTab() {
         ))}
       </div>
 
+      <div className="mb-4">
+        <Input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder={t("admin.searchListings")}
+          className="h-9 max-w-xs"
+        />
+      </div>
+
       {isLoading ? (
         <ul className="space-y-2">
           {Array.from({ length: 5 }).map((_, i) => (
@@ -2336,13 +2360,13 @@ function ListingsTab() {
             </li>
           ))}
         </ul>
-      ) : filtered.length === 0 ? (
+      ) : searched.length === 0 ? (
         <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
           {t("admin.noListings")}
         </p>
       ) : (
         <ul className="space-y-2">
-          {filtered.map((l) => {
+          {searched.map((l) => {
             // Listing health dot (spec §13): green = fresh/active interest,
             // yellow = low views, orange = stale with no traction.
             const ageDays = (Date.now() - new Date(l.created_at).getTime()) / 86400000;
