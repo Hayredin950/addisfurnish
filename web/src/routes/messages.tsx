@@ -385,34 +385,34 @@ function Messages() {
         {/* Phones: one pane at a time — picking a conversation swaps the list
             for the chat, and the back arrow returns to the inbox. */}
         <aside
-          className={`min-h-0 space-y-2 overflow-y-auto md:pr-1 ${activeId ? "hidden md:block" : ""}`}
+          className={`min-h-0 space-y-0 overflow-y-auto md:space-y-2 md:pr-1 ${activeId ? "hidden md:block" : ""}`}
         >
           {(conversations ?? []).map((c) => {
             const unread = unreadRows?.get(c.id) ?? 0;
+            const other = c.buyer_id === user?.id ? c.seller : c.buyer;
+            const name = other?.full_name ?? other?.shop_name ?? t("msg.listing");
+            const listingTitle = (c.listings as { title: string } | null)?.title ?? null;
             return (
               <div
                 key={c.id}
-                className={`group relative w-full rounded-md border p-3 text-left text-sm ${
-                  c.id === current ? "border-primary bg-secondary/50" : ""
-                } ${unread > 0 ? "border-primary/50" : ""}`}
+                className={`group relative w-full border-b py-3 text-left text-sm last:border-b-0 md:border-b-0 md:rounded-md md:border md:p-3 ${
+                  c.id === current
+                    ? "border-primary bg-secondary/50 md:border-primary md:bg-secondary/50"
+                    : ""
+                } ${unread > 0 ? "border-primary/50 md:border-primary/50" : ""}`}
               >
                 <button
                   type="button"
                   onClick={() => setActiveId(c.id)}
                   className="w-full text-left"
                 >
-                  <span className="flex items-center gap-2">
-                    {(() => {
-                      // Show who you're talking to, not your own side.
-                      const other = c.buyer_id === user?.id ? c.seller : c.buyer;
-                      return (
-                        <UserAvatar
-                          name={other?.full_name}
-                          avatarUrl={other?.avatar_url}
-                          size={28}
-                        />
-                      );
-                    })()}
+                  <span className="flex items-center gap-3">
+                    <span className="relative shrink-0">
+                      <UserAvatar name={other?.full_name} avatarUrl={other?.avatar_url} size={40} />
+                      {other?.phone ? (
+                        <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-background bg-emerald-500" />
+                      ) : null}
+                    </span>
                     <span className="min-w-0 flex-1">
                       <span className="flex items-center gap-1.5">
                         <span
@@ -420,7 +420,7 @@ function Messages() {
                             unread > 0 ? "font-semibold" : "font-medium"
                           }`}
                         >
-                          {(c.listings as { title: string } | null)?.title ?? t("msg.listing")}
+                          {name}
                         </span>
                         {unread > 0 ? (
                           <span className="grid h-4 min-w-4 place-items-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground">
@@ -429,8 +429,9 @@ function Messages() {
                         ) : null}
                       </span>
                       <span className="block truncate text-xs text-muted-foreground">
-                        {(c.buyer_id === user?.id ? c.seller : c.buyer)?.full_name ?? ""} ·{" "}
-                        {timeAgo(c.last_message_at)}
+                        {listingTitle
+                          ? `${listingTitle} · ${timeAgo(c.last_message_at)}`
+                          : timeAgo(c.last_message_at)}
                       </span>
                     </span>
                   </span>
