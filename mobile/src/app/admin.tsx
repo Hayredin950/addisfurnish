@@ -465,7 +465,8 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
   const [roleTarget, setRoleTarget] = useState<{
     id: string;
     name: string;
-    action: "promote" | "demote";
+    action: "grant" | "revoke";
+    role: "admin" | "moderator" | "verification" | "category_manager" | "analytics";
   } | null>(null);
   const [roleCodeSent, setRoleCodeSent] = useState(false);
   const [roleCode, setRoleCode] = useState("");
@@ -580,7 +581,7 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
     }
     setBusy(true);
     try {
-      const res = await requestRoleChange(roleTarget.id, roleTarget.action);
+      const res = await requestRoleChange(roleTarget.id, roleTarget.role, roleTarget.action);
       setBusy(false);
       if (!res.ok) {
         toast.error(
@@ -589,11 +590,9 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
             ? t("adminSuperAdminProtected")
             : res.error === "self" || res.error === "self_demote"
               ? t("adminRoleChangeSelf")
-              : res.error === "already_admin"
-                ? t("adminRoleChangeAlreadyAdmin")
-                : res.error === "not_admin"
-                  ? t("adminRoleChangeNotAdmin")
-                  : t("adminRoleChangeFailed"),
+              : res.error === "already_role"
+                ? t("adminRoleChangeAlreadyRole")
+                : t("adminRoleChangeFailed"),
         );
         return;
       }
@@ -627,7 +626,7 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
         return;
       }
       toast.success(
-        roleTarget.action === "promote"
+        roleTarget.action === "grant"
           ? t("adminRoleChangeSuccess")
           : t("adminRoleChangeRemoved"),
       );
@@ -763,10 +762,30 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
                   {name}
                 </Text>
                 {u.verified ? <Ionicons name="checkmark-circle" size={16} color={colors.success} /> : null}
-                {(u.role_names ?? []).includes("admin") ? (
+                {(u.role_names ?? []).some((r) =>
+                  ["admin", "moderator", "verification", "category_manager", "analytics"].includes(r),
+                ) ? (
                   <View style={[styles.chip, { backgroundColor: colors.primary + "20" }]}>
                     <Text style={[styles.chipText, { color: colors.primary, fontSize: 10, fontWeight: "600" }]}>
-                      {u.is_super_admin ? t("adminRoleSuperAdmin") : t("adminRoleAdmin")}
+                      {u.is_super_admin
+                        ? t("adminRoleSuperAdmin")
+                        : ((u.role_names ?? []).find((r) =>
+                            ["admin", "moderator", "verification", "category_manager", "analytics"].includes(r),
+                          ) as string) === "admin"
+                          ? t("adminRoleAdmin")
+                          : ((u.role_names ?? []).find((r) =>
+                              ["admin", "moderator", "verification", "category_manager", "analytics"].includes(r),
+                            ) as string) === "moderator"
+                            ? t("adminRoleModerator")
+                            : ((u.role_names ?? []).find((r) =>
+                                ["admin", "moderator", "verification", "category_manager", "analytics"].includes(r),
+                              ) as string) === "verification"
+                              ? t("adminRoleVerification")
+                              : ((u.role_names ?? []).find((r) =>
+                                  ["admin", "moderator", "verification", "category_manager", "analytics"].includes(r),
+                                ) as string) === "category_manager"
+                                ? t("adminRoleCategoryManager")
+                                : t("adminRoleAnalytics")}
                     </Text>
                   </View>
                 ) : null}
@@ -849,23 +868,37 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
                     yourself would drop you out of this panel mid-session, and
                     if you were the last admin nobody could undo it. The RPC
                     rejects a self-target as well. */}
-                {!u.is_super_admin && u.id !== user?.id && (u.role_names ?? []).includes("admin") ? (
-                  <Button
-                    title={t("adminRemoveAdmin")}
-                    variant="outline"
-                    size="sm"
-                    onPress={() => setRoleTarget({ id: u.id, name, action: "demote" })}
-                    style={{ flex: 1 }}
-                  />
-                ) : null}
-                {!u.is_super_admin && u.id !== user?.id && !(u.role_names ?? []).includes("admin") ? (
-                  <Button
-                    title={t("adminMakeAdmin")}
-                    variant="outline"
-                    size="sm"
-                    onPress={() => setRoleTarget({ id: u.id, name, action: "promote" })}
-                    style={{ flex: 1 }}
-                  />
+                {!u.is_super_admin && u.id !== user?.id ? (
+                  (() => {
+                    const owned = (u.role_names ?? []).find((r) =>
+                      ["admin", "moderator", "verification", "category_manager", "analytics"].includes(r),
+                    ) as
+                      | "admin"
+                      | "moderator"
+                      | "verification"
+                      | "category_manager"
+                      | "analytics"
+                      | undefined;
+                    return owned ? (
+                      <Button
+                        title={t("adminRevokeRole")}
+                        variant="outline"
+                        size="sm"
+                        onPress={() => setRoleTarget({ id: u.id, name, action: "revoke", role: owned })}
+                        style={{ flex: 1 }}
+                      />
+                    ) : (
+                      <Button
+                        title={t("adminGrantRole")}
+                        variant="outline"
+                        size="sm"
+                        onPress={() =>
+                          setRoleTarget({ id: u.id, name, action: "grant", role: "moderator" })
+                        }
+                        style={{ flex: 1 }}
+                      />
+                    );
+                  })()
                 ) : null}
                 {/* Direct email change. Only the admin-gated RPC can touch
                     auth.users, and it audits itself. */}
@@ -913,17 +946,47 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
           <Text style={styles.title}>
             {roleCodeSent
               ? t("adminRoleChangeEnterCode")
-              : roleTarget?.action === "promote"
-                ? t("adminPromoteTitle")
-                : t("adminDemoteTitle")}
+              : roleTarget?.action === "grant"
+                ? t("adminGrantTitle")
+                : t("adminRevokeTitle")}
           </Text>
           <Text style={styles.message}>
             {roleCodeSent
               ? t("adminRoleChangeCodeHint")
-              : roleTarget?.action === "promote"
-                ? t("adminPromoteBody")
-                : t("adminDemoteBody")}
+              : roleTarget?.action === "grant"
+                ? t("adminGrantBody")
+                : t("adminRevokeBody")}
           </Text>
+          {roleTarget?.action === "grant" && !roleCodeSent ? (
+            <View style={{ marginTop: spacing.md, gap: 6 }}>
+              <Text style={styles.fieldLabel}>{t("adminSelectRole")}</Text>
+              <View style={styles.chipWrap}>
+                {(
+                  [
+                    ["moderator", t("adminRoleModerator")],
+                    ["verification", t("adminRoleVerification")],
+                    ["category_manager", t("adminRoleCategoryManager")],
+                    ["analytics", t("adminRoleAnalytics")],
+                    ["admin", t("adminRoleAdmin")],
+                  ] as const
+                ).map(([value, label]) => (
+                  <Pressable
+                    key={value}
+                    style={[styles.chip, roleTarget?.role === value && styles.chipActive]}
+                    onPress={() =>
+                      setRoleTarget((prev) => (prev ? { ...prev, role: value as typeof prev.role } : prev))
+                    }
+                  >
+                    <Text
+                      style={[styles.chipText, roleTarget?.role === value && styles.chipTextActive]}
+                    >
+                      {label}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+          ) : null}
           {roleCodeSent && (
             <TextInput
               style={styles.codeInput}
@@ -1017,7 +1080,10 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
           {detailUser ? (() => {
             const du = detailUser;
             const roles = Array.isArray(du.role_names) ? du.role_names : [];
-            const isAdminUser = roles.includes("admin");
+            const adminRole = roles.find((r) =>
+              ["admin", "moderator", "verification", "category_manager", "analytics"].includes(r),
+            );
+            const isAdminUser = !!adminRole;
             const who = du.shop_name ?? du.full_name;
             const suspendedUser = !!du.banned_until && new Date(du.banned_until) > new Date();
             const lang = du.preferred_language === "am" ? "አማርኛ" : du.preferred_language === "en" ? "English" : du.preferred_language || "—";
@@ -1039,7 +1105,17 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
                       {isAdminUser ? (
                         <View style={[styles.chip, { backgroundColor: colors.primary + "20" }]}>
                           <Text style={[styles.chipText, { color: colors.primary, fontSize: 10, fontWeight: "600" }]}>
-                            {du.is_super_admin ? t("adminRoleSuperAdmin") : t("adminRoleAdmin")}
+                            {du.is_super_admin
+                              ? t("adminRoleSuperAdmin")
+                              : adminRole === "admin"
+                                ? t("adminRoleAdmin")
+                                : adminRole === "moderator"
+                                  ? t("adminRoleModerator")
+                                  : adminRole === "verification"
+                                    ? t("adminRoleVerification")
+                                    : adminRole === "category_manager"
+                                      ? t("adminRoleCategoryManager")
+                                      : t("adminRoleAnalytics")}
                           </Text>
                         </View>
                       ) : (

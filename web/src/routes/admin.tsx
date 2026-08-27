@@ -49,6 +49,8 @@ import {
   categoryCountsQuery,
   emailChangeQueueQuery,
   isAdminQuery,
+  adminScopesForRoles,
+  type AdminScope,
   type AdminUser,
   type Category,
 } from "@/lib/marketplace";
@@ -88,6 +90,13 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 export const Route = createFileRoute("/admin")({
   head: () => ({
@@ -107,11 +116,24 @@ export const Route = createFileRoute("/admin")({
 function AdminPage() {
   const { user } = useAuth();
   const { t } = useLang();
-  const { data: isAdmin, isLoading: checking } = useQuery(isAdminQuery(user?.id));
+  const { data: isAdmin } = useQuery(isAdminQuery(user?.id));
+  const { data: me, isLoading: checkingMe } = useQuery({
+    queryKey: ["admin-me", user?.id],
+    enabled: !!user,
+    queryFn: async () => {
+      if (!user) return null;
+      const { data } = await supabase.rpc("admin_get_profile_details");
+      const found = ((data ?? []) as unknown as AdminUser[]).find((u) => u.id === user.id);
+      return found ?? null;
+    },
+  });
+  const scopes = adminScopesForRoles(me?.role_names, me?.is_super_admin ?? false);
   const [tab, setTab] = useState("dashboard");
   const [drill, setDrill] = useState<"all" | "sellers" | null>(null);
 
-  if (checking) {
+  const allow = (scope: AdminScope) => scopes.has(scope);
+
+  if (checkingMe) {
     return (
       <div className="mx-auto max-w-3xl px-4 py-24 text-center text-sm text-muted-foreground">
         {t("browse.loading")}
@@ -129,41 +151,70 @@ function AdminPage() {
     );
   }
 
+  // If the active tab is no longer allowed (e.g. role changed), fall back to
+  // the dashboard, which every admin-role holder can see.
+  const activeTabAllowed =
+    tab === "dashboard" ||
+    (tab === "users" && allow("users")) ||
+    (tab === "listings" && allow("listings")) ||
+    (tab === "verification" && allow("verification")) ||
+    (tab === "moderation" && allow("moderation")) ||
+    (tab === "categories" && allow("categories")) ||
+    (tab === "analytics" && allow("analytics"));
+
   return (
     <div className="mx-auto max-w-4xl px-4 py-12">
       <h1 className="font-display text-3xl font-semibold">{t("admin.title")}</h1>
 
-      <Tabs value={tab} onValueChange={setTab} className="mt-8">
+      <Tabs value={activeTabAllowed ? tab : "dashboard"} onValueChange={setTab} className="mt-8">
         <TabsList className="flex-wrap h-auto">
           <TabsTrigger value="dashboard">{t("admin.dashboard")}</TabsTrigger>
-          <TabsTrigger value="listings">
-            <LayoutList className="mr-1.5 h-3.5 w-3.5" /> Listings
-          </TabsTrigger>
-          <TabsTrigger value="users">{t("admin.users")}</TabsTrigger>
-          <TabsTrigger value="verification">
-            <ClipboardCheck className="mr-1.5 h-3.5 w-3.5" /> {t("admin.verification")}
-          </TabsTrigger>
-          <TabsTrigger value="moderation">
-            <Gavel className="mr-1.5 h-3.5 w-3.5" /> {t("admin.moderation")}
-          </TabsTrigger>
-          <TabsTrigger value="categories">
-            <FolderTree className="mr-1.5 h-3.5 w-3.5" /> {t("nav.categories")}
-          </TabsTrigger>
-          <TabsTrigger value="analytics">
-            <Globe className="mr-1.5 h-3.5 w-3.5" /> {t("admin.analytics")}
-          </TabsTrigger>
-          <TabsTrigger value="telegram">
-            <Radio className="mr-1.5 h-3.5 w-3.5" /> {t("admin.telegramTab")}
-          </TabsTrigger>
-          <TabsTrigger value="featured">
-            <Star className="mr-1.5 h-3.5 w-3.5" /> {t("admin.featuredListings")}
-          </TabsTrigger>
-          <TabsTrigger value="audit">
-            <ScrollText className="mr-1.5 h-3.5 w-3.5" /> {t("admin.auditLog")}
-          </TabsTrigger>
-          <TabsTrigger value="settings">
-            <ShieldCheck className="mr-1.5 h-3.5 w-3.5" /> {t("admin.settings")}
-          </TabsTrigger>
+          {allow("listings") && (
+            <TabsTrigger value="listings">
+              <LayoutList className="mr-1.5 h-3.5 w-3.5" /> Listings
+            </TabsTrigger>
+          )}
+          {allow("users") && <TabsTrigger value="users">{t("admin.users")}</TabsTrigger>}
+          {allow("verification") && (
+            <TabsTrigger value="verification">
+              <ClipboardCheck className="mr-1.5 h-3.5 w-3.5" /> {t("admin.verification")}
+            </TabsTrigger>
+          )}
+          {allow("moderation") && (
+            <TabsTrigger value="moderation">
+              <Gavel className="mr-1.5 h-3.5 w-3.5" /> {t("admin.moderation")}
+            </TabsTrigger>
+          )}
+          {allow("categories") && (
+            <TabsTrigger value="categories">
+              <FolderTree className="mr-1.5 h-3.5 w-3.5" /> {t("nav.categories")}
+            </TabsTrigger>
+          )}
+          {allow("analytics") && (
+            <TabsTrigger value="analytics">
+              <Globe className="mr-1.5 h-3.5 w-3.5" /> {t("admin.analytics")}
+            </TabsTrigger>
+          )}
+          {allow("users") && (
+            <TabsTrigger value="telegram">
+              <Radio className="mr-1.5 h-3.5 w-3.5" /> {t("admin.telegramTab")}
+            </TabsTrigger>
+          )}
+          {allow("users") && (
+            <TabsTrigger value="featured">
+              <Star className="mr-1.5 h-3.5 w-3.5" /> {t("admin.featuredListings")}
+            </TabsTrigger>
+          )}
+          {allow("users") && (
+            <TabsTrigger value="audit">
+              <ScrollText className="mr-1.5 h-3.5 w-3.5" /> {t("admin.auditLog")}
+            </TabsTrigger>
+          )}
+          {allow("users") && (
+            <TabsTrigger value="settings">
+              <ShieldCheck className="mr-1.5 h-3.5 w-3.5" /> {t("admin.settings")}
+            </TabsTrigger>
+          )}
         </TabsList>
 
         <TabsContent value="dashboard" className="mt-6">
@@ -1304,7 +1355,8 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
   const [roleTarget, setRoleTarget] = useState<{
     id: string;
     name: string;
-    action: "promote" | "demote";
+    action: "grant" | "revoke";
+    role: "admin" | "moderator" | "verification" | "category_manager" | "analytics";
   } | null>(null);
   const [detailUser, setDetailUser] = useState<AdminUser | null>(null);
   const [busy, setBusy] = useState(false);
@@ -1450,6 +1502,7 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
     setBusy(true);
     const { data, error } = await supabase.rpc("admin_request_role_change", {
       _target_user_id: roleTarget.id,
+      _role: roleTarget.role,
       _action: roleTarget.action,
     });
     setBusy(false);
@@ -1462,11 +1515,9 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
             ? t("admin.roleChangeSelf")
             : err === "no_email"
               ? t("admin.roleChangeNoEmail")
-              : err === "already_admin"
-                ? t("admin.roleChangeAlreadyAdmin")
-                : err === "not_admin"
-                  ? t("admin.roleChangeNotAdmin")
-                  : t("admin.roleChangeFailed"),
+              : err === "already_role"
+                ? t("admin.roleChangeAlreadyRole")
+                : t("admin.roleChangeFailed"),
       );
       return;
     }
@@ -1498,16 +1549,16 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
       return;
     }
     toast.success(
-      roleTarget.action === "promote" ? t("admin.roleChangeSuccess") : t("admin.roleChangeRemoved"),
+      roleTarget.action === "grant" ? t("admin.roleChangeSuccess") : t("admin.roleChangeRemoved"),
     );
     setRoleTarget(null);
     setRoleCodeSent(false);
     setRoleCode("");
     void logAdminAction({
-      action: roleTarget.action === "promote" ? "admin_promoted" : "admin_demoted",
+      action: roleTarget.action === "grant" ? "role_granted" : "role_revoked",
       entityType: "user",
       entityId: roleTarget.id,
-      newValue: { role: "admin", confirmedViaEmailCode: true },
+      newValue: { role: roleTarget.role, confirmedViaEmailCode: true },
     });
     queryClient.invalidateQueries({ queryKey: ["admin-all-users"] });
   };
@@ -1629,9 +1680,28 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
                     <p className="flex items-center gap-1.5 truncate text-sm font-medium">
                       {name}
                       {u.verified ? <BadgeCheck className="h-3.5 w-3.5 text-primary" /> : null}
-                      {(u.role_names ?? []).includes("admin") ? (
+                      {(u.role_names ?? []).some((r) =>
+                        [
+                          "admin",
+                          "moderator",
+                          "verification",
+                          "category_manager",
+                          "analytics",
+                        ].includes(r),
+                      ) ? (
                         <span className="rounded-full bg-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-primary">
-                          {u.is_super_admin ? t("admin.roleSuperAdmin") : t("admin.roleAdmin")}
+                          {u.is_super_admin
+                            ? t("admin.roleSuperAdmin")
+                            : (u.role_names ?? []).find((r) => r !== "user") === "admin"
+                              ? t("admin.roleAdmin")
+                              : (u.role_names ?? []).find((r) => r !== "user") === "moderator"
+                                ? t("admin.roleModerator")
+                                : (u.role_names ?? []).find((r) => r !== "user") === "verification"
+                                  ? t("admin.roleVerification")
+                                  : (u.role_names ?? []).find((r) => r !== "user") ===
+                                      "category_manager"
+                                    ? t("admin.roleCategoryManager")
+                                    : t("admin.roleAnalytics")}
                         </span>
                       ) : (
                         <span className="rounded-full bg-secondary px-1.5 py-0.5 text-[10px] font-normal text-muted-foreground">
@@ -1686,34 +1756,60 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
                   >
                     <Mail className="mr-1.5 h-3.5 w-3.5" /> {t("admin.emailChangeUser")}
                   </Button>
-                  {/* Promote / demote admin — the change requires email
-                      confirmation. Never offered on your own row: demoting
-                      yourself would drop you out of this panel mid-session, and
-                      if you were the last admin nobody could undo it. The RPC
-                      rejects a self-target too ({ok:false, error:"self"}); this
-                      only keeps the button from lying about being available. */}
-                  {!u.is_super_admin &&
-                  u.id !== user?.id &&
-                  (u.role_names ?? []).includes("admin") ? (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => setRoleTarget({ id: u.id, name, action: "demote" })}
-                    >
-                      <Mail className="mr-1.5 h-3.5 w-3.5" /> {t("admin.removeAdmin")}
-                    </Button>
-                  ) : null}
-                  {!u.is_super_admin &&
-                  u.id !== user?.id &&
-                  !(u.role_names ?? []).includes("admin") ? (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => setRoleTarget({ id: u.id, name, action: "promote" })}
-                    >
-                      <Mail className="mr-1.5 h-3.5 w-3.5" /> {t("admin.makeAdmin")}
-                    </Button>
-                  ) : null}
+                  {/* Grant / revoke an admin role — requires email
+                      confirmation. Never offered on your own row or on the
+                      super admin: revoking would drop them out of the panel
+                      or nothing could undo it. The RPC rejects a self-target
+                      too ({ok:false, error:"self"}); this only keeps the
+                      button from lying about being available. */}
+                  {(() => {
+                    const owned = (u.role_names ?? []).find((r) =>
+                      [
+                        "admin",
+                        "moderator",
+                        "verification",
+                        "category_manager",
+                        "analytics",
+                      ].includes(r),
+                    );
+                    if (u.is_super_admin || u.id === user?.id) return null;
+                    return owned ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() =>
+                          setRoleTarget({
+                            id: u.id,
+                            name,
+                            action: "revoke",
+                            role: owned as
+                              | "admin"
+                              | "moderator"
+                              | "verification"
+                              | "category_manager"
+                              | "analytics",
+                          })
+                        }
+                      >
+                        <Mail className="mr-1.5 h-3.5 w-3.5" /> {t("admin.revokeRole")}
+                      </Button>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() =>
+                          setRoleTarget({
+                            id: u.id,
+                            name,
+                            action: "grant",
+                            role: "moderator",
+                          })
+                        }
+                      >
+                        <Mail className="mr-1.5 h-3.5 w-3.5" /> {t("admin.grantRole")}
+                      </Button>
+                    );
+                  })()}
                   {/* Only ONE of suspend / lift-suspend per user — a suspended
                       account shows "Lift suspension", an active one shows
                       "Suspend". (The profiles mirror is written by the same
@@ -1767,18 +1863,53 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
             <AlertDialogTitle className="font-display">
               {roleCodeSent
                 ? t("admin.roleChangeEnterCode")
-                : roleTarget?.action === "promote"
-                  ? t("admin.promoteTitle")
-                  : t("admin.demoteTitle")}
+                : roleTarget?.action === "grant"
+                  ? t("admin.grantTitle")
+                  : t("admin.revokeTitle")}
             </AlertDialogTitle>
             <AlertDialogDescription>
               {roleCodeSent
                 ? t("admin.roleChangeCodeHint")
-                : roleTarget?.action === "promote"
-                  ? t("admin.promoteBody")
-                  : t("admin.demoteBody")}
+                : roleTarget?.action === "grant"
+                  ? t("admin.grantBody")
+                  : t("admin.revokeBody")}
             </AlertDialogDescription>
           </AlertDialogHeader>
+
+          {roleTarget?.action === "grant" && !roleCodeSent ? (
+            <div className="space-y-2">
+              <Label>{t("admin.selectRole")}</Label>
+              <Select
+                value={roleTarget.role}
+                onValueChange={(v) =>
+                  setRoleTarget((prev) =>
+                    prev
+                      ? {
+                          ...prev,
+                          role: v as
+                            | "admin"
+                            | "moderator"
+                            | "verification"
+                            | "category_manager"
+                            | "analytics",
+                        }
+                      : prev,
+                  )
+                }
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder={t("admin.selectRole")} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="moderator">{t("admin.roleModerator")}</SelectItem>
+                  <SelectItem value="verification">{t("admin.roleVerification")}</SelectItem>
+                  <SelectItem value="category_manager">{t("admin.roleCategoryManager")}</SelectItem>
+                  <SelectItem value="analytics">{t("admin.roleAnalytics")}</SelectItem>
+                  <SelectItem value="admin">{t("admin.roleAdmin")}</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          ) : null}
 
           {roleCodeSent && (
             <div className="flex justify-center py-2">
@@ -2759,87 +2890,87 @@ function ListingsTab() {
           {t("admin.noListings")}
         </p>
       ) : (
-      <ul className="space-y-2">
-        {filtered.map((l) => {
-          // Listing health dot (spec §13): green = fresh/active interest,
-          // yellow = low views, orange = stale with no traction.
-          const ageDays = (Date.now() - new Date(l.created_at).getTime()) / 86400000;
-          const health =
-            ageDays < 14 || l.view_count >= 20
-              ? "#22c55e"
-              : l.view_count > 0
-                ? "#eab308"
-                : "#f97316";
-          return (
-            <li
-              key={l.id}
-              className="flex flex-wrap items-center gap-3 rounded-lg border bg-card p-3"
-            >
-              <Link
-                to="/listing/$id"
-                params={{ id: l.id }}
-                className="flex min-w-0 flex-1 items-center gap-3"
+        <ul className="space-y-2">
+          {filtered.map((l) => {
+            // Listing health dot (spec §13): green = fresh/active interest,
+            // yellow = low views, orange = stale with no traction.
+            const ageDays = (Date.now() - new Date(l.created_at).getTime()) / 86400000;
+            const health =
+              ageDays < 14 || l.view_count >= 20
+                ? "#22c55e"
+                : l.view_count > 0
+                  ? "#eab308"
+                  : "#f97316";
+            return (
+              <li
+                key={l.id}
+                className="flex flex-wrap items-center gap-3 rounded-lg border bg-card p-3"
               >
-                {/* The listing's cover image — the list used to be text-only. */}
-                <ListingThumb
-                  images={
-                    (l as { listing_images?: { url: string; position: number }[] }).listing_images
-                  }
-                />
-                <span className="min-w-0">
-                  <span className="flex items-center gap-1.5">
-                    <span
-                      aria-hidden
-                      className="inline-block h-2 w-2 shrink-0 rounded-full"
-                      style={{ backgroundColor: health }}
-                    />
-                    <span className="truncate text-sm font-medium">{l.title}</span>
+                <Link
+                  to="/listing/$id"
+                  params={{ id: l.id }}
+                  className="flex min-w-0 flex-1 items-center gap-3"
+                >
+                  {/* The listing's cover image — the list used to be text-only. */}
+                  <ListingThumb
+                    images={
+                      (l as { listing_images?: { url: string; position: number }[] }).listing_images
+                    }
+                  />
+                  <span className="min-w-0">
+                    <span className="flex items-center gap-1.5">
+                      <span
+                        aria-hidden
+                        className="inline-block h-2 w-2 shrink-0 rounded-full"
+                        style={{ backgroundColor: health }}
+                      />
+                      <span className="truncate text-sm font-medium">{l.title}</span>
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {formatBirr(l.price)} · {t("dash.statsViews")}: {l.view_count} ·{" "}
+                      {timeAgo(l.created_at)}
+                    </span>
                   </span>
-                  <span className="text-xs text-muted-foreground">
-                    {formatBirr(l.price)} · {t("dash.statsViews")}: {l.view_count} ·{" "}
-                    {timeAgo(l.created_at)}
-                  </span>
+                </Link>
+                <span className="rounded-full bg-secondary px-2.5 py-0.5 text-xs capitalize">
+                  {l.status}
                 </span>
-              </Link>
-              <span className="rounded-full bg-secondary px-2.5 py-0.5 text-xs capitalize">
-                {l.status}
-              </span>
-              <Button
-                size="sm"
-                variant={l.featured ? "default" : "outline"}
-                onClick={() => toggleFeatured(l.id, !l.featured)}
-              >
-                <Star className={`mr-1.5 h-3.5 w-3.5 ${l.featured ? "fill-current" : ""}`} />
-                {l.featured ? "Featured" : "Feature"}
-              </Button>
-              {/* Dead-listing nudges (spec §14) — shown when the dead filter is on. */}
-              {statusFilter === "dead" ? (
-                <>
-                  <Button size="sm" variant="outline" onClick={() => void notifySeller(l.id)}>
-                    <Send className="mr-1.5 h-3.5 w-3.5" /> {t("admin.notifySeller")}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    disabled={deleting}
-                    onClick={() => void archiveListing(l.id)}
-                  >
-                    {t("admin.archive")}
-                  </Button>
-                </>
-              ) : null}
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => setPendingDelete({ id: l.id, title: l.title })}
-                className="text-destructive"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </Button>
-            </li>
-          );
-        })}
-      </ul>
+                <Button
+                  size="sm"
+                  variant={l.featured ? "default" : "outline"}
+                  onClick={() => toggleFeatured(l.id, !l.featured)}
+                >
+                  <Star className={`mr-1.5 h-3.5 w-3.5 ${l.featured ? "fill-current" : ""}`} />
+                  {l.featured ? "Featured" : "Feature"}
+                </Button>
+                {/* Dead-listing nudges (spec §14) — shown when the dead filter is on. */}
+                {statusFilter === "dead" ? (
+                  <>
+                    <Button size="sm" variant="outline" onClick={() => void notifySeller(l.id)}>
+                      <Send className="mr-1.5 h-3.5 w-3.5" /> {t("admin.notifySeller")}
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={deleting}
+                      onClick={() => void archiveListing(l.id)}
+                    >
+                      {t("admin.archive")}
+                    </Button>
+                  </>
+                ) : null}
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setPendingDelete({ id: l.id, title: l.title })}
+                  className="text-destructive"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              </li>
+            );
+          })}
+        </ul>
       )}
 
       <ConfirmDialog

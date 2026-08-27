@@ -143,7 +143,7 @@ set search_path = public
 as $$
   select case when not public.has_role(auth.uid(), 'admin') then null
   else (
-    select coalesce(jsonb_agg(row order by views desc), '[]'::jsonb)
+    select coalesce(jsonb_agg(row order by (row->>'views')::int desc), '[]'::jsonb)
     from (
       select jsonb_build_object(
         'seller_id', p.id,
@@ -165,7 +165,7 @@ as $$
             )
         ),
         'avg_response_minutes', (
-          select round(avg(extract(epoch from (m.created_at - fb.first_buyer)) / 60.0))
+          select round(avg(extract(epoch from (fr.first_reply - fb.first_buyer)) / 60.0))
           from public.conversations c
           cross join lateral (
             select min(m2.created_at) as first_buyer

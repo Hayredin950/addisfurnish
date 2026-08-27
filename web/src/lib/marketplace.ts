@@ -420,9 +420,7 @@ export function adminListingsQuery() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("listings")
-        .select(
-          "id,title,price,status,view_count,featured,featured_until,seller_id,created_at",
-        )
+        .select("id,title,price,status,view_count,featured,featured_until,seller_id,created_at")
         .order("created_at", { ascending: false })
         .limit(50);
       if (error) throw error;
@@ -1161,12 +1159,48 @@ export function isAdminQuery(userId: string | undefined) {
         .from("user_roles")
         .select("role")
         .eq("user_id", userId!)
-        .eq("role", "admin")
+        .in("role", ["admin", "moderator", "verification", "category_manager", "analytics"])
+        .limit(1)
         .maybeSingle();
       if (error) throw error;
       return !!data;
     },
   });
+}
+
+/** The set of admin scopes the current user can access. */
+export type AdminScope =
+  "users" | "listings" | "moderation" | "verification" | "categories" | "analytics" | "settings";
+
+export function adminScopesForRoles(
+  roles: string[] | null | undefined,
+  isSuperAdmin: boolean,
+): Set<AdminScope> {
+  const scopes = new Set<AdminScope>();
+  if (isSuperAdmin || roles?.includes("admin")) {
+    scopes.add("users");
+    scopes.add("listings");
+    scopes.add("moderation");
+    scopes.add("verification");
+    scopes.add("categories");
+    scopes.add("analytics");
+    scopes.add("settings");
+    return scopes;
+  }
+  if (roles?.includes("moderator")) {
+    scopes.add("moderation");
+    scopes.add("listings");
+  }
+  if (roles?.includes("verification")) {
+    scopes.add("verification");
+  }
+  if (roles?.includes("category_manager")) {
+    scopes.add("categories");
+  }
+  if (roles?.includes("analytics")) {
+    scopes.add("analytics");
+  }
+  return scopes;
 }
 
 // ── Email changes (item 43) ───────────────────────────────────────────────

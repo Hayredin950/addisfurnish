@@ -1659,7 +1659,7 @@ export type Database = {
         Returns: Json;
       };
       admin_request_role_change: {
-        Args: { _target_user_id: string; _action: string };
+        Args: { _target_user_id: string; _role: string; _action: string };
         Returns: Json;
       };
       admin_confirm_role_change: {
@@ -1682,6 +1682,13 @@ export type Database = {
         Args: {
           _role: Database["public"]["Enums"]["app_role"];
           _user_id: string;
+        };
+        Returns: boolean;
+      };
+      admin_scope: {
+        Args: {
+          _user_id: string;
+          _scope: string;
         };
         Returns: boolean;
       };
@@ -1720,7 +1727,7 @@ export type Database = {
       };
     };
     Enums: {
-      app_role: "admin" | "moderator" | "user";
+      app_role: "admin" | "moderator" | "user" | "verification" | "category_manager" | "analytics";
     };
     CompositeTypes: {
       [_ in never]: never;
@@ -1842,7 +1849,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      app_role: ["admin", "moderator", "user"],
+      app_role: ["admin", "moderator", "user", "verification", "category_manager", "analytics"],
     },
   },
 } as const;

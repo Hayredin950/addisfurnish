@@ -20,12 +20,15 @@ import { logRawError } from "./friendly-error";
 
 export async function isAdmin(userId: string | undefined): Promise<boolean> {
   if (!userId) return false;
-  const { data, error } = await supabase.rpc("has_role", {
-    _user_id: userId,
-    _role: "admin",
-  });
+  const { data, error } = await supabase
+    .from("user_roles")
+    .select("role")
+    .eq("user_id", userId)
+    .in("role", ["admin", "moderator", "verification", "category_manager", "analytics"])
+    .limit(1)
+    .maybeSingle();
   if (error || data === null || data === undefined) return false;
-  return data === true;
+  return true;
 }
 
 export type AdminReport = {
@@ -236,16 +239,18 @@ export async function fetchAdminUsers(): Promise<AdminUser[]> {
 }
 
 /**
- * Request a role change (promote / demote). The change is NOT applied
- * immediately — a confirmation email goes to the acting admin with a
- * one-time link, and the role only flips after they click it.
+ * Request a role change (grant / revoke). The change is NOT applied
+ * immediately — a confirmation email goes to the acting super admin with a
+ * 6-digit code, and the role only flips after they confirm it.
  */
 export async function requestRoleChange(
   targetUserId: string,
-  action: "promote" | "demote",
+  role: "admin" | "moderator" | "verification" | "category_manager" | "analytics",
+  action: "grant" | "revoke",
 ): Promise<{ ok: boolean; error?: string }> {
   const { data, error } = await supabase.rpc("admin_request_role_change", {
     _target_user_id: targetUserId,
+    _role: role,
     _action: action,
   });
   // Opaque code only: this value is rendered in a toast, and PostgREST text

@@ -99,7 +99,10 @@ export function UserDetailDialog({
   if (!user) return null;
 
   const roles = Array.isArray(user.role_names) ? user.role_names : [];
-  const isAdmin = roles.includes("admin");
+  const adminRole = roles.find((r) =>
+    ["admin", "moderator", "verification", "category_manager", "analytics"].includes(r),
+  );
+  const isAdmin = !!adminRole;
   const name = user.shop_name ?? user.full_name;
   const suspended = !!user.banned_until && new Date(user.banned_until) > new Date();
   const lang = user.preferred_language ? languageLabel(user.preferred_language) : "—";
@@ -120,7 +123,17 @@ export function UserDetailDialog({
               {user.verified ? <BadgeCheck className="h-4 w-4 shrink-0 text-primary" /> : null}
               {isAdmin ? (
                 <span className="rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
-                  {user.is_super_admin ? t("admin.roleSuperAdmin") : t("admin.roleAdmin")}
+                  {user.is_super_admin
+                    ? t("admin.roleSuperAdmin")
+                    : adminRole === "admin"
+                      ? t("admin.roleAdmin")
+                      : adminRole === "moderator"
+                        ? t("admin.roleModerator")
+                        : adminRole === "verification"
+                          ? t("admin.roleVerification")
+                          : adminRole === "category_manager"
+                            ? t("admin.roleCategoryManager")
+                            : t("admin.roleAnalytics")}
                 </span>
               ) : (
                 <span className="rounded-full bg-secondary px-2 py-0.5 text-[11px] font-normal text-muted-foreground">
