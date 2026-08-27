@@ -498,7 +498,7 @@ function Messages() {
         ) : null}
         {/* min-h-0 is what lets the inner message log shrink and scroll instead
             of the section growing to fit every message. */}
-        <section className="flex min-h-0 flex-col overflow-hidden rounded-lg border bg-card p-2 sm:p-4">
+        <section className={`flex min-h-0 flex-col overflow-hidden rounded-lg border bg-card p-2 sm:p-4 ${!activeId ? "hidden md:flex" : ""}`}>
           {counterpart ? (
             <header className="mb-2 flex shrink-0 items-center gap-2 border-b pb-2 sm:mb-3 sm:pb-3">
               <UserAvatar
@@ -556,7 +556,7 @@ function Messages() {
             <Link
               to="/listing/$id"
               params={{ id: activeConversation.listings.id }}
-              className="mb-3 hidden flex shrink-0 items-center gap-3 rounded-lg border bg-secondary/40 p-2.5 transition-colors hover:border-primary sm:flex"
+              className="mb-3 hidden shrink-0 items-center gap-3 rounded-lg border bg-secondary/40 p-2.5 transition-colors hover:border-primary sm:flex"
             >
               <ListingImage
                 path={
