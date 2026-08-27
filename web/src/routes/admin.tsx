@@ -160,7 +160,9 @@ function AdminPage() {
     (tab === "verification" && allow("verification")) ||
     (tab === "moderation" && allow("moderation")) ||
     (tab === "categories" && allow("categories")) ||
-    (tab === "analytics" && allow("analytics"));
+    (tab === "analytics" && allow("analytics")) ||
+    ((tab === "telegram" || tab === "featured" || tab === "audit" || tab === "settings") &&
+      allow("users"));
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-12">
