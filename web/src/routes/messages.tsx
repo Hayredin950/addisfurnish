@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, CheckCheck, ExternalLink, Phone, Trash2 } from "lucide-react";
+import { Check, CheckCheck, ExternalLink, Phone, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { notifyUser } from "@/lib/marketplace";
@@ -16,6 +16,7 @@ import { ListingImage } from "@/components/ListingImage";
 import { formatBirr, timeAgo } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent } from "@/components/ui/dialog";
 
 export const Route = createFileRoute("/messages")({
   head: () => ({
@@ -263,6 +264,7 @@ function Messages() {
   // remained disabled with no explanation.
   const [pendingImage, setPendingImage] = useState<string | null>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
   /** Drops the staged attachment and releases its object URL. */
   const clearPendingImage = () => {
@@ -603,7 +605,8 @@ function Messages() {
                           <img
                             src={m.image_url}
                             alt=""
-                            className="mb-1 max-h-48 rounded-md object-cover"
+                            className="mb-1 max-h-48 cursor-pointer rounded-md object-cover transition-opacity hover:opacity-80"
+                            onClick={() => setSelectedImage(m.image_url)}
                           />
                         ) : null}
                         {deleted ? t("msg.deletedPlaceholder") : m.body}
@@ -737,6 +740,31 @@ function Messages() {
           ) : null}
         </section>
       </div>
+
+      {/* Full-screen image viewer */}
+      <Dialog
+        open={!!selectedImage}
+        onOpenChange={(open) => {
+          if (!open) setSelectedImage(null);
+        }}
+      >
+        <DialogContent className="max-w-[95vw] border-none bg-black/90 p-0 shadow-none">
+          <button
+            type="button"
+            onClick={() => setSelectedImage(null)}
+            className="absolute right-3 top-3 z-10 rounded-full bg-black/60 p-1.5 text-white transition-colors hover:bg-black/80"
+          >
+            <X className="h-5 w-5" />
+          </button>
+          {selectedImage ? (
+            <img
+              src={selectedImage}
+              alt=""
+              className="max-h-[90vh] w-full rounded-md object-contain"
+            />
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
