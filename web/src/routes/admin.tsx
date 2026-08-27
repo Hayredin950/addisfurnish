@@ -70,6 +70,7 @@ import { UserAvatar } from "@/components/UserAvatar";
 import { ListingImage } from "@/components/ListingImage";
 import { BanDialog } from "@/components/admin/BanDialog";
 import { UserDetailDialog } from "@/components/admin/UserDetailDialog";
+import { UserAccessManager } from "@/components/admin/UserAccessManager";
 import { DocumentViewer } from "@/components/admin/DocumentViewer";
 import { deleteCloudinaryAssets, useImageUrl } from "@/lib/storage";
 import { timeAgo, formatBirr } from "@/lib/format";
@@ -162,8 +163,8 @@ function AdminPage() {
     (tab === "moderation" && allow("moderation")) ||
     (tab === "categories" && allow("categories")) ||
     (tab === "analytics" && allow("analytics")) ||
-    ((tab === "telegram" || tab === "featured" || tab === "audit" || tab === "settings") &&
-      allow("users"));
+    ((tab === "telegram" || tab === "featured" || tab === "audit") && allow("users")) ||
+    (tab === "settings" && allow("settings"));
 
   return (
     <div className="mx-auto max-w-4xl px-4 py-12">
@@ -213,7 +214,7 @@ function AdminPage() {
               <ScrollText className="mr-1.5 h-3.5 w-3.5" /> {t("admin.auditLog")}
             </TabsTrigger>
           )}
-          {allow("users") && (
+          {allow("settings") && (
             <TabsTrigger value="settings">
               <ShieldCheck className="mr-1.5 h-3.5 w-3.5" /> {t("admin.settings")}
             </TabsTrigger>
@@ -1341,11 +1342,10 @@ function ReportsTab() {
     </div>
   );
 }
-/** Every account, with suspension controls. */
+/** Every account — read-only directory. Power actions (role / email /
+ * sessions / suspension) moved to the Settings tab (super admin only). */
 function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
   const { t } = useLang();
-  const queryClient = useQueryClient();
-  const { user } = useAuth();
   const [filter, setFilter] = useState<"all" | "sellers" | "buyers" | "suspended" | "business">(
     "all",
   );
@@ -1359,87 +1359,7 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
   const { data: users } = useQuery(
     adminAllUsersQuery(filter === "suspended" || filter === "business" ? "all" : filter),
   );
-  const [banTarget, setBanTarget] = useState<{ id: string; name: string } | null>(null);
-  const [roleTarget, setRoleTarget] = useState<{
-    id: string;
-    name: string;
-    action: "grant" | "revoke";
-    role: "admin" | "moderator" | "verification" | "category_manager" | "analytics";
-  } | null>(null);
   const [detailUser, setDetailUser] = useState<AdminUser | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  // ── Email changes (item 43) ──────────────────────────────────────────
-  // Two ways in: approve what a user asked for, or set an address directly.
-  // Both are audited by the same `email_change_requests` table.
-  const { data: emailQueue } = useQuery(emailChangeQueueQuery());
-  const [emailTarget, setEmailTarget] = useState<{
-    id: string;
-    name: string;
-    current: string | null;
-  } | null>(null);
-  const [emailValue, setEmailValue] = useState("");
-  const [emailReason, setEmailReason] = useState("");
-  const [rejectTarget, setRejectTarget] = useState<{ id: string; email: string } | null>(null);
-  const [rejectReason, setRejectReason] = useState("");
-
-  /** Turns the RPC's error code into something a human can act on. */
-  const emailError = (code: string | undefined) =>
-    code === "invalid_email"
-      ? t("error.emailInvalid")
-      : code === "email_taken"
-        ? t("error.emailTaken")
-        : code === "unchanged"
-          ? t("error.emailUnchanged")
-          : t("admin.emailChangeFailed");
-
-  const refreshEmailQueue = () => {
-    queryClient.invalidateQueries({ queryKey: ["admin-email-change-queue"] });
-    queryClient.invalidateQueries({ queryKey: ["admin-all-users"] });
-  };
-
-  const approveEmail = async (id: string) => {
-    setBusy(true);
-    const res = await adminReviewEmailChange(id, true);
-    setBusy(false);
-    if (!res.ok) {
-      toast.error(emailError(res.error));
-      return;
-    }
-    toast.success(t("admin.emailApplied"));
-    refreshEmailQueue();
-  };
-
-  const rejectEmail = async () => {
-    if (!rejectTarget) return;
-    setBusy(true);
-    const res = await adminReviewEmailChange(rejectTarget.id, false, rejectReason.trim());
-    setBusy(false);
-    if (!res.ok) {
-      toast.error(emailError(res.error));
-      return;
-    }
-    toast.success(t("admin.emailRejected"));
-    setRejectTarget(null);
-    setRejectReason("");
-    refreshEmailQueue();
-  };
-
-  const applyDirectEmail = async () => {
-    if (!emailTarget || !emailValue.trim()) return;
-    setBusy(true);
-    const res = await adminSetUserEmail(emailTarget.id, emailValue.trim(), emailReason.trim());
-    setBusy(false);
-    if (!res.ok) {
-      toast.error(emailError(res.error));
-      return;
-    }
-    toast.success(t("admin.emailApplied"));
-    setEmailTarget(null);
-    setEmailValue("");
-    setEmailReason("");
-    refreshEmailQueue();
-  };
 
   const term = search.trim().toLowerCase();
   const visible = (users ?? [])
@@ -1454,175 +1374,8 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
             .some((v) => v!.toLowerCase().includes(term)),
     );
 
-  const confirmBan = async (hours: number, reason: string) => {
-    if (!banTarget) return;
-    setBusy(true);
-    const res = await adminBanUser({ data: { userId: banTarget.id, hours, reason } });
-    setBusy(false);
-    if (!res.ok) {
-      toast.error(friendlyError(res.error, t, "toast.updateFailed"));
-      return;
-    }
-    toast.success(t("admin.banned"));
-    void logAdminAction({
-      action: "user_suspended",
-      entityType: "user",
-      entityId: banTarget.id,
-      newValue: { hours, reason },
-    });
-    setBanTarget(null);
-    queryClient.invalidateQueries({ queryKey: ["admin-all-users"] });
-  };
-
-  const unban = async (id: string) => {
-    const res = await adminUnbanUser({ data: { userId: id } });
-    if (!res.ok) {
-      toast.error(friendlyError(res.error, t, "toast.updateFailed"));
-      return;
-    }
-    toast.success(t("admin.unbanned"));
-    void logAdminAction({ action: "user_restored", entityType: "user", entityId: id });
-    queryClient.invalidateQueries({ queryKey: ["admin-all-users"] });
-  };
-
-  const revoke = async (id: string) => {
-    const res = await adminRevokeSessions({ data: { userId: id } });
-    if (!res.ok) {
-      toast.error(friendlyError(res.error, t, "toast.updateFailed"));
-      return;
-    }
-    toast.success(t("admin.sessionsRevoked"));
-    void logAdminAction({ action: "sessions_revoked", entityType: "user", entityId: id });
-  };
-
-  const [roleCodeSent, setRoleCodeSent] = useState(false);
-  const [roleCode, setRoleCode] = useState("");
-
-  // Step 1: send the 6-digit code to the acting admin's email.
-  const requestRoleChange = async () => {
-    if (!roleTarget) return;
-    // Belt and braces: the button is hidden on your own row and the RPC
-    // rejects a self-target, but never let the request leave the client.
-    if (roleTarget.id === user?.id) {
-      toast.error(t("admin.roleChangeSelf"));
-      return;
-    }
-    setBusy(true);
-    const { data, error } = await supabase.rpc("admin_request_role_change", {
-      _target_user_id: roleTarget.id,
-      _role: roleTarget.role,
-      _action: roleTarget.action,
-    });
-    setBusy(false);
-    if (error || !(data as { ok?: boolean } | null)?.ok) {
-      const err = (data as { error?: string } | null)?.error ?? error?.message;
-      toast.error(
-        err === "super_admin"
-          ? t("admin.superAdminProtected")
-          : err === "self" || err === "self_demote"
-            ? t("admin.roleChangeSelf")
-            : err === "no_email"
-              ? t("admin.roleChangeNoEmail")
-              : err === "already_role"
-                ? t("admin.roleChangeAlreadyRole")
-                : t("admin.roleChangeFailed"),
-      );
-      return;
-    }
-    toast.success(t("admin.roleChangeEmailSent"));
-    setRoleCodeSent(true);
-  };
-
-  // Step 2: verify the code and apply the role change.
-  const confirmRoleChange = async () => {
-    if (!roleTarget || roleCode.length !== 6) return;
-    setBusy(true);
-    const { data, error } = await supabase.rpc("admin_confirm_role_change", {
-      _code: roleCode,
-    });
-    setBusy(false);
-    if (error || !(data as { ok?: boolean } | null)?.ok) {
-      const err = (data as { error?: string } | null)?.error ?? error?.message;
-      toast.error(
-        err === "expired"
-          ? t("admin.roleChangeExpired")
-          : err === "invalid"
-            ? t("admin.roleChangeInvalidCode")
-            : err === "super_admin"
-              ? t("admin.superAdminProtected")
-              : err === "self" || err === "self_demote"
-                ? t("admin.roleChangeSelf")
-                : t("admin.roleChangeFailed"),
-      );
-      return;
-    }
-    toast.success(
-      roleTarget.action === "grant" ? t("admin.roleChangeSuccess") : t("admin.roleChangeRemoved"),
-    );
-    setRoleTarget(null);
-    setRoleCodeSent(false);
-    setRoleCode("");
-    void logAdminAction({
-      action: roleTarget.action === "grant" ? "role_granted" : "role_revoked",
-      entityType: "user",
-      entityId: roleTarget.id,
-      newValue: { role: roleTarget.role, confirmedViaEmailCode: true },
-    });
-    queryClient.invalidateQueries({ queryKey: ["admin-all-users"] });
-  };
-
   return (
     <>
-      {/* Pending email-change requests. Shown above the user list because it
-          is a queue: it needs clearing, the list below is just a directory.
-          Hidden entirely when empty so it does not add permanent chrome. */}
-      {emailQueue && emailQueue.length > 0 ? (
-        <div className="mb-6 rounded-lg border border-primary/30 bg-primary/5 p-4">
-          <p className="flex items-center gap-2 font-display text-sm font-semibold">
-            <Mail className="h-4 w-4 text-primary" /> {t("admin.emailQueue")} ({emailQueue.length})
-          </p>
-          <ul className="mt-3 space-y-2">
-            {emailQueue.map((r) => (
-              <li
-                key={r.id}
-                className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-card p-3 text-sm"
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="truncate font-medium">
-                    {r.profiles?.shop_name ?? r.profiles?.full_name ?? "—"}
-                  </p>
-                  <p className="truncate text-xs text-muted-foreground">
-                    {t("admin.emailQueueFrom", {
-                      old: r.old_email ?? "—",
-                      new: r.new_email,
-                    })}
-                  </p>
-                  {r.reason ? <p className="mt-1 text-xs italic">{r.reason}</p> : null}
-                  <p className="text-xs text-muted-foreground">{timeAgo(r.created_at)}</p>
-                </div>
-                <div className="flex shrink-0 gap-2">
-                  <Button size="sm" disabled={busy} onClick={() => approveEmail(r.id)}>
-                    <ShieldCheck className="mr-1.5 h-3.5 w-3.5" /> {t("admin.emailApprove")}
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="text-destructive"
-                    disabled={busy}
-                    onClick={() => {
-                      setRejectTarget({ id: r.id, email: r.new_email });
-                      setRejectReason("");
-                    }}
-                  >
-                    {t("admin.emailReject")}
-                  </Button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-
       <div className="flex flex-wrap items-center gap-2">
         {(["all", "sellers", "buyers", "suspended"] as const).map((f) => (
           <Button
@@ -1740,330 +1493,20 @@ function UsersTab({ drillFilter }: { drillFilter: "all" | "sellers" | null }) {
                   </div>
                 </button>
 
-                <div className="flex shrink-0 flex-wrap gap-2">
-                  {u.shop_slug ? (
+                {u.shop_slug ? (
+                  <div className="flex shrink-0 flex-wrap gap-2">
                     <Button asChild size="sm" variant="ghost">
                       <Link to="/shop/$slug" params={{ slug: u.shop_slug }}>
                         {t("listing.visitShop")}
                       </Link>
                     </Button>
-                  ) : null}
-                  <Button size="sm" variant="outline" onClick={() => revoke(u.id)}>
-                    <LogOut className="mr-1.5 h-3.5 w-3.5" /> {t("admin.revokeSessions")}
-                  </Button>
-                  {/* Direct email change. The address lives in auth.users, so
-                      only the checked RPC can move it — and it audits itself. */}
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => {
-                      setEmailTarget({ id: u.id, name, current: u.email ?? null });
-                      setEmailValue("");
-                      setEmailReason("");
-                    }}
-                  >
-                    <Mail className="mr-1.5 h-3.5 w-3.5" /> {t("admin.emailChangeUser")}
-                  </Button>
-                  {/* Grant / revoke an admin role — requires email
-                      confirmation. Never offered on your own row or on the
-                      super admin: revoking would drop them out of the panel
-                      or nothing could undo it. The RPC rejects a self-target
-                      too ({ok:false, error:"self"}); this only keeps the
-                      button from lying about being available. */}
-                  {(() => {
-                    const owned = (u.role_names ?? []).find((r) =>
-                      [
-                        "admin",
-                        "moderator",
-                        "verification",
-                        "category_manager",
-                        "analytics",
-                      ].includes(r),
-                    );
-                    if (u.is_super_admin || u.id === user?.id) return null;
-                    return owned ? (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() =>
-                          setRoleTarget({
-                            id: u.id,
-                            name,
-                            action: "revoke",
-                            role: owned as
-                              | "admin"
-                              | "moderator"
-                              | "verification"
-                              | "category_manager"
-                              | "analytics",
-                          })
-                        }
-                      >
-                        <Mail className="mr-1.5 h-3.5 w-3.5" /> {t("admin.revokeRole")}
-                      </Button>
-                    ) : (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={() =>
-                          setRoleTarget({
-                            id: u.id,
-                            name,
-                            action: "grant",
-                            role: "moderator",
-                          })
-                        }
-                      >
-                        <Mail className="mr-1.5 h-3.5 w-3.5" /> {t("admin.grantRole")}
-                      </Button>
-                    );
-                  })()}
-                  {/* Only ONE of suspend / lift-suspend per user — a suspended
-                      account shows "Lift suspension", an active one shows
-                      "Suspend". (The profiles mirror is written by the same
-                      admin action, so it cannot lag behind.) */}
-                  {suspended ? (
-                    <Button size="sm" variant="outline" onClick={() => unban(u.id)}>
-                      <ShieldCheck className="mr-1.5 h-3.5 w-3.5" /> {t("admin.unban")}
-                    </Button>
-                  ) : (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="text-destructive"
-                      // An admin banning themselves would lock them out.
-                      disabled={u.id === user?.id}
-                      onClick={() => setBanTarget({ id: u.id, name })}
-                    >
-                      <Ban className="mr-1.5 h-3.5 w-3.5" /> {t("admin.ban")}
-                    </Button>
-                  )}
-                </div>
+                  </div>
+                ) : null}
               </li>
             );
           })}
         </ul>
       )}
-
-      <BanDialog
-        open={!!banTarget}
-        onOpenChange={(open) => {
-          if (!open) setBanTarget(null);
-        }}
-        onConfirm={confirmBan}
-        subjectName={banTarget?.name ?? ""}
-        pending={busy}
-      />
-
-      {/* Code-based confirm dialog for admin promote/demote */}
-      <AlertDialog
-        open={!!roleTarget}
-        onOpenChange={(open) => {
-          if (!open) {
-            setRoleTarget(null);
-            setRoleCodeSent(false);
-            setRoleCode("");
-          }
-        }}
-      >
-        <AlertDialogContent className="max-w-md">
-          <AlertDialogHeader>
-            <AlertDialogTitle className="font-display">
-              {roleCodeSent
-                ? t("admin.roleChangeEnterCode")
-                : roleTarget?.action === "grant"
-                  ? t("admin.grantTitle")
-                  : t("admin.revokeTitle")}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {roleCodeSent
-                ? t("admin.roleChangeCodeHint")
-                : roleTarget?.action === "grant"
-                  ? t("admin.grantBody")
-                  : t("admin.revokeBody")}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-
-          {roleTarget?.action === "grant" && !roleCodeSent ? (
-            <div className="space-y-2">
-              <Label>{t("admin.selectRole")}</Label>
-              <Select
-                value={roleTarget.role}
-                onValueChange={(v) =>
-                  setRoleTarget((prev) =>
-                    prev
-                      ? {
-                          ...prev,
-                          role: v as
-                            | "admin"
-                            | "moderator"
-                            | "verification"
-                            | "category_manager"
-                            | "analytics",
-                        }
-                      : prev,
-                  )
-                }
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder={t("admin.selectRole")} />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="moderator">{t("admin.roleModerator")}</SelectItem>
-                  <SelectItem value="verification">{t("admin.roleVerification")}</SelectItem>
-                  <SelectItem value="category_manager">{t("admin.roleCategoryManager")}</SelectItem>
-                  <SelectItem value="analytics">{t("admin.roleAnalytics")}</SelectItem>
-                  <SelectItem value="admin">{t("admin.roleAdmin")}</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          ) : null}
-
-          {roleCodeSent && (
-            <div className="flex justify-center py-2">
-              <input
-                type="text"
-                inputMode="numeric"
-                maxLength={6}
-                value={roleCode}
-                onChange={(e) => setRoleCode(e.target.value.replace(/\D/g, ""))}
-                autoFocus
-                placeholder="000000"
-                className="w-48 rounded-md border border-input bg-background px-4 py-3 text-center text-2xl font-bold tracking-[0.3em] shadow-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-ring"
-              />
-            </div>
-          )}
-
-          <AlertDialogFooter className="gap-2 sm:gap-2">
-            <AlertDialogCancel disabled={busy}>{t("admin.cancel")}</AlertDialogCancel>
-            {roleCodeSent ? (
-              <AlertDialogAction
-                disabled={busy || roleCode.length !== 6}
-                onClick={(e) => {
-                  e.preventDefault();
-                  confirmRoleChange();
-                }}
-                className="bg-primary text-primary-foreground shadow-sm hover:bg-primary/90"
-              >
-                {busy ? t("admin.roleChangeVerifying") : t("admin.roleChangeConfirmCode")}
-              </AlertDialogAction>
-            ) : (
-              <AlertDialogAction
-                disabled={busy}
-                onClick={(e) => {
-                  e.preventDefault();
-                  requestRoleChange();
-                }}
-                className="bg-primary text-primary-foreground shadow-sm hover:bg-primary/90"
-              >
-                {busy ? t("admin.roleChangeSending") : t("admin.roleChangeSendCode")}
-              </AlertDialogAction>
-            )}
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* Reject a queued request — a reason is optional but it reaches the
-          user verbatim in their notification, so it is worth writing. */}
-      <AlertDialog
-        open={!!rejectTarget}
-        onOpenChange={(open) => {
-          if (!open) {
-            setRejectTarget(null);
-            setRejectReason("");
-          }
-        }}
-      >
-        <AlertDialogContent className="max-w-md">
-          <AlertDialogHeader>
-            <AlertDialogTitle className="font-display">{t("admin.emailReject")}</AlertDialogTitle>
-            <AlertDialogDescription>{rejectTarget?.email}</AlertDialogDescription>
-          </AlertDialogHeader>
-          <div className="space-y-1.5">
-            <Label htmlFor="email-reject-reason">{t("admin.emailRejectReason")}</Label>
-            <Textarea
-              id="email-reject-reason"
-              value={rejectReason}
-              onChange={(e) => setRejectReason(e.target.value)}
-              rows={3}
-            />
-          </div>
-          <AlertDialogFooter className="gap-2 sm:gap-2">
-            <AlertDialogCancel disabled={busy}>{t("admin.cancel")}</AlertDialogCancel>
-            <AlertDialogAction
-              disabled={busy}
-              onClick={(e) => {
-                e.preventDefault();
-                rejectEmail();
-              }}
-              className="bg-destructive text-white shadow-sm hover:bg-destructive/90"
-            >
-              {t("admin.emailReject")}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-
-      {/* Change an address directly, without waiting for a request. */}
-      <AlertDialog
-        open={!!emailTarget}
-        onOpenChange={(open) => {
-          if (!open) {
-            setEmailTarget(null);
-            setEmailValue("");
-            setEmailReason("");
-          }
-        }}
-      >
-        <AlertDialogContent className="max-w-md">
-          <AlertDialogHeader>
-            <AlertDialogTitle className="font-display">
-              {t("admin.emailChangeUser")}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {t("admin.emailChangeUserBody", {
-                name: emailTarget?.name ?? "",
-                email: emailTarget?.current ?? "—",
-              })}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <div className="space-y-3">
-            <div className="space-y-1.5">
-              <Label htmlFor="admin-new-email">{t("profile.emailChangeNew")}</Label>
-              <Input
-                id="admin-new-email"
-                type="email"
-                autoComplete="off"
-                value={emailValue}
-                onChange={(e) => setEmailValue(e.target.value)}
-                placeholder="name@example.com"
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="admin-email-reason">{t("profile.emailChangeReason")}</Label>
-              <Textarea
-                id="admin-email-reason"
-                value={emailReason}
-                onChange={(e) => setEmailReason(e.target.value)}
-                rows={2}
-              />
-            </div>
-          </div>
-          <AlertDialogFooter className="gap-2 sm:gap-2">
-            <AlertDialogCancel disabled={busy}>{t("admin.cancel")}</AlertDialogCancel>
-            <AlertDialogAction
-              disabled={busy || !emailValue.trim()}
-              onClick={(e) => {
-                e.preventDefault();
-                applyDirectEmail();
-              }}
-              className="bg-primary text-primary-foreground shadow-sm hover:bg-primary/90"
-            >
-              {t("admin.emailChangeUser")}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
 
       {/* User detail view — opens when clicking a user row. */}
       <UserDetailDialog
@@ -3599,6 +3042,8 @@ function SettingsTab({ onOpenUsers }: { onOpenUsers: () => void }) {
     },
   });
 
+  const { data: users } = useQuery(adminAllUsersQuery("all"));
+
   // System health (spec SS23) — lightweight probes.
   const { data: health } = useQuery({
     queryKey: ["admin-system-health"],
@@ -3723,9 +3168,25 @@ function SettingsTab({ onOpenUsers }: { onOpenUsers: () => void }) {
           onClick={onOpenUsers}
           className="mt-3 inline-flex items-center gap-1.5 rounded-md border bg-background px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-accent"
         >
-          {t("admin.manageRolesCta")}
+          {t("admin.browseUsersCta")}
           <ArrowRight className="h-4 w-4" />
         </button>
+      </div>
+
+      {/* Manage access — super-admin only role / email / sessions / suspension. */}
+      <div className="rounded-xl border bg-card p-5">
+        <PanelTitle
+          icon={<ShieldCheck className="h-5 w-5 text-primary" />}
+          title={t("admin.manageAccess")}
+          accent="bg-sky-500"
+        />
+        <p className="mt-2 text-xs text-muted-foreground">{t("admin.manageAccessHint")}</p>
+        <div className="mt-4">
+          <UserAccessManager
+            users={users ?? []}
+            onChanged={() => queryClient.invalidateQueries({ queryKey: ["admin-all-users"] })}
+          />
+        </div>
       </div>
 
       {/* Marketplace & moderation rules */}

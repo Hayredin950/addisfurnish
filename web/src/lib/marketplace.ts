@@ -1184,7 +1184,9 @@ export function adminScopesForRoles(
     scopes.add("verification");
     scopes.add("categories");
     scopes.add("analytics");
-    scopes.add("settings");
+    if (isSuperAdmin) {
+      scopes.add("settings");
+    }
     return scopes;
   }
   if (roles?.includes("moderator")) {

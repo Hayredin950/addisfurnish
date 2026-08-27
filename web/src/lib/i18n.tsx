@@ -591,6 +591,10 @@ const en = {
   "admin.superAdminYou":
     "You are a super admin — you can grant and revoke admin access from the Users tab.",
   "admin.manageRolesCta": "Manage roles in the Users tab",
+  "admin.browseUsersCta": "Browse all users",
+  "admin.manageAccess": "Manage access",
+  "admin.manageAccessHint":
+    "Assign or revoke roles, change sign-in email, revoke sessions, and suspend accounts for individual users — super admin only.",
   "admin.marketplaceSettings": "Marketplace & notification rules",
   "admin.setAutoFlag": "Auto-flag listings with unusual view spikes",
   "admin.setEmailNotifs": "Email notifications",
@@ -638,6 +642,7 @@ const en = {
   "admin.users": "Users",
   "admin.noUsers": "No accounts yet",
   "admin.searchUsers": "Search by name, shop, phone or email…",
+  "admin.clearSelection": "Clear selection",
   "admin.userDetails": "User details",
   "admin.contact": "Contact",
   "admin.account": "Account",
@@ -1419,6 +1424,10 @@ const am: Record<keyof Dict, string> = {
   "admin.rolesNote": "ዝርዝር የሚና አስፈጻሚነት ከሚና ሥርዓቱ ማስፋት ጋር ይመጣል፤ አሁን ሁሉም አስተዳዳሪዎች ሙሉ ፈቃድ አላቸው።",
   "admin.superAdminYou": "እርስዎ ሱፐር አስተዳዳሪ ነዎት — ከተጠቃሚዎች ትር ውስጥ የአስተዳደር ፈቃድ መስጠት/ማስወገድ ይችላሉ።",
   "admin.manageRolesCta": "በተጠቃሚዎች ትር ውስጥ ሚናዎችን ያስተዳድሩ",
+  "admin.browseUsersCta": "ሁሉንም ተጠቃሚዎች ይመልከቱ",
+  "admin.manageAccess": "የማስተዳደር ተደራሽነት",
+  "admin.manageAccessHint":
+    "ሚናዎችን ይስጡ/ያስወግዱ፣ የኢሜይል አድራሻ ይቀይሩ፣ ክፍለ-ጊዜዎችን ያቋርጡ እና መለያዎችን ያግዱ — ለሱፐር አስተዳዳሪ ብቻ።",
   "admin.marketplaceSettings": "የገበያና የማሳወቂያ ሕጎች",
   "admin.setAutoFlag": "ያለበለዚህ የእይታ መጨመር ያላቸውን በራስ-ሰር ሰይም",
   "admin.setEmailNotifs": "የኢሜይል ማሳወቂያዎች",
@@ -1464,6 +1473,7 @@ const am: Record<keyof Dict, string> = {
   "admin.users": "ተጠቃሚዎች",
   "admin.noUsers": "እስካሁን መለያ የለም",
   "admin.searchUsers": "በስም፣ በሱቅ፣ በስልክ ወይም በኢሜይል ይፈልጉ…",
+  "admin.clearSelection": "ምርጫውን ያጽዱ",
   "admin.userDetails": "የተጠቃሚ ዝርዝር",
   "admin.contact": "ግንኙነት",
   "admin.account": "መለያ",
