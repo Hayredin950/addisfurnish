@@ -265,6 +265,7 @@ function Messages() {
   const [pendingImage, setPendingImage] = useState<string | null>(null);
   const [pendingFile, setPendingFile] = useState<File | null>(null);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [contextMenu, setContextMenu] = useState<{ id: string; x: number; y: number } | null>(null);
 
   /** Drops the staged attachment and releases its object URL. */
   const clearPendingImage = () => {
@@ -279,6 +280,18 @@ function Messages() {
   useEffect(() => {
     clearPendingImage();
   }, [current]);
+
+  // Close context menu on outside click.
+  useEffect(() => {
+    if (!contextMenu) return;
+    const close = () => setContextMenu(null);
+    document.addEventListener("click", close);
+    document.addEventListener("contextmenu", close);
+    return () => {
+      document.removeEventListener("click", close);
+      document.removeEventListener("contextmenu", close);
+    };
+  }, [contextMenu]);
 
   const send = useMutation({
     mutationFn: async () => {
@@ -403,40 +416,42 @@ function Messages() {
             return (
               <div
                 key={c.id}
-                className={`group relative w-full border-b py-3 text-left text-sm last:border-b-0 md:border-b-0 md:rounded-md md:border md:p-3 ${
-                  c.id === current
-                    ? "border-primary bg-secondary/50 md:border-primary md:bg-secondary/50"
-                    : ""
-                } ${unread > 0 ? "border-primary/50 md:border-primary/50" : ""}`}
+                className={`group relative w-full border-b border-border/60 py-3 pl-[76px] pr-3 text-left text-sm last:border-b-0 md:border-b-0 md:ml-0 md:pl-0 md:rounded-md md:border md:p-3 ${
+                  c.id === current ? "bg-secondary/50 md:border-primary md:bg-secondary/50" : ""
+                } ${unread > 0 ? "md:border-primary/50" : ""}`}
               >
                 <button
                   type="button"
                   onClick={() => setActiveId(c.id)}
                   className="w-full text-left"
                 >
-                  <span className="flex items-center gap-3">
-                    <span className="relative shrink-0">
-                      <UserAvatar name={other?.full_name} avatarUrl={other?.avatar_url} size={40} />
-                      {other?.phone ? (
-                        <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-background bg-emerald-500" />
-                      ) : null}
+                  <span className="flex items-center gap-0">
+                    <span className="absolute left-3 top-3 md:static md:mr-3">
+                      <span className="relative block">
+                        <UserAvatar
+                          name={other?.full_name}
+                          avatarUrl={other?.avatar_url}
+                          size={48}
+                        />
+                        {other?.phone ? (
+                          <span className="absolute -bottom-0.5 -right-0.5 h-3 w-3 rounded-full border-2 border-background bg-emerald-500" />
+                        ) : null}
+                      </span>
                     </span>
                     <span className="min-w-0 flex-1">
-                      <span className="flex items-center gap-1.5">
+                      <span className="flex items-center gap-2">
                         <span
-                          className={`block truncate ${
-                            unread > 0 ? "font-semibold" : "font-medium"
-                          }`}
+                          className={`block truncate ${unread > 0 ? "font-bold" : "font-medium"}`}
                         >
                           {name}
                         </span>
                         {unread > 0 ? (
-                          <span className="grid h-4 min-w-4 place-items-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground">
+                          <span className="inline-flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-primary px-1.5 text-[11px] font-bold text-primary-foreground">
                             {unread > 99 ? "99+" : unread}
                           </span>
                         ) : null}
                       </span>
-                      <span className="block truncate text-xs text-muted-foreground">
+                      <span className="mt-0.5 block truncate text-xs text-muted-foreground">
                         {listingTitle
                           ? `${listingTitle} · ${timeAgo(c.last_message_at)}`
                           : timeAgo(c.last_message_at)}
@@ -448,9 +463,9 @@ function Messages() {
                   type="button"
                   title={t("msg.deleteConversation")}
                   onClick={() => removeConversation.mutate(c.id)}
-                  className="absolute right-1.5 top-1.5 rounded-full p-1 text-muted-foreground transition-opacity hover:bg-secondary hover:text-destructive md:opacity-0 md:group-hover:opacity-100"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive md:opacity-0 md:transition-opacity md:group-hover:opacity-100"
                 >
-                  <Trash2 className="h-3.5 w-3.5" />
+                  <Trash2 className="h-4 w-4" />
                 </button>
               </div>
             );
@@ -567,7 +582,7 @@ function Messages() {
             </Link>
           ) : null}
 
-          <div ref={logRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
+          <div ref={logRef} className="min-h-0 flex-1 space-y-2 overflow-y-auto p-4 sm:space-y-3">
             {(messages ?? []).map((m) => {
               const mine = m.sender_id === user?.id;
               const sender = m.profiles;
@@ -576,92 +591,110 @@ function Messages() {
               return (
                 <div
                   key={m.id}
-                  className={`group flex items-end gap-2 ${mine ? "flex-row-reverse" : "flex-row"}`}
+                  className={`group flex items-end gap-2 ${mine ? "justify-end" : "justify-start"}`}
                 >
-                  <UserAvatar name={sender?.full_name} avatarUrl={sender?.avatar_url} size={28} />
-                  <div className="max-w-[75%]">
-                    <span
-                      className={`block text-[11px] text-muted-foreground ${
-                        mine ? "text-right" : "text-left"
+                  {!mine ? (
+                    <UserAvatar
+                      name={sender?.full_name}
+                      avatarUrl={sender?.avatar_url}
+                      size={28}
+                      className="mb-5 shrink-0"
+                    />
+                  ) : null}
+                  <div
+                    className={`relative max-w-[78%] ${
+                      mine ? "items-end" : "items-start"
+                    } flex flex-col`}
+                    onContextMenu={(e) => {
+                      if (mine && !deleted) {
+                        e.preventDefault();
+                        setContextMenu({ id: m.id, x: e.clientX, y: e.clientY });
+                      }
+                    }}
+                  >
+                    <div
+                      className={`px-3.5 py-2 text-sm ${
+                        deleted
+                          ? "border border-dashed border-muted-foreground/40 bg-transparent italic text-muted-foreground"
+                          : mine
+                            ? "rounded-2xl rounded-br-sm bg-primary text-primary-foreground"
+                            : "rounded-2xl rounded-bl-sm bg-secondary"
                       }`}
                     >
-                      {sender?.full_name ?? ""} · {timeAgo(m.created_at)}
-                      {m.edited_at && !deleted ? ` · ${t("msg.edited")}` : ""}
-                    </span>
-
-                    {isEditing ? (
-                      <form
-                        className="mt-0.5 flex gap-1"
-                        onSubmit={(e) => {
-                          e.preventDefault();
-                          if (editBody.trim())
-                            editMessage.mutate({ id: m.id, text: editBody.trim() });
-                        }}
-                      >
-                        <Input
-                          value={editBody}
-                          onChange={(e) => setEditBody(e.target.value)}
-                          className="h-8 text-sm"
-                          autoFocus
-                          onKeyDown={(e) => {
-                            if (e.key === "Escape") setEditingId(null);
+                      {isEditing ? (
+                        <form
+                          className="flex gap-1"
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            if (editBody.trim())
+                              editMessage.mutate({ id: m.id, text: editBody.trim() });
                           }}
-                        />
-                        <Button type="submit" size="sm" className="h-8" disabled={!editBody.trim()}>
-                          {t("msg.saveEdit")}
-                        </Button>
-                        <Button
-                          type="button"
-                          size="sm"
-                          variant="ghost"
-                          className="h-8"
-                          onClick={() => setEditingId(null)}
                         >
-                          {t("action.cancel")}
-                        </Button>
-                      </form>
-                    ) : (
-                      <div
-                        className={`mt-0.5 rounded-lg px-3 py-2 text-sm ${
-                          deleted
-                            ? "border border-dashed bg-transparent italic text-muted-foreground"
-                            : mine
-                              ? "bg-primary text-primary-foreground"
-                              : "bg-secondary"
-                        }`}
-                      >
-                        {!deleted && m.image_url ? (
-                          <img
-                            src={m.image_url}
-                            alt=""
-                            className="mb-1 max-h-48 cursor-pointer rounded-md object-cover transition-opacity hover:opacity-80"
-                            onClick={() => setSelectedImage(m.image_url)}
+                          <Input
+                            value={editBody}
+                            onChange={(e) => setEditBody(e.target.value)}
+                            className="h-8 text-sm"
+                            autoFocus
+                            onKeyDown={(e) => {
+                              if (e.key === "Escape") setEditingId(null);
+                            }}
                           />
-                        ) : null}
-                        {deleted ? t("msg.deletedPlaceholder") : m.body}
-                      </div>
-                    )}
+                          <Button
+                            type="submit"
+                            size="sm"
+                            className="h-8"
+                            disabled={!editBody.trim()}
+                          >
+                            {t("msg.saveEdit")}
+                          </Button>
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            className="h-8"
+                            onClick={() => setEditingId(null)}
+                          >
+                            {t("action.cancel")}
+                          </Button>
+                        </form>
+                      ) : (
+                        <>
+                          {!deleted && m.image_url ? (
+                            <img
+                              src={m.image_url}
+                              alt=""
+                              className="mb-1 max-h-48 cursor-pointer rounded-md object-cover transition-opacity hover:opacity-80"
+                              onClick={() => setSelectedImage(m.image_url)}
+                            />
+                          ) : null}
+                          {deleted
+                            ? `${t("msg.deletedPlaceholder")} (${timeAgo(m.created_at)})`
+                            : m.body}
+                          {m.edited_at && !deleted ? (
+                            <span className="mt-0.5 block text-[10px] opacity-60">
+                              {t("msg.edited")}
+                            </span>
+                          ) : null}
+                        </>
+                      )}
+                    </div>
 
+                    {/* Meta row: time + read receipts + actions */}
                     <div
                       className={`mt-0.5 flex items-center gap-2 text-[11px] text-muted-foreground ${
                         mine ? "justify-end" : "justify-start"
                       }`}
                     >
+                      <span>{timeAgo(m.created_at)}</span>
                       {mine && !deleted ? (
                         <span className="inline-flex items-center gap-0.5">
                           {m.read_at ? (
-                            <>
-                              <CheckCheck className="h-3 w-3 text-primary" /> {t("msg.seen")}
-                            </>
+                            <CheckCheck className="h-3 w-3 text-primary" />
                           ) : (
-                            <>
-                              <Check className="h-3 w-3" /> {t("msg.sent")}
-                            </>
+                            <Check className="h-3 w-3" />
                           )}
                         </span>
                       ) : null}
-                      {/* Touch devices have no hover: actions stay visible;
-                          on md+ they reveal on hover to keep the inbox tidy. */}
                       {mine && !deleted && !isEditing ? (
                         <span className="inline-flex gap-1 md:opacity-0 md:transition-opacity md:group-hover:opacity-100">
                           <button
@@ -689,6 +722,40 @@ function Messages() {
               );
             })}
           </div>
+
+          {/* Context menu for own messages (long-press / right-click) */}
+          {contextMenu ? (
+            <div
+              className="fixed z-50 min-w-[140px] rounded-lg border bg-card p-1 shadow-md"
+              style={{ left: contextMenu.x, top: contextMenu.y }}
+            >
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm hover:bg-accent"
+                onClick={() => {
+                  const msg = (messages ?? []).find((m) => m.id === contextMenu.id);
+                  if (msg) {
+                    setEditingId(msg.id);
+                    setEditBody(msg.body);
+                  }
+                  setContextMenu(null);
+                }}
+              >
+                {t("msg.editAction")}
+              </button>
+              <button
+                type="button"
+                className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-sm text-destructive hover:bg-destructive/10"
+                onClick={() => {
+                  removeMessage.mutate(contextMenu.id);
+                  setContextMenu(null);
+                }}
+              >
+                {t("msg.deleteAction")}
+              </button>
+            </div>
+          ) : null}
+
           {current ? (
             <form
               className="mt-3 shrink-0 space-y-2 border-t pt-3 pb-[env(safe-area-inset-bottom)]"
@@ -713,9 +780,9 @@ function Messages() {
                   </button>
                 </div>
               ) : null}
-              <div className="flex gap-2">
+              <div className="flex items-end gap-2">
                 <label
-                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md border bg-background ${
+                  className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full border bg-background ${
                     send.isPending
                       ? "cursor-not-allowed opacity-50"
                       : "cursor-pointer hover:bg-accent"
@@ -728,7 +795,6 @@ function Messages() {
                     disabled={send.isPending}
                     onChange={(e) => {
                       const file = e.target.files?.[0];
-                      // Reset the input so re-picking the same file re-fires onChange.
                       e.target.value = "";
                       if (!file || !user) return;
                       if (!file.type.startsWith("image/")) {
@@ -756,14 +822,70 @@ function Messages() {
                     <path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21" />
                   </svg>
                 </label>
-                <Input
-                  value={body}
-                  onChange={(e) => setBody(e.target.value)}
-                  placeholder={t("msg.write")}
-                />
-                <Button type="submit" disabled={send.isPending || (!body.trim() && !pendingFile)}>
-                  {send.isPending ? t("msg.sending") : t("msg.send")}
-                </Button>
+                <div className="min-h-9 flex-1">
+                  <textarea
+                    value={body}
+                    onChange={(e) => {
+                      setBody(e.target.value);
+                      // Auto-expand: reset height then set to scrollHeight.
+                      const el = e.target;
+                      el.style.height = "auto";
+                      el.style.height = `${Math.min(el.scrollHeight, 96)}px`;
+                    }}
+                    placeholder={t("msg.write")}
+                    rows={1}
+                    className="min-h-9 w-full resize-none rounded-full border bg-background px-4 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-ring"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && !e.shiftKey) {
+                        e.preventDefault();
+                        if (body.trim() || pendingFile) send.mutate();
+                      }
+                    }}
+                  />
+                </div>
+                <button
+                  type="submit"
+                  disabled={send.isPending || (!body.trim() && !pendingFile)}
+                  className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground transition-colors hover:bg-primary/90 disabled:opacity-50"
+                >
+                  {send.isPending ? (
+                    <svg
+                      className="h-4 w-4 animate-spin"
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                    >
+                      <circle
+                        className="opacity-25"
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="currentColor"
+                        strokeWidth="4"
+                      />
+                      <path
+                        className="opacity-75"
+                        fill="currentColor"
+                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                      />
+                    </svg>
+                  ) : (
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      width="18"
+                      height="18"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="m22 2-7 20-4-9-9-4Z" />
+                      <path d="M22 2 11 13" />
+                    </svg>
+                  )}
+                </button>
               </div>
             </form>
           ) : null}
