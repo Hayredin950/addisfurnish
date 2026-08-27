@@ -376,11 +376,19 @@ function Messages() {
      * 100dvh, not 100vh: on mobile browsers the dynamic unit accounts for the
      * collapsing URL bar, which otherwise cuts the composer off.
      */
-    <div className="mx-auto flex h-[calc(100dvh-4rem-3.5rem)] max-w-5xl flex-col overflow-hidden px-4 py-4 lg:h-[calc(100dvh-4rem)] lg:py-6">
-      <h1 className="shrink-0 font-display text-2xl font-semibold lg:text-3xl">
+    <div className="mx-auto flex h-[calc(100dvh-4rem-3.5rem)] max-w-5xl flex-col overflow-hidden px-2 py-2 sm:px-4 sm:py-4 lg:h-[calc(100dvh-4rem)] lg:py-6">
+      <h1
+        className={`shrink-0 font-display text-2xl font-semibold lg:text-3xl ${
+          activeId ? "hidden md:block" : ""
+        }`}
+      >
         {t("nav.messages")}
       </h1>
-      <div className="mt-4 grid min-h-0 flex-1 gap-4 md:grid-cols-[260px_1fr] lg:mt-6 lg:gap-6">
+      <div
+        className={`grid min-h-0 flex-1 gap-2 md:grid-cols-[260px_1fr] md:gap-4 lg:mt-6 lg:gap-6 ${
+          activeId ? "" : "mt-3 sm:mt-4"
+        }`}
+      >
         {/* Only this list scrolls, not the page. */}
         {/* Phones: one pane at a time — picking a conversation swaps the list
             for the chat, and the back arrow returns to the inbox. */}
@@ -456,24 +464,45 @@ function Messages() {
           <button
             type="button"
             onClick={() => setActiveId(null)}
-            className="mb-2 inline-flex items-center gap-1 text-sm text-muted-foreground md:hidden"
+            className="mb-1 flex shrink-0 items-center gap-1 text-sm text-muted-foreground md:hidden"
           >
-            ← {t("listing.back")}
+            <svg
+              width="20"
+              height="20"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="m15 18-6-6 6-6" />
+            </svg>
+            {t("listing.back")}
           </button>
         ) : null}
         {/* min-h-0 is what lets the inner message log shrink and scroll instead
             of the section growing to fit every message. */}
-        <section className="flex min-h-0 flex-col overflow-hidden rounded-lg border bg-card p-4">
+        <section className="flex min-h-0 flex-col overflow-hidden rounded-lg border bg-card p-2 sm:p-4">
           {counterpart ? (
-            <header className="mb-3 flex shrink-0 items-center gap-2 border-b pb-3">
-              <UserAvatar name={counterpart.full_name} avatarUrl={counterpart.avatar_url} />
+            <header className="mb-2 flex shrink-0 items-center gap-2 border-b pb-2 sm:mb-3 sm:pb-3">
+              <UserAvatar
+                name={counterpart.full_name}
+                avatarUrl={counterpart.avatar_url}
+                size={36}
+              />
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm font-medium">
                   {counterpart.full_name ?? counterpart.shop_name ?? ""}
                 </span>
+                {activeConversation?.listings ? (
+                  <span className="block truncate text-xs text-muted-foreground">
+                    {activeConversation.listings.title}
+                  </span>
+                ) : null}
               </span>
-              {/* Contact the other party directly, like on the listing page. */}
-              <span className="flex shrink-0 flex-wrap gap-1.5">
+              {/* Contact buttons — hidden on mobile to match Flutter's simple AppBar. */}
+              <span className="hidden shrink-0 flex-wrap gap-1.5 sm:flex">
                 {counterpart.phone ? (
                   <Button asChild variant="outline" size="sm" className="h-8 px-2.5 text-xs">
                     <a href={`tel:${counterpart.phone}`}>
@@ -507,13 +536,12 @@ function Messages() {
             </header>
           ) : null}
 
-          {/* Which item this conversation is about — so a seller with several
-              listings knows immediately without asking. */}
+          {/* Listing context card — hidden on mobile, shown on desktop. */}
           {activeConversation?.listings ? (
             <Link
               to="/listing/$id"
               params={{ id: activeConversation.listings.id }}
-              className="mb-3 flex shrink-0 items-center gap-3 rounded-lg border bg-secondary/40 p-2.5 transition-colors hover:border-primary"
+              className="mb-3 hidden flex shrink-0 items-center gap-3 rounded-lg border bg-secondary/40 p-2.5 transition-colors hover:border-primary sm:flex"
             >
               <ListingImage
                 path={
@@ -663,7 +691,7 @@ function Messages() {
           </div>
           {current ? (
             <form
-              className="mt-3 shrink-0 space-y-2 border-t pt-3"
+              className="mt-3 shrink-0 space-y-2 border-t pt-3 pb-[env(safe-area-inset-bottom)]"
               onSubmit={(e) => {
                 e.preventDefault();
                 if (body.trim() || pendingFile) send.mutate();
