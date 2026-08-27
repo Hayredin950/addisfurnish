@@ -4,6 +4,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Activity,
   AlertTriangle,
+  ArrowRight,
   BadgeCheck,
   Ban,
   BarChart3,
@@ -257,7 +258,12 @@ function AdminPage() {
           <AuditLogTab />
         </TabsContent>
         <TabsContent value="settings" className="mt-6">
-          <SettingsTab />
+          <SettingsTab
+            onOpenUsers={() => {
+              setDrill(null);
+              setTab("users");
+            }}
+          />
         </TabsContent>
       </Tabs>
     </div>
@@ -3576,7 +3582,7 @@ function FeaturedTab() {
 }
 
 /** Settings (spec SS22-23): roles matrix, system health, marketplace rules. */
-function SettingsTab() {
+function SettingsTab({ onOpenUsers }: { onOpenUsers: () => void }) {
   const { t } = useLang();
   const queryClient = useQueryClient();
   const { user } = useAuth();
@@ -3712,6 +3718,14 @@ function SettingsTab() {
         <p className="mt-2 text-xs text-muted-foreground">
           {isSuper ? t("admin.superAdminYou") : t("admin.rolesNote")}
         </p>
+        <button
+          type="button"
+          onClick={onOpenUsers}
+          className="mt-3 inline-flex items-center gap-1.5 rounded-md border bg-background px-3 py-1.5 text-sm font-medium text-foreground transition-colors hover:bg-accent"
+        >
+          {t("admin.manageRolesCta")}
+          <ArrowRight className="h-4 w-4" />
+        </button>
       </div>
 
       {/* Marketplace & moderation rules */}

@@ -590,6 +590,7 @@ const en = {
     "Fine-grained role enforcement arrives with the role system expansion; all admins currently have full access.",
   "admin.superAdminYou":
     "You are a super admin — you can grant and revoke admin access from the Users tab.",
+  "admin.manageRolesCta": "Manage roles in the Users tab",
   "admin.marketplaceSettings": "Marketplace & notification rules",
   "admin.setAutoFlag": "Auto-flag listings with unusual view spikes",
   "admin.setEmailNotifs": "Email notifications",
@@ -1417,6 +1418,7 @@ const am: Record<keyof Dict, string> = {
   "admin.permAll": "ሁሉም — ተጠቃሚዎች፣ ማስታወቂያዎች፣ ማረጋገጫ፣ ቁጥጥር፣ ምድቦች፣ ትንታኔ፣ ቅንብሮች",
   "admin.rolesNote": "ዝርዝር የሚና አስፈጻሚነት ከሚና ሥርዓቱ ማስፋት ጋር ይመጣል፤ አሁን ሁሉም አስተዳዳሪዎች ሙሉ ፈቃድ አላቸው።",
   "admin.superAdminYou": "እርስዎ ሱፐር አስተዳዳሪ ነዎት — ከተጠቃሚዎች ትር ውስጥ የአስተዳደር ፈቃድ መስጠት/ማስወገድ ይችላሉ።",
+  "admin.manageRolesCta": "በተጠቃሚዎች ትር ውስጥ ሚናዎችን ያስተዳድሩ",
   "admin.marketplaceSettings": "የገበያና የማሳወቂያ ሕጎች",
   "admin.setAutoFlag": "ያለበለዚህ የእይታ መጨመር ያላቸውን በራስ-ሰር ሰይም",
   "admin.setEmailNotifs": "የኢሜይል ማሳወቂያዎች",
