@@ -381,22 +381,6 @@ function Browse() {
                 </div>
               </div>
 
-              {/* Desktop Categories & Desktop Save */}
-              <div className="hidden items-center gap-2 lg:flex">
-                <div className="mr-4 flex gap-2">
-                  {roots.slice(0, 4).map((c) => (
-                    <Link
-                      key={c.id}
-                      to="/browse"
-                      search={(prev) => ({ ...prev, category: c.slug })}
-                      className="rounded-full border px-3 py-1.5 text-xs transition-colors hover:bg-accent"
-                    >
-                      {categoryName(c, lang)}
-                    </Link>
-                  ))}
-                </div>
-              </div>
-
               <Button
                 variant="outline"
                 size="sm"
