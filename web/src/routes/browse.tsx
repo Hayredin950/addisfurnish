@@ -290,8 +290,8 @@ function Browse() {
               />
             </div>
 
-            {/* Mobile Sort Options (Wrapping Chips) */}
-            <div className="flex flex-wrap gap-2 pb-1 lg:hidden">
+            {/* Sort Options (Wrapping Chips) */}
+            <div className="flex flex-wrap gap-2 pb-1">
               {[
                 { key: "newest", label: t("browse.newest") },
                 { key: "price-asc", label: t("browse.priceAsc") },
@@ -322,7 +322,7 @@ function Browse() {
               ))}
             </div>
 
-            {/* Actions Row: Filters, Sort, Save */}
+            {/* Actions Row: Filters, Save */}
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-2">
                 <Sheet>
@@ -357,28 +357,6 @@ function Browse() {
                     </SheetClose>
                   </SheetContent>
                 </Sheet>
-
-                {/* Sort Dropdown (Desktop only) */}
-                <div className="hidden lg:block">
-                  <Select
-                    value={search.sort ?? "newest"}
-                    onValueChange={(v) => {
-                      set({ sort: v });
-                      if (v === "nearest") askLocation();
-                    }}
-                  >
-                    <SelectTrigger className="h-9 w-44 rounded-full bg-card">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="newest">{t("browse.newest")}</SelectItem>
-                      <SelectItem value="price-asc">{t("browse.priceAsc")}</SelectItem>
-                      <SelectItem value="price-desc">{t("browse.priceDesc")}</SelectItem>
-                      <SelectItem value="viewed">{t("browse.mostViewed")}</SelectItem>
-                      <SelectItem value="nearest">{t("browse.nearest")}</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
               </div>
 
               <Button
