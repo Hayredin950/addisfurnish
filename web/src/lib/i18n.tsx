@@ -78,7 +78,7 @@ const en = {
   "home.subtitle":
     "Buy and sell pre-owned sofas, beds, desks and dining sets directly with local shops and households. No commission, prices in Birr.",
   "home.browseListings": "Browse listings",
-  "home.shopByRoom": "Shop by room",
+  "home.shopByCategory": "Shop by category",
   "home.allCategories": "All categories",
   "home.freshListings": "Fresh listings",
   "home.seeAll": "See all",
@@ -942,7 +942,7 @@ const am: Record<keyof Dict, string> = {
   "home.subtitle":
     "የተጠቀሙ ሶፋዎችን፣ አልጋዎችን፣ ጠረጴዛዎችን እና የመመገቢያ ስብስቦችን በቀጥታ ከአካባቢው ሱቆች እና ቤቶች ይግዙ፣ ይሽጡ። ምንም ኮሚሽን የለም፣ ዋጋ በብር።",
   "home.browseListings": "እቃዎችን ይመልከቱ",
-  "home.shopByRoom": "በክፍል ይግዙ",
+  "home.shopByCategory": "በምድብ ይግዙ",
   "home.allCategories": "ሁሉም ምድቦች",
   "home.freshListings": "አዲስ ማስታወቂያዎች",
   "home.seeAll": "ሁሉንም ይመልከቱ",

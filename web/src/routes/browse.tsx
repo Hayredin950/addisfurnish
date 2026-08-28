@@ -276,144 +276,126 @@ function Browse() {
         </aside>
 
         <div>
-          {/* Mobile toolbar — the header search box only shows at `lg`, so the
-              app-style bar below keeps searching on phones: search field, then
-              the filter bottom-sheet and the save-search button as icon-only
-              actions in one tidy row (mobile-app parity). */}
-          <div className="mb-3 flex items-center gap-2 lg:hidden">
-            <div className="relative flex-1">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          {/* Responsive Action Toolbar */}
+          <div className="mb-6 space-y-3">
+            {/* Search row */}
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
               <Input
                 value={search.q}
                 placeholder={t("nav.searchPlaceholder")}
                 onChange={(e) => set({ q: e.target.value })}
                 aria-label={t("nav.searchPlaceholder")}
-                className="h-10 rounded-full pl-9"
+                className="h-11 w-full rounded-xl border-input bg-card pl-10 shadow-sm transition-all focus-visible:ring-primary lg:h-10 lg:rounded-full lg:shadow-none"
               />
             </div>
-            <Sheet>
-              <SheetTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  aria-label={t("browse.filters")}
-                  className="relative shrink-0"
-                >
-                  <SlidersHorizontal className="h-4 w-4" />
-                  {activeCount > 0 ? (
-                    <span className="absolute -right-1 -top-1 grid h-[18px] min-w-[18px] place-items-center rounded-full bg-destructive px-[5px] text-[10px] font-bold leading-none text-destructive-foreground ring-2 ring-background">
-                      {activeCount}
-                    </span>
-                  ) : null}
-                </Button>
-              </SheetTrigger>
-              <SheetContent side="bottom" className="max-h-[85vh] overflow-y-auto pb-20">
-                <SheetTitle className="sr-only">{t("browse.filters")}</SheetTitle>
-                <FilterControls
-                  search={search}
-                  set={set}
-                  setAttr={setAttr}
-                  categories={categories ?? []}
-                  counts={counts}
-                  activeCount={activeCount}
-                  attrDefs={filterableDefs}
-                />
-                <SheetClose asChild>
-                  <Button className="mt-6 w-full">{t("browse.done")}</Button>
-                </SheetClose>
-              </SheetContent>
-            </Sheet>
-            <Button
-              variant="outline"
-              size="icon"
-              aria-label={t("browse.saveSearch")}
-              disabled={alreadySaved}
-              onClick={onSaveSearch}
-              className="shrink-0"
-            >
-              {alreadySaved ? (
-                <BookmarkCheck className="h-4 w-4 text-primary" />
-              ) : (
-                <Bookmark className="h-4 w-4" />
-              )}
-            </Button>
-          </div>
 
-          {/* Mobile: sort options as tappable chips (mobile-app parity), so
-              newest / price / most viewed / nearest are one tap instead of a
-              cramped dropdown. Tapping the active one resets to newest. */}
-          <div className="mb-4 -mx-4 flex gap-2 overflow-x-auto px-4 pb-0.5 lg:hidden [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-            {[
-              { key: "newest", label: t("browse.newest") },
-              { key: "price-asc", label: t("browse.priceAsc") },
-              { key: "price-desc", label: t("browse.priceDesc") },
-              { key: "viewed", label: t("browse.mostViewed") },
-              { key: "nearest", label: t("browse.nearest") },
-            ].map((o) => (
-              <button
-                key={o.key}
-                type="button"
-                onClick={() => {
-                  if (search.sort === o.key && o.key !== "newest") set({ sort: "newest" });
-                  else if (o.key === "nearest") {
-                    set({ sort: "nearest" });
-                    askLocation();
-                  } else set({ sort: o.key });
-                }}
-                className={`inline-flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
-                  search.sort === o.key
-                    ? "border-primary bg-primary text-primary-foreground"
-                    : "border-input bg-card hover:bg-accent"
-                }`}
-              >
-                {o.key === "nearest" ? <LocateFixed className="h-3 w-3" /> : null}
-                {o.label}
-                {search.sort === o.key && o.key !== "newest" ? <X className="h-3 w-3" /> : null}
-              </button>
-            ))}
-          </div>
-
-          {/* Desktop toolbar: quick category pills + save + sort dropdown. */}
-          <div className="mb-4 hidden items-center justify-between gap-3 lg:flex">
-            <div className="flex flex-wrap gap-2">
-              {roots.slice(0, 4).map((c) => (
+            {/* Mobile Categories (Scrollable) */}
+            <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] lg:hidden [&::-webkit-scrollbar]:hidden">
+              {roots.map((c) => (
                 <Link
                   key={c.id}
                   to="/browse"
                   search={(prev) => ({ ...prev, category: c.slug })}
-                  className="rounded-full border px-3 py-1 text-xs"
+                  className={`whitespace-nowrap rounded-full border px-4 py-1.5 text-sm font-medium transition-colors ${
+                    search.category === c.slug
+                      ? "border-primary bg-primary text-primary-foreground"
+                      : "border-input bg-card hover:bg-accent"
+                  }`}
                 >
                   {categoryName(c, lang)}
                 </Link>
               ))}
             </div>
-            <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" disabled={alreadySaved} onClick={onSaveSearch}>
-                {alreadySaved ? (
-                  <BookmarkCheck className="mr-1.5 h-4 w-4 text-primary" />
-                ) : (
-                  <Bookmark className="mr-1.5 h-4 w-4" />
-                )}
-                {t("browse.saveSearch")}
-              </Button>
-              <Select
-                value={search.sort ?? "newest"}
-                onValueChange={(v) => {
-                  set({ sort: v });
-                  if (v === "nearest") askLocation();
-                }}
+
+            {/* Actions Row: Filters, Sort, Save */}
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <Sheet>
+                  <SheetTrigger asChild>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="relative h-9 rounded-full bg-card px-4 lg:hidden"
+                    >
+                      <SlidersHorizontal className="mr-2 h-4 w-4" />
+                      {t("browse.filters")}
+                      {activeCount > 0 ? (
+                        <span className="ml-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-primary text-[10px] font-bold text-primary-foreground">
+                          {activeCount}
+                        </span>
+                      ) : null}
+                    </Button>
+                  </SheetTrigger>
+                  <SheetContent side="bottom" className="max-h-[85vh] overflow-y-auto pb-20">
+                    <SheetTitle className="sr-only">{t("browse.filters")}</SheetTitle>
+                    <FilterControls
+                      search={search}
+                      set={set}
+                      setAttr={setAttr}
+                      categories={categories ?? []}
+                      counts={counts}
+                      activeCount={activeCount}
+                      attrDefs={filterableDefs}
+                    />
+                    <SheetClose asChild>
+                      <Button className="mt-6 w-full">{t("browse.done")}</Button>
+                    </SheetClose>
+                  </SheetContent>
+                </Sheet>
+
+                {/* Sort Dropdown */}
+                <Select
+                  value={search.sort ?? "newest"}
+                  onValueChange={(v) => {
+                    set({ sort: v });
+                    if (v === "nearest") askLocation();
+                  }}
+                >
+                  <SelectTrigger className="h-9 w-[140px] rounded-full bg-card lg:w-44">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="newest">{t("browse.newest")}</SelectItem>
+                    <SelectItem value="price-asc">{t("browse.priceAsc")}</SelectItem>
+                    <SelectItem value="price-desc">{t("browse.priceDesc")}</SelectItem>
+                    <SelectItem value="viewed">{t("browse.mostViewed")}</SelectItem>
+                    <SelectItem value="nearest">{t("browse.nearest")}</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Desktop Categories & Desktop Save */}
+              <div className="hidden items-center gap-2 lg:flex">
+                <div className="mr-4 flex gap-2">
+                  {roots.slice(0, 4).map((c) => (
+                    <Link
+                      key={c.id}
+                      to="/browse"
+                      search={(prev) => ({ ...prev, category: c.slug })}
+                      className="rounded-full border px-3 py-1.5 text-xs transition-colors hover:bg-accent"
+                    >
+                      {categoryName(c, lang)}
+                    </Link>
+                  ))}
+                </div>
+              </div>
+
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={alreadySaved}
+                onClick={onSaveSearch}
+                className="h-9 rounded-full bg-card px-4"
               >
-                <SelectTrigger className="w-44">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="newest">{t("browse.newest")}</SelectItem>
-                  <SelectItem value="price-asc">{t("browse.priceAsc")}</SelectItem>
-                  <SelectItem value="price-desc">{t("browse.priceDesc")}</SelectItem>
-                  <SelectItem value="viewed">{t("browse.mostViewed")}</SelectItem>
-                  <SelectItem value="nearest">{t("browse.nearest")}</SelectItem>
-                </SelectContent>
-              </Select>
+                {alreadySaved ? (
+                  <BookmarkCheck className="mr-2 h-4 w-4 text-primary" />
+                ) : (
+                  <Bookmark className="mr-2 h-4 w-4" />
+                )}
+                <span className="hidden sm:inline">{t("browse.saveSearch")}</span>
+                <span className="sm:hidden">Save</span>
+              </Button>
             </div>
           </div>
 

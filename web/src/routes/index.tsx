@@ -93,7 +93,7 @@ function Home() {
 
       <section className="mx-auto max-w-6xl px-4 py-14">
         <div className="flex items-end justify-between">
-          <h2 className="font-display text-2xl font-semibold">{t("home.shopByRoom")}</h2>
+          <h2 className="font-display text-2xl font-semibold">{t("home.shopByCategory")}</h2>
           <Link to="/categories" className="text-sm text-primary">
             {t("home.allCategories")}
           </Link>
