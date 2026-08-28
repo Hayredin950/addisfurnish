@@ -877,6 +877,8 @@ class AdminUser {
     this.city,
     this.bannedUntil,
     this.banReason,
+    this.roles = const [],
+    this.isSuperAdmin = false,
   });
 
   final String id;
@@ -892,6 +894,12 @@ class AdminUser {
   final String? city;
   final String? bannedUntil;
   final String? banReason;
+
+  /// Admin-ish roles (`admin`, `moderator`, `verification`, etc.) for badges.
+  final List<String> roles;
+
+  /// Super-admin flag (settings scope, role management).
+  final bool isSuperAdmin;
 
   bool get suspended {
     final until = bannedUntil;
@@ -916,6 +924,12 @@ class AdminUser {
         city: json['city'] as String?,
         bannedUntil: json['banned_until'] as String?,
         banReason: json['ban_reason'] as String?,
+        roles: (json['roles'] as List<dynamic>?)
+                ?.map((r) => r as String)
+                .where((r) => r.isNotEmpty)
+                .toList(growable: false) ??
+            const [],
+        isSuperAdmin: json['is_super_admin'] as bool? ?? false,
       );
 }
 
@@ -1079,4 +1093,348 @@ class CategoryCount {
         name: json['name'] as String? ?? json['categoryName'] as String? ?? 'Uncategorised',
         count: (json['count'] as num?)?.toInt() ?? 0,
       );
+}
+
+// ── Admin (extended panel — web /admin parity) ────────────────────────────
+// Ported from the web admin console (`web/src/routes/admin.tsx`): dashboard
+// health RPC, disputes queue, audit log, analytics, telegram + scope-based
+// tab gating. Mirror the column names / shapes the web client uses.
+
+/// Admin scope names (match `AdminScope` in web `marketplace.ts`). A scope
+/// holder gets exactly the tab(s) listed in `adminScopesForRoles`.
+class AdminScopes {
+  AdminScopes._();
+
+  static const users = 'users';
+  static const listings = 'listings';
+  static const moderation = 'moderation';
+  static const verification = 'verification';
+  static const categories = 'categories';
+  static const analytics = 'analytics';
+  static const settings = 'settings';
+
+  /// Derives the visible admin scopes from the role list + super-admin flag,
+  /// mirroring `adminScopesForRoles` on the web app verbatim.
+  static Set<String> forRoles(List<String> roles, bool isSuperAdmin) {
+    final scopes = <String>{};
+    if (isSuperAdmin || roles.contains('admin')) {
+      scopes
+        ..add(users)
+        ..add(listings)
+        ..add(moderation)
+        ..add(verification)
+        ..add(categories)
+        ..add(analytics);
+      if (isSuperAdmin) scopes.add(settings);
+      return scopes;
+    }
+    if (roles.contains('moderator')) {
+      scopes
+        ..add(moderation)
+        ..add(listings);
+    }
+    if (roles.contains('verification')) scopes.add(verification);
+    if (roles.contains('category_manager')) scopes.add(categories);
+    if (roles.contains('analytics')) scopes.add(analytics);
+    return scopes;
+  }
+}
+
+/// Dashboard tier-1 counters: items that need an admin's attention right now.
+class AdminActionCounts {
+  const AdminActionCounts({
+    this.reports = 0,
+    this.flagged = 0,
+    this.disputes = 0,
+    this.verifications = 0,
+  });
+
+  final int reports;
+  final int flagged;
+  final int disputes;
+  final int verifications;
+
+  int get total => reports + flagged + disputes + verifications;
+}
+
+/// Marketplace health (RPC `admin_health_stats`) — sell-through, median days
+/// to sale, seller response speed and the conversion funnel, all in one call.
+class HealthStats {
+  const HealthStats({
+    required this.sellThroughD7,
+    required this.sellThroughD30,
+    required this.sellThroughD60,
+    this.medianDaysToSale,
+    this.responseRatePct,
+    this.responseAvgMinutes,
+    this.responseMedianMinutes,
+    required this.funnelPublished,
+    this.funnelViewed = 0,
+    this.funnelInquiries = 0,
+    this.funnelResponded = 0,
+    this.funnelDeals = 0,
+    this.funnelSales = 0,
+  });
+
+  final num sellThroughD7;
+  final num sellThroughD30;
+  final num sellThroughD60;
+  final num? medianDaysToSale;
+  final num? responseRatePct;
+  final num? responseAvgMinutes;
+  final num? responseMedianMinutes;
+  final int funnelPublished;
+  final int funnelViewed;
+  final int funnelInquiries;
+  final int funnelResponded;
+  final int funnelDeals;
+  final int funnelSales;
+
+  factory HealthStats.fromJson(Map<String, dynamic> json) {
+    final st = json['sell_through'] as Map<String, dynamic>? ?? const {};
+    final resp = json['seller_response'] as Map<String, dynamic>? ?? const {};
+    final funnel = json['funnel'] as Map<String, dynamic>? ?? const {};
+    num n(Object? v) => v is num ? v : ((v as num?) ?? 0);
+    int i(Object? v) => (v as num?)?.toInt() ?? 0;
+    return HealthStats(
+      sellThroughD7: n(st['d7']),
+      sellThroughD30: n(st['d30']),
+      sellThroughD60: n(st['d60']),
+      medianDaysToSale: json['median_days_to_sale'] as num?,
+      responseRatePct: resp['rate_pct'] as num?,
+      responseAvgMinutes: resp['avg_minutes'] as num?,
+      responseMedianMinutes: resp['median_minutes'] as num?,
+      funnelPublished: i(funnel['published']),
+      funnelViewed: i(funnel['viewed']),
+      funnelInquiries: i(funnel['inquiries']),
+      funnelResponded: i(funnel['responded']),
+      funnelDeals: i(funnel['deals']),
+      funnelSales: i(funnel['sales']),
+    );
+  }
+}
+
+/// One dispute in the admin queue (spec §12). Statuses: pending, investigating,
+/// resolved, dismissed, escalated. Open disputes (`pending`/`investigating`/
+/// `escalated`) render first, mirroring the web queue sort.
+class AdminDispute {
+  const AdminDispute({
+    required this.id,
+    required this.reason,
+    required this.status,
+    required this.createdAt,
+    required this.buyerLabel,
+    required this.sellerLabel,
+    this.description,
+    this.deadlineAt,
+    this.resolution,
+    this.listingId,
+    this.listingTitle,
+    this.conversationId,
+    this.messageCount = 0,
+  });
+
+  final String id;
+  final String reason;
+  final String? description;
+  final String status;
+  final DateTime? deadlineAt;
+  final String? resolution;
+  final DateTime createdAt;
+  final String? listingId;
+  final String? listingTitle;
+  final String? conversationId;
+  final int messageCount;
+  final String buyerLabel;
+  final String sellerLabel;
+
+  bool get isOpen =>
+      status == 'pending' || status == 'investigating' || status == 'escalated';
+
+  bool get overdue {
+    final deadline = deadlineAt;
+    return deadline != null && deadline.isBefore(DateTime.now());
+  }
+
+  String get listingLabel => listingTitle ?? listingId ?? '—';
+
+  factory AdminDispute.fromJson(Map<String, dynamic> json) {
+    final listing = json['listings'] as Map<String, dynamic>?;
+    final buyer = json['buyer'] as Map<String, dynamic>?;
+    final seller = json['seller'] as Map<String, dynamic>?;
+    String label(Map<String, dynamic>? p, String fallback) {
+      if (p == null) return fallback;
+      return (p['shop_name'] as String?) ?? (p['full_name'] as String?) ?? fallback;
+    }
+
+    return AdminDispute(
+      id: json['id'] as String,
+      reason: json['reason'] as String? ?? '',
+      description: json['description'] as String?,
+      status: json['status'] as String? ?? 'pending',
+      deadlineAt: json['deadline_at'] != null
+          ? DateTime.tryParse(json['deadline_at'] as String)
+          : null,
+      resolution: json['resolution'] as String?,
+      createdAt: DateTime.parse(json['created_at'] as String),
+      listingId: json['listing_id'] as String?,
+      listingTitle: listing?['title'] as String?,
+      conversationId: json['conversation_id'] as String?,
+      messageCount: (json['message_count'] as num?)?.toInt() ?? 0,
+      buyerLabel: label(buyer, json['buyer_id'] as String? ?? '—'),
+      sellerLabel: label(seller, json['seller_id'] as String? ?? '—'),
+    );
+  }
+}
+
+/// One row of the admin audit log (`admin_audit_log`, spec §21).
+class AuditLogEntry {
+  const AuditLogEntry({
+    required this.id,
+    required this.action,
+    required this.entityType,
+    required this.createdAt,
+    this.entityId,
+    this.reason,
+    this.adminName,
+  });
+
+  final String id;
+  final String action;
+  final String entityType;
+  final String? entityId;
+  final String? reason;
+  final DateTime createdAt;
+  final String? adminName;
+
+  String get actionLabel => action.replaceAll('_', ' ');
+
+  factory AuditLogEntry.fromJson(Map<String, dynamic> json) {
+    final profile = json['profiles'] as Map<String, dynamic>?;
+    return AuditLogEntry(
+      id: json['id'] as String,
+      action: json['action'] as String? ?? '',
+      entityType: json['entity_type'] as String? ?? '',
+      entityId: json['entity_id'] as String?,
+      reason: json['reason'] as String?,
+      createdAt: DateTime.parse(json['created_at'] as String),
+      adminName: profile?['full_name'] as String?,
+    );
+  }
+}
+
+/// One seller in the seller-performance table (RPC `admin_seller_performance`).
+class SellerPerformanceRow {
+  const SellerPerformanceRow({
+    required this.sellerId,
+    required this.name,
+    this.verified = false,
+    this.suspended = false,
+    this.listings = 0,
+    this.views = 0,
+    this.inquiries = 0,
+    this.responded = 0,
+    this.avgResponseMinutes,
+    this.sales = 0,
+    this.rating,
+    this.reports = 0,
+  });
+
+  final String sellerId;
+  final String name;
+  final bool verified;
+  final bool suspended;
+  final int listings;
+  final int views;
+  final int inquiries;
+  final int responded;
+  final num? avgResponseMinutes;
+  final int sales;
+  final num? rating;
+  final int reports;
+
+  int? get responseRatePct =>
+      inquiries > 0 ? (responded * 100 ~/ inquiries) : null;
+
+  factory SellerPerformanceRow.fromJson(Map<String, dynamic> json) => SellerPerformanceRow(
+        sellerId: json['seller_id'] as String? ?? '',
+        name: json['name'] as String? ?? '—',
+        verified: json['verified'] as bool? ?? false,
+        suspended: json['suspended'] as bool? ?? false,
+        listings: (json['listings'] as num?)?.toInt() ?? 0,
+        views: (json['views'] as num?)?.toInt() ?? 0,
+        inquiries: (json['inquiries'] as num?)?.toInt() ?? 0,
+        responded: (json['responded'] as num?)?.toInt() ?? 0,
+        avgResponseMinutes: json['avg_response_minutes'] as num?,
+        sales: (json['sales'] as num?)?.toInt() ?? 0,
+        rating: json['rating'] as num?,
+        reports: (json['reports'] as num?)?.toInt() ?? 0,
+      );
+}
+
+/// Acquisition source with signup + listing creation counts (spec §8.2).
+class AcquisitionRow {
+  const AcquisitionRow({
+    required this.source,
+    this.signups = 0,
+    this.listings = 0,
+  });
+
+  final String source;
+  final int signups;
+  final int listings;
+
+  int get total => signups + listings;
+}
+
+/// Root-category performance (dashboard tier 3): supply vs demand rollup.
+class CategoryPerformance {
+  const CategoryPerformance({
+    required this.name,
+    this.listings = 0,
+    this.views = 0,
+    this.inquiries = 0,
+    this.sold = 0,
+  });
+
+  final String name;
+  final int listings;
+  final int views;
+  final int inquiries;
+  final int sold;
+}
+
+/// A listing that was posted to the Telegram channel (`telegram_channel_posts`).
+class TelegramPost {
+  const TelegramPost({
+    required this.listingId,
+    required this.postedAt,
+    this.listingTitle,
+  });
+
+  final String listingId;
+  final DateTime postedAt;
+  final String? listingTitle;
+
+  factory TelegramPost.fromJson(Map<String, dynamic> json) {
+    final listing = json['listings'] as Map<String, dynamic>?;
+    return TelegramPost(
+      listingId: json['listing_id'] as String,
+      postedAt: DateTime.parse(json['posted_at'] as String),
+      listingTitle: listing?['title'] as String?,
+    );
+  }
+}
+
+/// Lightweight system-health probes (web spec SS23) for the Settings tab.
+class SystemHealth {
+  const SystemHealth({
+    required this.dbOk,
+    required this.storageOk,
+    this.tgErrorsToday = 0,
+  });
+
+  final bool dbOk;
+  final bool storageOk;
+  final int tgErrorsToday;
 }

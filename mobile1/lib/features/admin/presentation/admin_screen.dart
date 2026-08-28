@@ -8,8 +8,25 @@ import '../../../core/state/app_state_mixin.dart';
 import '../../../core/utils/format.dart';
 import '../../../core/widgets/app_image.dart';
 import '../domain/admin_repository.dart';
+import 'admin_analytics_tab.dart';
+import 'admin_audit_tab.dart';
+import 'admin_dashboard_tab.dart';
+import 'admin_moderation_tab.dart';
+import 'admin_settings_tab.dart';
+import 'admin_telegram_tab.dart';
 
-enum AdminTab { reports, verification, users, categories, listings, stats }
+enum AdminTab {
+  dashboard,
+  moderation,
+  verification,
+  users,
+  categories,
+  listings,
+  audit,
+  analytics,
+  telegram,
+  settings,
+}
 
 /// Admin moderation console. Mirrors the web /admin screen and the RN
 /// `admin.tsx`, scaled to a phone: report resolution, the seller-verification
@@ -26,9 +43,44 @@ class AdminScreen extends StatefulWidget {
 class _AdminScreenState extends State<AdminScreen> with AppStateMixin {
   AdminRepository get _repo => sl<AdminRepository>();
 
-  AdminTab _tab = AdminTab.reports;
+  /// Fallback scopes when the server re-check times out: the cached admin
+  /// status is authoritative, so grant the full admin set (no `settings`,
+  /// which only super admins derive).
+  static const _fallbackScopes = <String>{
+    AdminScopes.users,
+    AdminScopes.listings,
+    AdminScopes.moderation,
+    AdminScopes.verification,
+    AdminScopes.categories,
+    AdminScopes.analytics,
+  };
+
+  static const _tabMeta = <AdminTab, (IconData, String, String?)>{
+    AdminTab.dashboard: (Icons.space_dashboard_outlined, 'admin.tabDashboard', null),
+    AdminTab.moderation: (Icons.gavel_outlined, 'admin.tabModeration', AdminScopes.moderation),
+    AdminTab.verification:
+        (Icons.verified_outlined, 'admin.tabVerification', AdminScopes.verification),
+    AdminTab.users: (Icons.people_outline, 'admin.tabUsers', AdminScopes.users),
+    AdminTab.categories: (Icons.grid_view_outlined, 'admin.tabCategories', AdminScopes.categories),
+    AdminTab.listings: (Icons.list_alt_outlined, 'admin.tabListings', AdminScopes.listings),
+    AdminTab.audit: (Icons.history_outlined, 'admin.tabAudit', AdminScopes.users),
+    AdminTab.analytics: (Icons.insights_outlined, 'admin.tabAnalytics', AdminScopes.analytics),
+    AdminTab.telegram: (Icons.send_outlined, 'admin.tabTelegram', AdminScopes.users),
+    AdminTab.settings: (Icons.settings_outlined, 'admin.tabSettings', AdminScopes.settings),
+  };
+
+  AdminTab _tab = AdminTab.dashboard;
   String _usersFilter = 'all';
+  String _moderationQueue = 'reports';
   bool _admin = false;
+  Set<String> _scopes = const {};
+
+  bool _tabAllowed(AdminTab tab) {
+    final scope = _tabMeta[tab]!.$3;
+    return scope == null || _scopes.contains(scope);
+  }
+
+  AdminTab get _activeTab => _tabAllowed(_tab) ? _tab : AdminTab.dashboard;
 
   @override
   void initState() {
@@ -45,14 +97,38 @@ class _AdminScreenState extends State<AdminScreen> with AppStateMixin {
     final uid = AppState.instance.userId;
     if (uid == null) return;
     try {
-      final admin = await _repo
-          .isAdmin(uid)
-          .timeout(const Duration(seconds: 10), onTimeout: () => _admin);
-      if (mounted) setState(() => _admin = admin);
+      // Scopes are derived from the same role rows `isAdmin` reads, so a
+      // single fetch answers both questions (web `adminScopesForRoles`).
+      final scopes = await _repo
+          .getScopes(uid)
+          .timeout(const Duration(seconds: 10), onTimeout: () => _fallbackScopes);
+      if (mounted) {
+        setState(() {
+          _scopes = scopes;
+          _admin = scopes.isNotEmpty;
+        });
+      }
     } catch (_) {
       // Keep the cached status on failure — never hang on a spinner.
+      if (_admin) setState(() => _scopes = _fallbackScopes);
     }
   }
+
+  void _openUsers(String filter) {
+    setState(() {
+      _usersFilter = filter;
+      _tab = AdminTab.users;
+    });
+  }
+
+  void _openModeration(String queue) {
+    setState(() {
+      _moderationQueue = queue;
+      _tab = AdminTab.moderation;
+    });
+  }
+
+  void _openVerification() => setState(() => _tab = AdminTab.verification);
 
   @override
   Widget build(BuildContext context) {
@@ -65,19 +141,24 @@ class _AdminScreenState extends State<AdminScreen> with AppStateMixin {
               children: [
                 _tabBar(context),
                 Expanded(
-                  child: switch (_tab) {
-                    AdminTab.reports => const ReportsTab(),
+                  child: switch (_activeTab) {
+                    AdminTab.dashboard => DashboardTab(
+                        onOpenUsers: _openUsers,
+                        onOpenModeration: _openModeration,
+                        onOpenVerification: _openVerification,
+                      ),
+                    AdminTab.moderation => ModerationTab(
+                        initialQueue: _moderationQueue,
+                        key: ValueKey(_moderationQueue),
+                      ),
                     AdminTab.verification => const VerificationTab(),
                     AdminTab.users => UsersTab(initialFilter: _usersFilter),
                     AdminTab.categories => const CategoriesTab(),
                     AdminTab.listings => const ListingsTab(),
-                    AdminTab.stats =>
-                      StatsTab(onOpenUsers: (f) {
-                        setState(() {
-                          _usersFilter = f;
-                          _tab = AdminTab.users;
-                        });
-                      }),
+                    AdminTab.audit => const AuditLogTab(),
+                    AdminTab.analytics => const AnalyticsTab(),
+                    AdminTab.telegram => const TelegramTab(),
+                    AdminTab.settings => SettingsTab(onOpenUsers: () => _openUsers('all')),
                   },
                 ),
               ],
@@ -110,34 +191,28 @@ class _AdminScreenState extends State<AdminScreen> with AppStateMixin {
 
   Widget _tabBar(BuildContext context) {
     final state = AppState.instance;
-    const tabs = <AdminTab, (IconData, String)>{
-      AdminTab.reports: (Icons.flag_outlined, 'admin.tabReports'),
-      AdminTab.verification: (Icons.shield_outlined, 'admin.tabVerification'),
-      AdminTab.users: (Icons.people_outline, 'admin.tabUsers'),
-      AdminTab.categories: (Icons.grid_view_outlined, 'admin.tabCategories'),
-      AdminTab.listings: (Icons.list_alt_outlined, 'admin.tabListings'),
-      AdminTab.stats: (Icons.bar_chart_outlined, 'admin.tabStats'),
-    };
+    final allowed =
+        _tabMeta.entries.where((e) => _tabAllowed(e.key)).map((e) => e.key).toList();
     return SizedBox(
       height: 52,
       child: ListView(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
         children: [
-          for (final entry in tabs.entries)
+          for (final tab in allowed)
             Padding(
               padding: const EdgeInsets.only(right: 8),
               child: ChoiceChip(
-                selected: _tab == entry.key,
-                onSelected: (_) => setState(() => _tab = entry.key),
+                selected: _activeTab == tab,
+                onSelected: (_) => setState(() => _tab = tab),
                 avatar: Icon(
-                  entry.value.$1,
+                  _tabMeta[tab]!.$1,
                   size: 16,
-                  color: _tab == entry.key
+                  color: _activeTab == tab
                       ? Theme.of(context).colorScheme.onSecondaryContainer
                       : Theme.of(context).colorScheme.outline,
                 ),
-                label: Text(state.t(entry.value.$2)),
+                label: Text(state.t(_tabMeta[tab]!.$2)),
               ),
             ),
         ],
@@ -687,6 +762,32 @@ class _UsersTabState extends State<UsersTab> with AppStateMixin {
     );
   }
 
+  String _roleLabel(AppState state, String role) => state.t(switch (role) {
+        'admin' => 'admin.roleAdmin',
+        'moderator' => 'admin.roleModerator',
+        'verification' => 'admin.roleVerification',
+        'category_manager' => 'admin.roleCategoryManager',
+        'analytics' => 'admin.roleAnalytics',
+        _ => 'admin.roleAdmin',
+      });
+
+  Widget _rolePill(String label, Color color) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+              color: color,
+              fontWeight: FontWeight.w700,
+            ),
+      ),
+    );
+  }
+
   Widget _userCard(BuildContext context, AppState state, AdminUser u) {
     final theme = Theme.of(context);
     final myId = AppState.instance.userId;
@@ -706,6 +807,24 @@ class _UsersTabState extends State<UsersTab> with AppStateMixin {
                 if (u.verified) Icon(Icons.verified, size: 16, color: Colors.green),
               ],
             ),
+            if (u.isSuperAdmin || u.roles.any((r) => r != 'user'))
+              Padding(
+                padding: const EdgeInsets.only(top: 6),
+                child: Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    if (u.isSuperAdmin)
+                      _rolePill(state.t('admin.roleSuperAdmin'), Theme.of(context).colorScheme.primary),
+                    for (final r in u.roles)
+                      if (r != 'user')
+                        _rolePill(
+                          _roleLabel(state, r),
+                          Theme.of(context).colorScheme.primary,
+                        ),
+                  ],
+                ),
+              ),
             const SizedBox(height: 2),
             Text(
               '${u.phone ?? '—'} · ${u.city ?? '—'} · ${Fmt.timeAgo(u.createdAt)}',
@@ -1372,470 +1491,6 @@ class _ListingsTabState extends State<ListingsTab> with AppStateMixin {
   }
 }
 
-// ── Stats ────────────────────────────────────────────────────────────────
-
-class StatsTab extends StatefulWidget {
-  const StatsTab({super.key, this.onOpenUsers});
-
-  final void Function(String filter)? onOpenUsers;
-
-  @override
-  State<StatsTab> createState() => _StatsTabState();
-}
-
-class _StatsTabState extends State<StatsTab> with AppStateMixin {
-  AdminRepository get _repo => sl<AdminRepository>();
-  AdminStats? _stats;
-  List<CategoryCount>? _topCats;
-  List<CategoryCount>? _topSearches;
-  List<TrendDay> _trend = const [];
-  int _range = 14;
-  String _metric = 'views';
-  bool _loading = true;
-  String? _error;
-
-  static const _metrics = <String, (String, int Function(TrendDay))>{
-    'views': ('admin.trendViews', _views),
-    'listings': ('admin.trendListings', _listings),
-    'users': ('admin.trendUsers', _users),
-    'messages': ('admin.trendMessages', _messages),
-  };
-
-  static int _views(TrendDay d) => d.views;
-  static int _listings(TrendDay d) => d.listings;
-  static int _users(TrendDay d) => d.users;
-  static int _messages(TrendDay d) => d.messages;
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-    try {
-      final results = await Future.wait<Object>([
-        _repo.getStats(),
-        _repo.getTopCategories(),
-        _repo.getTopSearches(),
-        _repo.getTrend(_range),
-      ]);
-      if (!mounted) return;
-      setState(() {
-        _stats = results[0] as AdminStats;
-        _topCats = results[1] as List<CategoryCount>;
-        _topSearches = results[2] as List<CategoryCount>;
-        _trend = results[3] as List<TrendDay>;
-        _loading = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _loading = false;
-        _error = '$e';
-      });
-    }
-  }
-
-  Future<void> _loadTrend() async {
-    try {
-      final trend = await _repo.getTrend(_range);
-      if (mounted) setState(() => _trend = trend);
-    } catch (_) {
-      if (mounted) setState(() => _trend = const []);
-    }
-  }
-
-  void _setRange(int r) {
-    setState(() => _range = r);
-    _loadTrend();
-  }
-
-  void _openUsers(String filter) => widget.onOpenUsers?.call(filter);
-
-  @override
-  Widget build(BuildContext context) {
-    final state = AppState.instance;
-    final theme = Theme.of(context);
-    final stats = _stats;
-    final topCats = _topCats ?? const <CategoryCount>[];
-    final topSearches = _topSearches ?? const <CategoryCount>[];
-    if (_loading && stats == null) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    if (_error != null) {
-      return _errorView(context, _error!, _load, state);
-    }
-    final s = stats!;
-    final maxCat = topCats.fold<int>(1, (m, c) => c.count > m ? c.count : m);
-    final maxSearch = topSearches.fold<int>(1, (m, c) => c.count > m ? c.count : m);
-    final total = s.listings < 1 ? 1 : s.listings;
-    final verifiedPct =
-        s.sellers > 0 ? ((s.verifiedSellers / s.sellers) * 100).round() : 0;
-    final segments = <(String, int, Color)>[
-      (state.t('admin.statusActive'), s.activeListings, theme.colorScheme.primary),
-      (state.t('admin.statusSold'), s.soldListings, Colors.green),
-      (state.t('admin.statusOther'), s.otherListings, theme.colorScheme.outline),
-    ].where((x) => x.$2 > 0).toList();
-    final metricGet = _metrics[_metric]!.$2;
-    final trendMax = _trend.fold<int>(1, (m, d) => metricGet(d) > m ? metricGet(d) : m);
-    final tgSuccess = s.telegramSends7d > 0
-        ? '${((s.telegramOk7d / s.telegramSends7d) * 100).round()}%'
-        : '100%';
-
-    return RefreshIndicator(
-      onRefresh: _load,
-      child: ListView(
-        padding: const EdgeInsets.all(16),
-        children: [
-          // Hero row — big numbers + verified ratio; cards open the Users tab.
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: [
-              _statBox(theme, state.t('admin.statListings'), '${s.listings}'),
-              _statBox(theme, state.t('admin.statUsers'), '${s.users}',
-                  onTap: () => _openUsers('all')),
-              _verifiedBox(theme, state, s, verifiedPct),
-              _statBox(theme, state.t('admin.thisWeek'), '+${s.newListings7d}'),
-            ],
-          ),
-          const SizedBox(height: 12),
-
-          // Engagement strip — minor totals, compact.
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Wrap(
-                spacing: 16,
-                runSpacing: 10,
-                children: [
-                  _engItem(theme, Icons.visibility_outlined, state.t('admin.statViews'), s.totalViews),
-                  _engItem(theme, Icons.chat_bubble_outline, state.t('admin.statConversations'), s.conversations),
-                  _engItem(theme, Icons.chat_outlined, state.t('admin.statMessages'), s.messages),
-                  _engItem(theme, Icons.star_outline, state.t('admin.statReviews'), s.reviews),
-                ],
-              ),
-            ),
-          ),
-
-          // Activity trend — daily bars for one metric, 7/14/30d.
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Text(state.t('admin.trendTitle'), style: theme.textTheme.titleMedium),
-                      Wrap(
-                        spacing: 6,
-                        children: [
-                          for (final r in const [7, 14, 30])
-                            ChoiceChip(
-                              label: Text('${r}d'),
-                              visualDensity: VisualDensity.compact,
-                              selected: _range == r,
-                              onSelected: (_) => _setRange(r),
-                            ),
-                        ],
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    children: [
-                      for (final m in _metrics.keys)
-                        ChoiceChip(
-                          label: Text(state.t(_metrics[m]!.$1)),
-                          visualDensity: VisualDensity.compact,
-                          selected: _metric == m,
-                          onSelected: (_) => setState(() => _metric = m),
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  if (_trend.isEmpty)
-                    Text(state.t('admin.noListings'), style: theme.textTheme.bodySmall)
-                  else
-                    SizedBox(
-                      height: 118,
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          for (final d in _trend)
-                            Expanded(
-                              child: Column(
-                                mainAxisAlignment: MainAxisAlignment.end,
-                                children: [
-                                  Container(
-                                    width: double.infinity,
-                                    height: metricGet(d) / trendMax * 96,
-                                    margin: const EdgeInsets.symmetric(horizontal: 2),
-                                    decoration: BoxDecoration(
-                                      color: theme.colorScheme.primary,
-                                      borderRadius: BorderRadius.circular(3),
-                                    ),
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(d.label,
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: theme.textTheme.labelSmall
-                                          ?.copyWith(fontSize: 8)),
-                                ],
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                ],
-              ),
-            ),
-          ),
-
-          // Listing status breakdown.
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(state.t('admin.statusBreakdown'), style: theme.textTheme.titleMedium),
-                  const SizedBox(height: 10),
-                  if (segments.isEmpty)
-                    Text(state.t('admin.noListings'), style: theme.textTheme.bodySmall)
-                  else ...[
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(999),
-                      child: SizedBox(
-                        height: 10,
-                        child: Row(
-                          children: [
-                            for (final x in segments)
-                              Expanded(flex: x.$2, child: Container(color: x.$3)),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    for (final x in segments)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 2),
-                        child: Row(
-                          children: [
-                            Container(
-                              width: 10,
-                              height: 10,
-                              decoration: BoxDecoration(color: x.$3, shape: BoxShape.circle),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(child: Text(x.$1, style: theme.textTheme.bodyMedium)),
-                            Text('${x.$2} · ${(x.$2 * 100 ~/ total)}%',
-                                style: theme.textTheme.labelMedium),
-                          ],
-                        ),
-                      ),
-                  ],
-                ],
-              ),
-            ),
-          ),
-
-          // Top categories.
-          _barCard(theme, state.t('admin.topCategories'), topCats, maxCat),
-
-          // Top searches.
-          _barCard(theme, state.t('admin.topSearches'), topSearches, maxSearch),
-
-          // Telegram integration health.
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      const Icon(Icons.telegram, size: 16, color: Colors.green),
-                      const SizedBox(width: 6),
-                      Text(state.t('admin.telegramHealth'), style: theme.textTheme.titleMedium),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  Wrap(
-                    spacing: 16,
-                    runSpacing: 10,
-                    children: [
-                      _engItem(theme, Icons.send_outlined, state.t('admin.tgSends'), s.telegramSends7d),
-                      _engItem(theme, Icons.check_circle_outline, state.t('admin.tgSuccess'), tgSuccess),
-                      _engItem(theme, Icons.cancel_outlined, state.t('admin.tgFailures'), s.telegramFailures7d),
-                      _engItem(theme, Icons.people_outline, state.t('admin.tgLinked'), s.telegramLinkedUsers),
-                    ],
-                  ),
-                  const SizedBox(height: 10),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 2),
-                    child: Text(
-                      '${state.t('admin.tgChannelPosts')}: ${s.telegramChannelPosts}',
-                      style: theme.textTheme.bodySmall,
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 2),
-                    child: Text(
-                      '${state.t('admin.tgProcessed')}: ${s.telegramProcessedUpdates}',
-                      style: theme.textTheme.bodySmall,
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 2),
-                    child: Text(
-                      '${state.t('admin.tgBlocked')}: ${s.telegramBlockedUsers}',
-                      style: theme.textTheme.bodySmall,
-                    ),
-                  ),
-                  if (s.telegramFailureReasons.isNotEmpty)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: Text('· ${s.telegramFailureReasons.join(' · ')}',
-                          style: theme.textTheme.bodySmall),
-                    ),
-                ],
-              ),
-            ),
-          ),
-          const SizedBox(height: 32),
-        ],
-      ),
-    );
-  }
-
-  Widget _statBox(ThemeData theme, String label, String value, {VoidCallback? onTap}) {
-    final box = Container(
-      width: (MediaQuery.sizeOf(context).width - 42) / 2,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surfaceContainerHighest,
-        borderRadius: BorderRadius.circular(14),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(value,
-              style: theme.textTheme.headlineMedium?.copyWith(color: theme.colorScheme.primary)),
-          const SizedBox(height: 4),
-          Text(label, style: theme.textTheme.bodySmall),
-        ],
-      ),
-    );
-    if (onTap == null) return box;
-    return GestureDetector(onTap: onTap, child: box);
-  }
-
-  Widget _verifiedBox(ThemeData theme, AppState state, AdminStats s, int verifiedPct) {
-    return GestureDetector(
-      onTap: () => _openUsers('sellers'),
-      child: Container(
-        width: (MediaQuery.sizeOf(context).width - 42) / 2,
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: theme.colorScheme.surfaceContainerHighest,
-          borderRadius: BorderRadius.circular(14),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('${s.verifiedSellers}/${s.sellers}',
-                style: theme.textTheme.headlineMedium?.copyWith(color: theme.colorScheme.primary)),
-            const SizedBox(height: 4),
-            Text(state.t('admin.statVerifiedSellers'), style: theme.textTheme.bodySmall),
-            const SizedBox(height: 6),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(3),
-              child: LinearProgressIndicator(
-                value: (verifiedPct < 2 ? 2 : verifiedPct) / 100,
-                minHeight: 5,
-                color: Colors.green,
-                backgroundColor: theme.colorScheme.surface,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text('$verifiedPct% ${state.t('admin.verifiedRate')}',
-                style: theme.textTheme.labelSmall),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _engItem(ThemeData theme, IconData icon, String label, Object value) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 16, color: theme.colorScheme.primary),
-        const SizedBox(width: 4),
-        Text('$value', style: theme.textTheme.bodyMedium),
-        const SizedBox(width: 4),
-        Text(label, style: theme.textTheme.bodySmall),
-      ],
-    );
-  }
-
-  Widget _barCard(ThemeData theme, String title, List<CategoryCount> items, int max) {
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(title, style: theme.textTheme.titleMedium),
-            const SizedBox(height: 10),
-            if (items.isEmpty)
-              Text(AppState.instance.t('admin.noListings'), style: theme.textTheme.bodySmall)
-            else
-              for (final c in items)
-                Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 4),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Expanded(
-                            child: Text(c.name,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: theme.textTheme.bodyMedium),
-                          ),
-                          Text('${c.count}', style: theme.textTheme.labelMedium),
-                        ],
-                      ),
-                      const SizedBox(height: 3),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(4),
-                        child: LinearProgressIndicator(
-                          value: c.count / max,
-                          minHeight: 7,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-          ],
-        ),
-      ),
-    );
-  }
-}
 
 /// Verification document viewer: mints a short-lived signed URL on open and
 /// shows the image full-screen. Demo/empty paths render a friendly hint.

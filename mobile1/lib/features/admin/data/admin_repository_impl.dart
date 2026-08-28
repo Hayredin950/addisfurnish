@@ -84,4 +84,82 @@ class AdminRepositoryImpl implements AdminRepository {
 
   @override
   Future<String?> signedDocumentUrl(String path) => SupabaseApi.signedDocumentUrl(path);
+
+  @override
+  Future<Set<String>> getScopes(String userId) => SupabaseApi.fetchAdminScopes(userId);
+
+  @override
+  Future<AdminActionCounts> getActionCounts() => SupabaseApi.fetchAdminActionCounts();
+
+  @override
+  Future<HealthStats> getHealthStats() => SupabaseApi.fetchAdminHealthStats();
+
+  @override
+  Future<List<CategoryPerformance>> getCategoryPerformance() =>
+      SupabaseApi.fetchAdminCategoryPerformance();
+
+  @override
+  Future<List<SellerPerformanceRow>> getSellerPerformance() =>
+      SupabaseApi.fetchAdminSellerPerformance();
+
+  @override
+  Future<List<AuditLogEntry>> getAuditLog() => SupabaseApi.fetchAdminAuditLog();
+
+  @override
+  Future<List<AdminDispute>> getDisputes() => SupabaseApi.fetchAdminDisputes();
+
+  @override
+  Future<void> resolveDispute(String id, String status, {String? resolution}) =>
+      SupabaseApi.resolveDispute(id, status, resolution: resolution);
+
+  @override
+  Future<void> logAdminAction({
+    required String action,
+    required String entityType,
+    String? entityId,
+    Object? oldValue,
+    Object? newValue,
+    String? reason,
+  }) =>
+      SupabaseApi.logAdminAction(
+        action: action,
+        entityType: entityType,
+        entityId: entityId,
+        oldValue: oldValue,
+        newValue: newValue,
+        reason: reason,
+      );
+
+  @override
+  Future<List<AcquisitionRow>> getAcquisition(int rangeDays) =>
+      SupabaseApi.fetchAcquisitionRows(rangeDays);
+
+  @override
+  Future<List<TelegramPost>> getTelegramPosts() => SupabaseApi.fetchTelegramPosts();
+
+  @override
+  Future<SystemHealth> getSystemHealth() => SupabaseApi.fetchSystemHealth();
+
+  @override
+  Future<Map<String, Object>> getSettings() => SupabaseApi.fetchAppSettings();
+
+  @override
+  Future<void> setSetting(String key, Object value) =>
+      SupabaseApi.setAppSetting(key, value);
+
+  @override
+  Future<String?> requestRoleChange({
+    required String targetUserId,
+    required String role,
+    required String action,
+  }) =>
+      SupabaseApi.requestRoleChange(
+        targetUserId: targetUserId,
+        role: role,
+        action: action,
+      );
+
+  @override
+  Future<String?> confirmRoleChange(String code) =>
+      SupabaseApi.confirmRoleChange(code);
 }

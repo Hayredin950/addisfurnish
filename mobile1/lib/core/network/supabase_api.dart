@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart' hide Category;
@@ -1421,6 +1422,11 @@ class SupabaseApi {
       if (paths.isNotEmpty) {
         await AppSupabase.client.storage.from('listing-images').remove(paths);
       }
+      unawaited(logAdminAction(
+        action: 'listing_deleted',
+        entityType: 'listing',
+        entityId: id,
+      ));
     } catch (e) {
       _raise(e);
     }
@@ -1967,6 +1973,12 @@ class SupabaseApi {
   static Future<void> resolveReport(AdminReport report, String status) async {
     try {
       await _db.from('reports').update({'status': status}).eq('id', report.id);
+      unawaited(logAdminAction(
+        action: status == 'reviewed' ? 'report_resolved' : 'report_dismissed',
+        entityType: 'report',
+        entityId: report.id,
+        newValue: {'status': status},
+      ));
       final reporterId = report.reporterId;
       final listingId = report.listingId;
       if (reporterId != null && reporterId.isNotEmpty) {
@@ -2055,6 +2067,14 @@ class SupabaseApi {
         await _db.from('profiles').update({'verified': true}).eq('id', doc['seller_id'] as String);
       }
 
+      unawaited(logAdminAction(
+        action: action == 'approved' ? 'seller_verified' : 'seller_rejected',
+        entityType: 'verification',
+        entityId: doc['id'] as String,
+        oldValue: {'status': 'pending'},
+        newValue: {'status': action, 'reason': action == 'rejected' ? reason : null},
+      ));
+
       try {
         await _db.rpc(
           'admin_notify_user',
@@ -2074,13 +2094,28 @@ class SupabaseApi {
 
   static Future<List<AdminUser>> fetchAdminUsers() async {
     try {
-      final data = await _db
-          .from('profiles')
-          .select(
-            'id,full_name,shop_name,shop_slug,avatar_url,shop_logo_url,verified,is_seller,created_at,phone,city,banned_until,ban_reason',
-          )
-          .order('created_at', ascending: false);
-      return data.map(AdminUser.fromJson).toList(growable: false);
+      final results = await Future.wait<Object>([
+        _db
+            .from('profiles')
+            .select(
+              'id,full_name,shop_name,shop_slug,avatar_url,shop_logo_url,verified,is_seller,is_super_admin,created_at,phone,city,banned_until,ban_reason',
+            )
+            .order('created_at', ascending: false),
+        _db.from('user_roles').select('user_id,role'),
+      ]);
+      final byUser = <String, List<String>>{};
+      for (final r in (results[1] as List)) {
+        final m = r as Map<String, dynamic>;
+        final uid = m['user_id'] as String?;
+        final role = m['role'] as String?;
+        if (uid == null || role == null) continue;
+        (byUser[uid] ??= []).add(role);
+      }
+      return (results[0] as List).map((r) {
+        final m = Map<String, dynamic>.from(r as Map);
+        m['roles'] = byUser[m['id']] ?? const <String>[];
+        return AdminUser.fromJson(m);
+      }).toList(growable: false);
     } catch (e) {
       _raise(e);
     }
@@ -2090,6 +2125,11 @@ class SupabaseApi {
   static Future<void> revokeSessions(String userId) async {
     try {
       await _db.rpc('admin_revoke_sessions', params: {'_user_id': userId});
+      unawaited(logAdminAction(
+        action: 'user_sessions_revoked',
+        entityType: 'user',
+        entityId: userId,
+      ));
     } catch (e) {
       _raise(e);
     }
@@ -2103,6 +2143,13 @@ class SupabaseApi {
         '_until': DateTime.now().add(Duration(hours: hours)).toUtc().toIso8601String(),
         '_reason': reason,
       });
+      unawaited(logAdminAction(
+        action: 'user_banned',
+        entityType: 'user',
+        entityId: userId,
+        newValue: {'hours': hours, 'reason': reason},
+        reason: reason,
+      ));
     } catch (e) {
       _raise(e);
     }
@@ -2115,6 +2162,11 @@ class SupabaseApi {
         '_until': null,
         '_reason': null,
       });
+      unawaited(logAdminAction(
+        action: 'user_unbanned',
+        entityType: 'user',
+        entityId: userId,
+      ));
     } catch (e) {
       _raise(e);
     }
@@ -2138,6 +2190,11 @@ class SupabaseApi {
         'icon': icon,
         'sort_order': 1,
       });
+      unawaited(logAdminAction(
+        action: 'category_created',
+        entityType: 'category',
+        newValue: {'name': name.trim(), 'parent_id': parentId},
+      ));
     } catch (e) {
       _raise(e);
     }
@@ -2150,6 +2207,12 @@ class SupabaseApi {
         'slug': _toSlug(name),
         if (icon != null) 'icon': icon,
       }).eq('id', id);
+      unawaited(logAdminAction(
+        action: 'category_renamed',
+        entityType: 'category',
+        entityId: id,
+        newValue: {'name': name.trim()},
+      ));
     } catch (e) {
       _raise(e);
     }
@@ -2174,6 +2237,12 @@ class SupabaseApi {
         _db.from('categories').update({'sort_order': swap['sort_order']}).eq('id', id),
         _db.from('categories').update({'sort_order': row['sort_order']}).eq('id', swap['id'] as String),
       ]);
+      unawaited(logAdminAction(
+        action: 'category_reordered',
+        entityType: 'category',
+        entityId: id,
+        newValue: {'sort_order': swap['sort_order']},
+      ));
     } catch (e) {
       _raise(e);
     }
@@ -2197,6 +2266,11 @@ class SupabaseApi {
   static Future<void> deleteCategory(String id) async {
     try {
       await _db.from('categories').delete().eq('id', id);
+      unawaited(logAdminAction(
+        action: 'category_deleted',
+        entityType: 'category',
+        entityId: id,
+      ));
     } catch (e) {
       _raise(e);
     }
@@ -2228,6 +2302,430 @@ class SupabaseApi {
   static Future<void> toggleFeatured(String id, bool featured) async {
     try {
       await _db.from('listings').update({'featured': featured}).eq('id', id);
+      unawaited(logAdminAction(
+        action: featured ? 'listing_featured' : 'listing_unfeatured',
+        entityType: 'listing',
+        entityId: id,
+        newValue: {'featured': featured},
+      ));
+    } catch (e) {
+      _raise(e);
+    }
+  }
+
+  // ── Admin (extended panel — web /admin parity) ─────────────────────────
+
+  /// Dashboard tier-1 counters: pending reports, flagged listings, open
+  /// disputes and pending verifications (mirrors web `admin-action-required`).
+  static Future<AdminActionCounts> fetchAdminActionCounts() async {
+    try {
+      final results = await Future.wait<PostgrestListResponse>([
+        _db.from('reports').select('id').eq('status', 'pending').count(CountOption.exact),
+        _db
+            .from('reports')
+            .select('id')
+            .eq('status', 'pending')
+            .not('listing_id', 'is', null)
+            .count(CountOption.exact),
+        _db
+            .from('disputes')
+            .select('id')
+            .inFilter('status', const ['pending', 'investigating', 'escalated'])
+            .count(CountOption.exact),
+        _db
+            .from('seller_verification_documents')
+            .select('id')
+            .eq('status', 'pending')
+            .count(CountOption.exact),
+      ]);
+      return AdminActionCounts(
+        reports: results[0].count,
+        flagged: results[1].count,
+        disputes: results[2].count,
+        verifications: results[3].count,
+      );
+    } catch (e) {
+      _raise(e);
+    }
+  }
+
+  /// Marketplace health (RPC `admin_health_stats`) — see [HealthStats].
+  static Future<HealthStats> fetchAdminHealthStats() async {
+    try {
+      final res = await _db.rpc('admin_health_stats');
+      if (res == null) throw ApiError('health_unavailable');
+      return HealthStats.fromJson(Map<String, dynamic>.from(res as Map));
+    } catch (e) {
+      _raise(e);
+    }
+  }
+
+  /// Root-category performance rollup (dashboard tier 3): supply vs demand
+  /// computed client-side from categories/listings/conversations (web parity).
+  static Future<List<CategoryPerformance>> fetchAdminCategoryPerformance() async {
+    try {
+      final results = await Future.wait<Object>([
+        _db.from('categories').select('id,name,parent_id'),
+        _db
+            .from('listings')
+            .select('id,category_id,status,view_count')
+            .not('category_id', 'is', null),
+        _db.from('conversations').select('listing_id'),
+      ]);
+      final cats = (results[0] as List).cast<Map<String, dynamic>>();
+      final listings = (results[1] as List).cast<Map<String, dynamic>>();
+      final conversations = (results[2] as List).cast<Map<String, dynamic>>();
+
+      final childOf = <String, String>{};
+      for (final c in cats) {
+        final parent = c['parent_id'] as String?;
+        final id = c['id'] as String;
+        if (parent != null && parent.isNotEmpty) childOf[id] = parent;
+      }
+      String rootOf(String id) => childOf[id] ?? id;
+
+      final perf = <String, CategoryPerformance>{};
+      for (final c in cats) {
+        if (c['parent_id'] != null) continue;
+        perf[c['id'] as String] = CategoryPerformance(name: c['name'] as String? ?? '');
+      }
+      final inquiryListings = conversations
+          .map((c) => c['listing_id'] as String?)
+          .whereType<String>()
+          .toSet();
+      for (final l in listings) {
+        final rootId = rootOf(l['category_id'] as String);
+        final row = perf[rootId];
+        if (row == null) continue;
+        final id = l['id'] as String;
+        var next = row;
+        if ((l['status'] as String? ?? '') == 'sold') {
+          next = CategoryPerformance(
+            name: row.name,
+            listings: row.listings,
+            views: row.views,
+            inquiries: row.inquiries,
+            sold: row.sold + 1,
+          );
+        }
+        perf[rootId] = CategoryPerformance(
+          name: row.name,
+          listings: next.listings + 1,
+          views: next.views + ((l['view_count'] as num?)?.toInt() ?? 0),
+          inquiries: next.inquiries + (inquiryListings.contains(id) ? 1 : 0),
+          sold: next.sold,
+        );
+      }
+      final out = perf.values.toList()
+        ..sort((a, b) => b.listings.compareTo(a.listings));
+      return out;
+    } catch (e) {
+      _raise(e);
+    }
+  }
+
+  /// Seller operational metrics (RPC `admin_seller_performance`, spec §8.4).
+  static Future<List<SellerPerformanceRow>> fetchAdminSellerPerformance({int limit = 15}) async {
+    try {
+      final res = await _db.rpc('admin_seller_performance', params: {'_limit': limit});
+      if (res == null) return const [];
+      final rows = res as List;
+      return rows
+          .map((r) => SellerPerformanceRow.fromJson(Map<String, dynamic>.from(r as Map)))
+          .toList(growable: false);
+    } catch (e) {
+      _raise(e);
+    }
+  }
+
+  /// Admin audit log (`admin_audit_log`, spec §21) — 100 most recent.
+  static Future<List<AuditLogEntry>> fetchAdminAuditLog() async {
+    try {
+      final data = await _db
+          .from('admin_audit_log')
+          .select('id,action,entity_type,entity_id,reason,created_at,profiles(full_name)')
+          .order('created_at', ascending: false)
+          .limit(100);
+      return data.map(AuditLogEntry.fromJson).toList(growable: false);
+    } catch (e) {
+      _raise(e);
+    }
+  }
+
+  /// Disputes queue (spec §12): open statuses first, evidence = message count
+  /// in the linked conversation. Mirrors the web query + sort verbatim.
+  static Future<List<AdminDispute>> fetchAdminDisputes() async {
+    try {
+      final data = await _db
+          .from('disputes')
+          .select(
+            'id,reason,description,status,deadline_at,resolution,created_at,conversation_id,listing_id,'
+            'listings(id,title),'
+            'buyer:profiles!disputes_buyer_id_fkey(full_name,shop_name),'
+            'seller:profiles!disputes_seller_id_fkey(full_name,shop_name)',
+          )
+          .order('created_at', ascending: false)
+          .limit(100);
+      final rows = data.cast<Map<String, dynamic>>().toList(growable: false);
+      final convIds = rows
+          .map((r) => r['conversation_id'] as String?)
+          .whereType<String>()
+          .toList(growable: false);
+      final msgCounts = <String, int>{};
+      if (convIds.isNotEmpty) {
+        final msgs = await _db
+            .from('messages')
+            .select('conversation_id')
+            .inFilter('conversation_id', convIds)
+            .limit(2000);
+        for (final m in msgs) {
+          final conv = m['conversation_id'] as String?;
+          if (conv == null) continue;
+          msgCounts[conv] = (msgCounts[conv] ?? 0) + 1;
+        }
+      }
+      int open(String s) =>
+          s == 'pending' || s == 'investigating' || s == 'escalated' ? 0 : 1;
+      rows.sort(
+        (a, b) => open(a['status'] as String? ?? '').compareTo(open(b['status'] as String? ?? '')),
+      );
+      return [
+        for (final r in rows)
+          AdminDispute.fromJson({
+            ...r,
+            'message_count':
+                r['conversation_id'] != null ? (msgCounts[r['conversation_id']] ?? 0) : 0,
+          }),
+      ];
+    } catch (e) {
+      _raise(e);
+    }
+  }
+
+  /// Resolve / dismiss a dispute and record the action in the audit log.
+  static Future<void> resolveDispute(
+    String id,
+    String status, {
+    String? resolution,
+  }) async {
+    try {
+      await _db.from('disputes').update({
+        'status': status,
+        'resolution': resolution?.trim().isEmpty ?? true ? null : resolution?.trim(),
+        'resolved_by': _db.auth.currentUser?.id,
+      }).eq('id', id);
+      final action = switch (status) {
+        'resolved' => 'dispute_resolved',
+        'dismissed' => 'dispute_dismissed',
+        _ => 'dispute_$status',
+      };
+      unawaited(logAdminAction(
+        action: action,
+        entityType: 'dispute',
+        entityId: id,
+        newValue: {'status': status, 'resolution': resolution?.trim().isEmpty ?? true ? null : resolution?.trim()},
+      ));
+    } catch (e) {
+      _raise(e);
+    }
+  }
+
+  /// Fire-and-forget admin audit write (web `logAdminAction` parity): a failed
+  /// audit insert must never block the admin action it documents.
+  static Future<void> logAdminAction({
+    required String action,
+    required String entityType,
+    String? entityId,
+    Object? oldValue,
+    Object? newValue,
+    String? reason,
+  }) async {
+    final adminId = _db.auth.currentUser?.id;
+    if (adminId == null) return;
+    try {
+      await _db.from('admin_audit_log').insert({
+        'admin_user_id': adminId,
+        'action': action,
+        'entity_type': entityType,
+        'entity_id': entityId,
+        'old_value': oldValue,
+        'new_value': newValue,
+        'reason': reason,
+      });
+    } catch (_) {
+      // deliberate: the audit trail must never break the primary action
+    }
+  }
+
+  /// Acquisition analytics (spec §8.2): signups & listing creations grouped
+  /// by source, computed client-side like the web (volumes are small).
+  static Future<List<AcquisitionRow>> fetchAcquisitionRows(int rangeDays) async {
+    try {
+      final since = DateTime.now()
+          .subtract(Duration(days: rangeDays))
+          .toUtc()
+          .toIso8601String();
+      final data = await _db
+          .from('analytics_events')
+          .select('event_name,source')
+          .gte('created_at', since)
+          .limit(5000);
+      final map = <String, ({int signups, int listings})>{};
+      for (final row in data) {
+        final src = (row['source'] as String?)?.trim();
+        final source = src == null || src.isEmpty ? 'direct' : src;
+        final v = map[source] ?? (signups: 0, listings: 0);
+        final event = row['event_name'] as String?;
+        var signups = v.signups, listings = v.listings;
+        if (event == 'signup' || event == 'user_signed_up') signups += 1;
+        if (event == 'listing_created' || event == 'listing_published') listings += 1;
+        map[source] = (signups: signups, listings: listings);
+      }
+      final out = [
+        for (final e in map.entries)
+          AcquisitionRow(source: e.key, signups: e.value.signups, listings: e.value.listings),
+      ]..sort((a, b) => b.total.compareTo(a.total));
+      return out;
+    } catch (e) {
+      _raise(e);
+    }
+  }
+
+  /// The set of admin scopes the caller may access (web `isAdminQuery` +
+  /// `adminScopesForRoles` parity). A scope holder gets only matching tabs.
+  static Future<Set<String>> fetchAdminScopes(String userId) async {
+    try {
+      final results = await Future.wait<dynamic>([
+        _db
+            .from('user_roles')
+            .select('role')
+            .eq('user_id', userId)
+            .inFilter('role', const ['admin', 'moderator', 'verification', 'category_manager', 'analytics']),
+        _db.from('profiles').select('is_super_admin').eq('id', userId).maybeSingle(),
+      ]);
+      final roles = (results[0] as List)
+          .map((r) => (r as Map<String, dynamic>)['role'] as String? ?? '')
+          .where((r) => r.isNotEmpty)
+          .toList(growable: false);
+      final profile = results[1] as Map<String, dynamic>?;
+      return AdminScopes.forRoles(roles, profile?['is_super_admin'] == true);
+    } catch (e) {
+      _raise(e);
+    }
+  }
+
+  /// Recent Telegram channel posts (spec §19) for the Telegram tab.
+  static Future<List<TelegramPost>> fetchTelegramPosts() async {
+    try {
+      final data = await _db
+          .from('telegram_channel_posts')
+          .select('listing_id,posted_at,listings(title)')
+          .order('posted_at', ascending: false)
+          .limit(20);
+      return data.map(TelegramPost.fromJson).toList(growable: false);
+    } catch (e) {
+      _raise(e);
+    }
+  }
+
+  /// System-health probes (spec SS23): DB, storage and telegram failures today.
+  static Future<SystemHealth> fetchSystemHealth() async {
+    try {
+      final today = DateTime.now();
+      final todayStart = DateTime(today.year, today.month, today.day)
+          .toUtc()
+          .toIso8601String();
+      final results = await Future.wait<Object>([
+        _db.from('listings').select('id').limit(1),
+        AppSupabase.client.storage.from('listing-images').list(
+          path: '',
+          searchOptions: const SearchOptions(limit: 1),
+        ),
+        _db
+            .from('telegram_delivery_log')
+            .select('id')
+            .eq('ok', false)
+            .gte('created_at', todayStart)
+            .count(CountOption.exact),
+      ]);
+      int errs = 0;
+      final tg = results[2] as PostgrestResponse<PostgrestList>;
+      errs = tg.count;
+      return SystemHealth(
+        dbOk: true,
+        storageOk: true,
+        tgErrorsToday: errs,
+      );
+    } catch (e) {
+      _raise(e);
+    }
+  }
+
+  /// Marketplace settings (`app_settings`) — read as `key → value`.
+  static Future<Map<String, Object>> fetchAppSettings() async {
+    try {
+      final data = await _db.from('app_settings').select('key,value');
+      final out = <String, Object>{};
+      for (final row in data) {
+        final key = row['key'] as String?;
+        final value = row['value'];
+        if (key == null || value == null) continue;
+        out[key] = value;
+      }
+      return out;
+    } catch (e) {
+      _raise(e);
+    }
+  }
+
+  /// Toggle a marketplace setting (admin write, mirrored in the audit log).
+  static Future<void> setAppSetting(String key, Object value) async {
+    try {
+      await _db.from('app_settings').upsert({
+        'key': key,
+        'value': value,
+        'updated_by': _db.auth.currentUser?.id,
+      });
+      unawaited(logAdminAction(
+        action: 'setting_changed',
+        entityType: 'app_settings',
+        entityId: key,
+        newValue: {'value': value},
+      ));
+    } catch (e) {
+      _raise(e);
+    }
+  }
+
+  /// Request a role grant/revoke (spec SS22, super-admin + emailed code).
+  /// Returns a human-oriented error code string, or null on success.
+  static Future<String?> requestRoleChange({
+    required String targetUserId,
+    required String role,
+    required String action,
+  }) async {
+    try {
+      final res = await _db.rpc('admin_request_role_change', params: {
+        '_target_user_id': targetUserId,
+        '_role': role,
+        '_action': action,
+      });
+      final map = (res == null ? const {} : Map<String, dynamic>.from(res as Map));
+      if (map['ok'] == true) return null;
+      return map['error'] as String? ?? 'role_change_failed';
+    } catch (e) {
+      _raise(e);
+    }
+  }
+
+  /// Confirm a role change with the emailed 6-digit code.
+  /// Returns a human-oriented error code string, or null on success.
+  static Future<String?> confirmRoleChange(String code) async {
+    try {
+      final res = await _db.rpc('admin_confirm_role_change', params: {'_code': code});
+      final map = (res == null ? const {} : Map<String, dynamic>.from(res as Map));
+      if (map['ok'] == true) return null;
+      return map['error'] as String? ?? 'role_change_failed';
     } catch (e) {
       _raise(e);
     }
@@ -2235,16 +2733,14 @@ class SupabaseApi {
 
   // ── Misc ────────────────────────────────────────────────────────────────
 
-  /// Mirrors RN `isAdmin` in `mobile/src/lib/admin.ts`: the `has_role` RPC is
-  /// granted to authenticated (20260802081500) and reflects the same admin
-  /// grant used by every admin RLS policy.
+  /// Mirrors web `isAdminQuery` + `adminScopesForRoles`: true when the user
+  /// holds any admin-ish role (admin, moderator, verification, category
+  /// manager, analytics) or the super-admin flag. Tab access is then narrowed
+  /// per scope in the admin screen.
   static Future<bool> isAdmin(String userId) async {
     try {
-      final res = await _db.rpc(
-        'has_role',
-        params: {'_user_id': userId, '_role': 'admin'},
-      );
-      return res == true;
+      final scopes = await fetchAdminScopes(userId);
+      return scopes.isNotEmpty;
     } catch (e) {
       _raise(e);
     }

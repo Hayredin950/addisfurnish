@@ -56,4 +56,51 @@ abstract class AdminRepository {
   Future<List<CategoryCount>> getTopSearches();
 
   Future<String?> signedDocumentUrl(String path);
+
+  /// Extended panel (web /admin parity).
+
+  Future<Set<String>> getScopes(String userId);
+
+  Future<AdminActionCounts> getActionCounts();
+
+  Future<HealthStats> getHealthStats();
+
+  Future<List<CategoryPerformance>> getCategoryPerformance();
+
+  Future<List<SellerPerformanceRow>> getSellerPerformance();
+
+  Future<List<AuditLogEntry>> getAuditLog();
+
+  Future<List<AdminDispute>> getDisputes();
+
+  Future<void> resolveDispute(String id, String status, {String? resolution});
+
+  Future<void> logAdminAction({
+    required String action,
+    required String entityType,
+    String? entityId,
+    Object? oldValue,
+    Object? newValue,
+    String? reason,
+  });
+
+  Future<List<AcquisitionRow>> getAcquisition(int rangeDays);
+
+  Future<List<TelegramPost>> getTelegramPosts();
+
+  /// Settings tab (web /admin Settings parity).
+
+  Future<SystemHealth> getSystemHealth();
+
+  Future<Map<String, Object>> getSettings();
+
+  Future<void> setSetting(String key, Object value);
+
+  Future<String?> requestRoleChange({
+    required String targetUserId,
+    required String role,
+    required String action,
+  });
+
+  Future<String?> confirmRoleChange(String code);
 }
