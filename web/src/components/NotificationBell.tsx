@@ -97,7 +97,7 @@ export function NotificationBell() {
           variant="outline"
           size="icon"
           aria-label={unread > 0 ? `${t("nav.notifications")} (${unread})` : t("nav.notifications")}
-          className="relative"
+          className="relative shrink-0"
         >
           <Bell className="h-4 w-4" />
           {unread > 0 ? (
