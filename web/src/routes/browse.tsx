@@ -290,14 +290,14 @@ function Browse() {
               />
             </div>
 
-            {/* Mobile Categories (Scrollable) */}
-            <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] lg:hidden [&::-webkit-scrollbar]:hidden">
+            {/* Mobile Categories (Wrapping) */}
+            <div className="flex flex-wrap gap-2 pb-1 lg:hidden">
               {roots.map((c) => (
                 <Link
                   key={c.id}
                   to="/browse"
                   search={(prev) => ({ ...prev, category: c.slug })}
-                  className={`whitespace-nowrap rounded-full border px-4 py-1.5 text-sm font-medium transition-colors ${
+                  className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
                     search.category === c.slug
                       ? "border-primary bg-primary text-primary-foreground"
                       : "border-input bg-card hover:bg-accent"
