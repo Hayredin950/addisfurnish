@@ -290,21 +290,35 @@ function Browse() {
               />
             </div>
 
-            {/* Mobile Categories (Wrapping) */}
+            {/* Mobile Sort Options (Wrapping Chips) */}
             <div className="flex flex-wrap gap-2 pb-1 lg:hidden">
-              {roots.map((c) => (
-                <Link
-                  key={c.id}
-                  to="/browse"
-                  search={(prev) => ({ ...prev, category: c.slug })}
-                  className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
-                    search.category === c.slug
+              {[
+                { key: "newest", label: t("browse.newest") },
+                { key: "price-asc", label: t("browse.priceAsc") },
+                { key: "price-desc", label: t("browse.priceDesc") },
+                { key: "viewed", label: t("browse.mostViewed") },
+                { key: "nearest", label: t("browse.nearest") },
+              ].map((o) => (
+                <button
+                  key={o.key}
+                  type="button"
+                  onClick={() => {
+                    if (search.sort === o.key && o.key !== "newest") set({ sort: "newest" });
+                    else if (o.key === "nearest") {
+                      set({ sort: "nearest" });
+                      askLocation();
+                    } else set({ sort: o.key });
+                  }}
+                  className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+                    search.sort === o.key
                       ? "border-primary bg-primary text-primary-foreground"
                       : "border-input bg-card hover:bg-accent"
                   }`}
                 >
-                  {categoryName(c, lang)}
-                </Link>
+                  {o.key === "nearest" ? <LocateFixed className="h-3 w-3" /> : null}
+                  {o.label}
+                  {search.sort === o.key && o.key !== "newest" ? <X className="h-3 w-3" /> : null}
+                </button>
               ))}
             </div>
 
@@ -344,25 +358,27 @@ function Browse() {
                   </SheetContent>
                 </Sheet>
 
-                {/* Sort Dropdown */}
-                <Select
-                  value={search.sort ?? "newest"}
-                  onValueChange={(v) => {
-                    set({ sort: v });
-                    if (v === "nearest") askLocation();
-                  }}
-                >
-                  <SelectTrigger className="h-9 w-[140px] rounded-full bg-card lg:w-44">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="newest">{t("browse.newest")}</SelectItem>
-                    <SelectItem value="price-asc">{t("browse.priceAsc")}</SelectItem>
-                    <SelectItem value="price-desc">{t("browse.priceDesc")}</SelectItem>
-                    <SelectItem value="viewed">{t("browse.mostViewed")}</SelectItem>
-                    <SelectItem value="nearest">{t("browse.nearest")}</SelectItem>
-                  </SelectContent>
-                </Select>
+                {/* Sort Dropdown (Desktop only) */}
+                <div className="hidden lg:block">
+                  <Select
+                    value={search.sort ?? "newest"}
+                    onValueChange={(v) => {
+                      set({ sort: v });
+                      if (v === "nearest") askLocation();
+                    }}
+                  >
+                    <SelectTrigger className="h-9 w-44 rounded-full bg-card">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="newest">{t("browse.newest")}</SelectItem>
+                      <SelectItem value="price-asc">{t("browse.priceAsc")}</SelectItem>
+                      <SelectItem value="price-desc">{t("browse.priceDesc")}</SelectItem>
+                      <SelectItem value="viewed">{t("browse.mostViewed")}</SelectItem>
+                      <SelectItem value="nearest">{t("browse.nearest")}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
               </div>
 
               {/* Desktop Categories & Desktop Save */}
