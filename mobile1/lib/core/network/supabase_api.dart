@@ -1956,25 +1956,117 @@ class SupabaseApi {
 
   // ── Admin moderation (reports, verification, users, categories) ─────────
 
-  static Future<List<AdminReport>> fetchAdminReports() async {
+  /// The reports queue (web `admin-reports-v2`): full lifecycle with status
+  /// filters. `status` mirrors the web chips — 'open' resolves to 'pending',
+  /// 'all' fetches the whole lifecycle, anything else filters by that exact
+  /// status.
+  ///
+  /// Reporter names are NOT embedded via `profiles(...)`: `reports` has two
+  /// relationships to `profiles` (reporter and reported user) and the deployed
+  /// FK on `reporter_id` isn't reliably named, so any embed — hinted or bare —
+  /// fails (`"more than one relationship was found"` / `"could not find a
+  /// relationship ... in the schema cache"`). Instead the reporter names come
+  /// from a separate lightweight `profiles` query keyed on the report rows.
+  static Future<List<AdminReport>> fetchAdminReports({String status = 'pending'}) async {
     try {
-      final data = await _db
+      var q = _db
           .from('reports')
-          .select('*, listings(title,id), profiles(full_name,shop_name)')
-          .eq('status', 'pending')
-          .order('created_at', ascending: false);
+          .select(
+            'id,reason,details,status,resolution,created_at,listing_id,reported_user_id,reporter_id,'
+            'listings(id,title)',
+          );
+      if (status == 'open') {
+        q = q.eq('status', 'pending');
+      } else if (status != 'all') {
+        q = q.eq('status', status);
+      }
+      final data = await q.order('created_at', ascending: false).limit(200);
+
+      final reporterIds =
+          data.map((r) => r['reporter_id'] as String?).whereType<String>().toSet().toList();
+      if (reporterIds.isNotEmpty) {
+        final profiles = await _db
+            .from('profiles')
+            .select('id,full_name,shop_name')
+            .inFilter('id', reporterIds);
+        final byReporter = <String, Map<String, dynamic>>{
+          for (final p in profiles) p['id'] as String: p,
+        };
+        for (final row in data) {
+          final reporterId = row['reporter_id'] as String?;
+          if (reporterId != null) row['profiles'] = byReporter[reporterId];
+        }
+      }
       return data.map(AdminReport.fromJson).toList(growable: false);
     } catch (e) {
       _raise(e);
     }
   }
 
-  /// Resolve or dismiss a report and close the loop with the reporter.
+  /// Listings with open reports (web `admin-flagged-listings`): pending
+  /// reports that reference a listing, grouped per listing for triage.
+  static Future<List<FlaggedListingGroup>> fetchFlaggedListings() async {
+    try {
+      final data = await _db
+          .from('reports')
+          .select(
+            'id,reason,details,status,created_at,listing_id,'
+            'listings(id,title,status,featured)',
+          )
+          .eq('status', 'pending')
+          .not('listing_id', 'is', null)
+          .order('created_at', ascending: false)
+          .limit(200);
+      final byListing = <String, FlaggedListingGroup>{};
+      for (final row in data) {
+        final listing = row['listings'] as Map<String, dynamic>?;
+        final listingId = row['listing_id'] as String?;
+        if (listingId == null) continue;
+        byListing
+            .putIfAbsent(
+              listingId,
+              () => FlaggedListingGroup(
+                listingId: listingId,
+                listingTitle: listing?['title'] as String?,
+                listingStatus: listing?['status'] as String?,
+                featured: listing?['featured'] as bool? ?? false,
+              ),
+            )
+            .reports
+            .add(AdminReport.fromJson(row));
+      }
+      return byListing.values.toList(growable: false);
+    } catch (e) {
+      _raise(e);
+    }
+  }
+
+  /// Dismiss every open report of a listing in one go (web `dismissAll`).
+  static Future<void> dismissReports(List<String> ids) async {
+    try {
+      await _db
+          .from('reports')
+          .update({'status': 'dismissed'})
+          .inFilter('id', ids);
+      unawaited(logAdminAction(
+        action: 'report_dismissed',
+        entityType: 'report',
+        entityId: ids.join(','),
+        newValue: {'status': 'dismissed'},
+      ));
+    } catch (e) {
+      _raise(e);
+    }
+  }
+
+  /// Resolve or dismiss a report and close the loop with the reporter
+  /// (web maps resolve -> status `resolved`, dismiss -> `dismissed`).
   static Future<void> resolveReport(AdminReport report, String status) async {
     try {
       await _db.from('reports').update({'status': status}).eq('id', report.id);
+      final closed = status == 'resolved';
       unawaited(logAdminAction(
-        action: status == 'reviewed' ? 'report_resolved' : 'report_dismissed',
+        action: closed ? 'report_resolved' : 'report_dismissed',
         entityType: 'report',
         entityId: report.id,
         newValue: {'status': status},
@@ -1987,7 +2079,7 @@ class SupabaseApi {
             'admin_notify_user',
             params: {
               '_user_id': reporterId,
-              '_type': status == 'reviewed' ? 'report_resolved' : 'report_dismissed',
+              '_type': closed ? 'report_resolved' : 'report_dismissed',
               '_payload': {
                 'title': report.listingTitle ?? report.profileShopName ?? report.reason,
                 if (listingId != null && listingId.isNotEmpty) 'listingId': listingId,

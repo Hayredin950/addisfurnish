@@ -9,10 +9,11 @@ import '../domain/admin_repository.dart';
 import 'admin_screen.dart' show ReportsTab;
 import 'admin_widgets.dart';
 
-/// Moderation tab — the reports queue and the disputes queue behind a toggle,
-/// mirroring the web moderation area (spec §10 / §12). Reports reuse the
-/// existing [ReportsTab]; disputes get their own queue with deadline + evidence
-/// and resolve/dismiss actions that record into the audit log.
+/// Moderation tab — the reports queue, flagged listings and the disputes
+/// queue behind a toggle, mirroring the web moderation area (spec §10 / §12).
+/// Reports reuse the existing [ReportsTab]; the flagged queue groups open
+/// reports per listing ([FlaggedQueue]); disputes get their own queue with
+/// deadline + evidence and resolve/dismiss actions into the audit log.
 class ModerationTab extends StatefulWidget {
   const ModerationTab({super.key, this.initialQueue = 'reports'});
 
@@ -38,25 +39,37 @@ class _ModerationTabState extends State<ModerationTab> {
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
-          child: SegmentedButton<String>(
-            segments: [
-              ButtonSegment(
-                value: 'reports',
-                icon: const Icon(Icons.flag_outlined, size: 16),
-                label: Text(state.t('admin.tabReports')),
-              ),
-              ButtonSegment(
-                value: 'disputes',
-                icon: const Icon(Icons.gavel_outlined, size: 16),
-                label: Text(state.t('admin.tabDisputes')),
-              ),
-            ],
-            selected: {_queue},
-            onSelectionChanged: (s) => setState(() => _queue = s.first),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: SegmentedButton<String>(
+              segments: [
+                ButtonSegment(
+                  value: 'reports',
+                  icon: const Icon(Icons.flag_outlined, size: 16),
+                  label: Text(state.t('admin.tabReports')),
+                ),
+                ButtonSegment(
+                  value: 'disputes',
+                  icon: const Icon(Icons.gavel_outlined, size: 16),
+                  label: Text(state.t('admin.tabDisputes')),
+                ),
+                ButtonSegment(
+                  value: 'flagged',
+                  icon: const Icon(Icons.outlined_flag, size: 16),
+                  label: Text(state.t('admin.tabFlagged')),
+                ),
+              ],
+              selected: {_queue},
+              onSelectionChanged: (s) => setState(() => _queue = s.first),
+            ),
           ),
         ),
         Expanded(
-          child: _queue == 'reports' ? const ReportsTab() : const DisputesQueue(),
+          child: switch (_queue) {
+            'reports' => const ReportsTab(),
+            'disputes' => const DisputesQueue(),
+            _ => const FlaggedQueue(),
+          },
         ),
       ],
     );
@@ -302,5 +315,177 @@ class _DisputesQueueState extends State<DisputesQueue> with AppStateMixin {
       return '${hours}h ${remaining.inMinutes.remainder(60)}m';
     }
     return '${hours ~/ 24}d ${hours.remainder(24)}h';
+  }
+}
+
+/// Flagged listings queue (web `FlaggedListingsTab`, spec §10): open reports
+/// grouped by listing for listing-level triage — dismiss all reports in one
+/// go, or feature the listing from the queue.
+class FlaggedQueue extends StatefulWidget {
+  const FlaggedQueue({super.key});
+
+  @override
+  State<FlaggedQueue> createState() => _FlaggedQueueState();
+}
+
+class _FlaggedQueueState extends State<FlaggedQueue> with AppStateMixin {
+  AdminRepository get _repo => sl<AdminRepository>();
+  List<FlaggedListingGroup>? _groups;
+  bool _loading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final groups = await _repo.getFlagged();
+      if (!mounted) return;
+      setState(() {
+        _groups = groups;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = '$e';
+      });
+    }
+  }
+
+  Future<void> _dismissAll(FlaggedListingGroup g) async {
+    try {
+      await _repo.dismissReports(g.reports.map((r) => r.id).toList());
+      if (!mounted) return;
+      adminSnack(context, AppState.instance.t('admin.flaggedDismissed'));
+      await _load();
+    } catch (e) {
+      if (!mounted) return;
+      adminSnack(context, '$e');
+    }
+  }
+
+  Future<void> _feature(FlaggedListingGroup g) async {
+    try {
+      await _repo.toggleFeatured(g.listingId, true);
+      if (!mounted) return;
+      adminSnack(context, AppState.instance.t('admin.featuredOk'));
+      await _load();
+    } catch (e) {
+      if (!mounted) return;
+      adminSnack(context, '$e');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final state = AppState.instance;
+    final groups = _groups;
+    final theme = Theme.of(context);
+    if (_loading && groups == null) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_error != null) {
+      return adminErrorView(context, _error!, _load);
+    }
+    if (groups!.isEmpty) {
+      return Center(
+        child: Text(
+          state.t('admin.noFlagged'),
+          style: theme.textTheme.bodyLarge,
+        ),
+      );
+    }
+    return RefreshIndicator(
+      onRefresh: _load,
+      child: ListView.builder(
+        padding: const EdgeInsets.all(16),
+        itemCount: groups.length,
+        itemBuilder: (context, i) {
+          final g = groups[i];
+          return Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.outlined_flag, size: 18, color: theme.colorScheme.error),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          g.listingTitle ?? g.listingId,
+                          style: theme.textTheme.titleMedium,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      StatusChip(
+                        label: '${g.reports.length}'
+                            ' ${state.t(g.reports.length == 1 ? 'admin.report' : 'admin.reports').toLowerCase()}',
+                        color: theme.colorScheme.error,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  for (final r in g.reports.take(4))
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 2),
+                      child: Text(
+                        '• ${r.reason}${r.details != null ? ' — ${r.details}' : ''} · ${Fmt.timeAgo(r.createdAt)}',
+                        style: theme.textTheme.bodySmall,
+                      ),
+                    ),
+                  if (g.listingStatus != null || g.featured) ...[
+                    const SizedBox(height: 6),
+                    Row(
+                      children: [
+                        if (g.listingStatus != null)
+                          StatusChip(label: g.listingStatus!, color: theme.colorScheme.primary),
+                        if (g.featured) ...[
+                          const SizedBox(width: 6),
+                          StatusChip(
+                            label: state.t('admin.featured'),
+                            color: theme.colorScheme.tertiary,
+                          ),
+                        ],
+                      ],
+                    ),
+                  ],
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () => _dismissAll(g),
+                          child: Text(state.t('admin.dismissAll')),
+                        ),
+                      ),
+                      if (!g.featured) ...[
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: FilledButton(
+                            onPressed: () => _feature(g),
+                            child: Text(state.t('admin.feature')),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
   }
 }

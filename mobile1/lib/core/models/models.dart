@@ -712,6 +712,7 @@ class AdminReport {
     this.listingTitle,
     this.profileName,
     this.profileShopName,
+    this.resolution,
   });
 
   final String id;
@@ -724,6 +725,7 @@ class AdminReport {
   final String? listingTitle;
   final String? profileName;
   final String? profileShopName;
+  final String? resolution;
   final DateTime createdAt;
 
   String get displayTitle =>
@@ -743,9 +745,28 @@ class AdminReport {
       listingTitle: listing?['title'] as String?,
       profileName: profile?['full_name'] as String?,
       profileShopName: profile?['shop_name'] as String?,
+      resolution: json['resolution'] as String?,
       createdAt: DateTime.parse(json['created_at'] as String),
     );
   }
+}
+
+/// A listing together with its open (pending) reports — one card per flagged
+/// listing in the moderation flagged queue (web `FlaggedListingsTab`).
+class FlaggedListingGroup {
+  FlaggedListingGroup({
+    required this.listingId,
+    required this.listingTitle,
+    required this.listingStatus,
+    required this.featured,
+    List<AdminReport>? reports,
+  }) : reports = reports ?? [];
+
+  final String listingId;
+  final String? listingTitle;
+  final String? listingStatus;
+  final bool featured;
+  final List<AdminReport> reports;
 }
 
 /// A pending seller verification document awaiting admin review.

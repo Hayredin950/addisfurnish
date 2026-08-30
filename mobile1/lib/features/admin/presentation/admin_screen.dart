@@ -255,6 +255,16 @@ class _ReportsTabState extends State<ReportsTab> with AppStateMixin {
   List<AdminReport>? _reports;
   bool _loading = true;
   String? _error;
+  String _status = 'open';
+
+  static const _statusChips = [
+    ('open', 'admin.statusOpen'),
+    ('investigating', 'admin.statusInvestigating'),
+    ('escalated', 'admin.statusEscalated'),
+    ('resolved', 'admin.resolved'),
+    ('dismissed', 'admin.statusDismissed'),
+    ('all', 'admin.statusAll'),
+  ];
 
   @override
   void initState() {
@@ -268,7 +278,7 @@ class _ReportsTabState extends State<ReportsTab> with AppStateMixin {
       _error = null;
     });
     try {
-      final reports = await _repo.getReports();
+      final reports = await _repo.getReports(status: _status);
       if (!mounted) return;
       setState(() {
         _reports = reports;
@@ -297,64 +307,107 @@ class _ReportsTabState extends State<ReportsTab> with AppStateMixin {
   Widget build(BuildContext context) {
     final state = AppState.instance;
     final reports = _reports;
-    if (_loading && reports == null) {
-      return const Center(child: CircularProgressIndicator());
-    }
-    if (_error != null) {
-      return _errorView(context, _error!, _load, state);
-    }
-    if (reports!.isEmpty) {
-      return Center(
-        child: Text(state.t('admin.noReports'), style: Theme.of(context).textTheme.bodyLarge),
-      );
-    }
-    return RefreshIndicator(
-      onRefresh: _load,
-      child: ListView.builder(
-        padding: const EdgeInsets.all(16),
-        itemCount: reports.length,
-        itemBuilder: (context, i) {
-          final r = reports[i];
-          return Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(r.displayTitle, style: Theme.of(context).textTheme.titleMedium),
-                  const SizedBox(height: 4),
-                  Text(
-                    '${state.t('admin.reportReason')}: ${r.reason} · ${Fmt.timeAgo(r.createdAt)}',
-                    style: Theme.of(context).textTheme.bodySmall,
+    final theme = Theme.of(context);
+    final loading = _loading && reports == null;
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                for (final (value, key) in _statusChips) ...[
+                  ChoiceChip(
+                    label: Text(state.t(key)),
+                    selected: _status == value,
+                    onSelected: (_) {
+                      if (_status == value) return;
+                      setState(() => _status = value);
+                      _load();
+                    },
                   ),
-                  if (r.details != null) ...[
-                    const SizedBox(height: 4),
-                    Text(r.details!, style: Theme.of(context).textTheme.bodySmall),
-                  ],
-                  const SizedBox(height: 10),
-                  Row(
-                    children: [
-                      Expanded(
-                        child: OutlinedButton(
-                          onPressed: () => _act(r, 'dismissed'),
-                          child: Text(state.t('admin.dismiss')),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: FilledButton(
-                          onPressed: () => _act(r, 'reviewed'),
-                          child: Text(state.t('admin.resolved')),
-                        ),
-                      ),
-                    ],
-                  ),
+                  const SizedBox(width: 8),
                 ],
-              ),
+              ],
             ),
-          );
-        },
-      ),
+          ),
+        ),
+        Expanded(
+          child: loading
+              ? const Center(child: CircularProgressIndicator())
+              : _error != null
+                  ? _errorView(context, _error!, _load, state)
+                  : reports!.isEmpty
+                      ? Center(
+                          child: Text(
+                            state.t('admin.noReports'),
+                            style: theme.textTheme.bodyLarge,
+                          ),
+                        )
+                      : RefreshIndicator(
+                          onRefresh: _load,
+                          child: ListView.builder(
+                            padding: const EdgeInsets.all(16),
+                            itemCount: reports.length,
+                            itemBuilder: (context, i) {
+                              final r = reports[i];
+                              return Card(
+                                child: Padding(
+                                  padding: const EdgeInsets.all(16),
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      Text(r.displayTitle,
+                                          style: theme.textTheme.titleMedium),
+                                      const SizedBox(height: 4),
+                                      Text(
+                                        '${state.t('admin.reportReason')}: ${r.reason} · ${Fmt.timeAgo(r.createdAt)}',
+                                        style: theme.textTheme.bodySmall,
+                                      ),
+                                      if (r.details != null) ...[
+                                        const SizedBox(height: 4),
+                                        Text(r.details!,
+                                            style: theme.textTheme.bodySmall),
+                                      ],
+                                      if (r.resolution != null) ...[
+                                        const SizedBox(height: 4),
+                                        Text(
+                                          '${state.t('admin.resolution')}: ${r.resolution}',
+                                          style: theme.textTheme.bodySmall,
+                                        ),
+                                      ],
+                                      const SizedBox(height: 10),
+                                      Row(
+                                        children: [
+                                          Expanded(
+                                            child: OutlinedButton(
+                                              onPressed: () =>
+                                                  _act(r, 'dismissed'),
+                                              child:
+                                                  Text(state.t('admin.dismiss')),
+                                            ),
+                                          ),
+                                          const SizedBox(width: 8),
+                                          Expanded(
+                                            child: FilledButton(
+                                              onPressed: () =>
+                                                  _act(r, 'resolved'),
+                                              child:
+                                                  Text(state.t('admin.resolved')),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+        ),
+      ],
     );
   }
 }

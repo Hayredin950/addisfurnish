@@ -154,7 +154,7 @@ class _DashboardTabState extends State<DashboardTab> with AppStateMixin {
       (Icons.flag_outlined, state.t('admin.tierReports'), a.reports,
           theme.colorScheme.error, () => _openModeration('reports')),
       (Icons.outlined_flag, state.t('admin.tierFlagged'), a.flagged,
-          theme.colorScheme.tertiary, () => _openModeration('reports')),
+          theme.colorScheme.tertiary, () => _openModeration('flagged')),
       (Icons.gavel_outlined, state.t('admin.tierDisputes'), a.disputes,
           theme.colorScheme.primary, () => _openModeration('disputes')),
       (Icons.shield_outlined, state.t('admin.tierVerifications'), a.verifications,

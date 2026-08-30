@@ -7,9 +7,13 @@ import '../../../core/models/models.dart';
 abstract class AdminRepository {
   Future<bool> isAdmin(String userId);
 
-  Future<List<AdminReport>> getReports();
+  Future<List<AdminReport>> getReports({String status = 'pending'});
 
   Future<void> resolveReport(AdminReport report, String status);
+
+  Future<List<FlaggedListingGroup>> getFlagged();
+
+  Future<void> dismissReports(List<String> ids);
 
   Future<List<AdminVerificationDoc>> getVerificationQueue();
 

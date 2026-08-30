@@ -8,11 +8,20 @@ class AdminRepositoryImpl implements AdminRepository {
   Future<bool> isAdmin(String userId) => SupabaseApi.isAdmin(userId);
 
   @override
-  Future<List<AdminReport>> getReports() => SupabaseApi.fetchAdminReports();
+  Future<List<AdminReport>> getReports({String status = 'pending'}) =>
+      SupabaseApi.fetchAdminReports(status: status);
 
   @override
   Future<void> resolveReport(AdminReport report, String status) =>
       SupabaseApi.resolveReport(report, status);
+
+  @override
+  Future<List<FlaggedListingGroup>> getFlagged() =>
+      SupabaseApi.fetchFlaggedListings();
+
+  @override
+  Future<void> dismissReports(List<String> ids) =>
+      SupabaseApi.dismissReports(ids);
 
   @override
   Future<List<AdminVerificationDoc>> getVerificationQueue() =>
