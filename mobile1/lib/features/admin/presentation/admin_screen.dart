@@ -130,6 +130,8 @@ class _AdminScreenState extends State<AdminScreen> with AppStateMixin {
 
   void _openVerification() => setState(() => _tab = AdminTab.verification);
 
+  void _openSettings() => setState(() => _tab = AdminTab.settings);
+
   @override
   Widget build(BuildContext context) {
     final state = AppState.instance;
@@ -152,7 +154,11 @@ class _AdminScreenState extends State<AdminScreen> with AppStateMixin {
                         key: ValueKey(_moderationQueue),
                       ),
                     AdminTab.verification => const VerificationTab(),
-                    AdminTab.users => UsersTab(initialFilter: _usersFilter),
+                    AdminTab.users => UsersTab(
+                      initialFilter: _usersFilter,
+                      canManageAccess: _tabAllowed(AdminTab.settings),
+                      onOpenSettings: _openSettings,
+                    ),
                     AdminTab.categories => const CategoriesTab(),
                     AdminTab.listings => const ListingsTab(),
                     AdminTab.audit => const AuditLogTab(),
@@ -643,19 +649,22 @@ class _VerificationTabState extends State<VerificationTab> with AppStateMixin {
 // ── Users ────────────────────────────────────────────────────────────────
 
 class UsersTab extends StatefulWidget {
-  const UsersTab({super.key, this.initialFilter = 'all'});
+  const UsersTab({
+    super.key,
+    this.initialFilter = 'all',
+    this.canManageAccess = false,
+    this.onOpenSettings,
+  });
 
   final String initialFilter;
 
+  /// Whether the signed-in admin can reach Settings → Manage access.
+  final bool canManageAccess;
+
+  final VoidCallback? onOpenSettings;
+
   @override
   State<UsersTab> createState() => _UsersTabState();
-}
-
-class _BanOption {
-  const _BanOption(this.key, this.hours, this.labelKey);
-  final String key;
-  final int hours;
-  final String labelKey;
 }
 
 class _UsersTabState extends State<UsersTab> with AppStateMixin {
@@ -666,29 +675,11 @@ class _UsersTabState extends State<UsersTab> with AppStateMixin {
   String _filter = 'all';
   String _search = '';
 
-  AdminUser? _banTarget;
-
   @override
   void initState() {
     super.initState();
     _filter = widget.initialFilter;
     _load();
-  }
-
-  static const _options = [
-    _BanOption('24h', 24, '24h'),
-    _BanOption('7d', 24 * 7, '7d'),
-    _BanOption('30d', 24 * 30, '30d'),
-    _BanOption('permanent', 24 * 365 * 10, 'admin.banPermanent'),
-  ];
-  _BanOption _banDuration = _options.first;
-  final _banReason = TextEditingController();
-  bool _busy = false;
-
-  @override
-  void dispose() {
-    _banReason.dispose();
-    super.dispose();
   }
 
   Future<void> _load() async {
@@ -723,42 +714,6 @@ class _UsersTabState extends State<UsersTab> with AppStateMixin {
           (u.phone ?? '').toLowerCase().contains(q) ||
           (u.city ?? '').toLowerCase().contains(q);
     }).toList();
-  }
-
-  Future<void> _revoke(AdminUser u) async {
-    try {
-      await _repo.revokeSessions(u.id);
-      _snack(context, AppState.instance.t('admin.sessionsRevoked'));
-    } catch (e) {
-      _snack(context, '$e');
-    }
-  }
-
-  Future<void> _confirmBan() async {
-    final target = _banTarget;
-    if (target == null) return;
-    setState(() => _busy = true);
-    try {
-      await _repo.banUser(target.id, _banDuration.hours, reason: _banReason.text.trim());
-      _snack(context, AppState.instance.t('admin.banned'));
-      setState(() => _banTarget = null);
-      _banReason.clear();
-      await _load();
-    } catch (e) {
-      _snack(context, '$e');
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  Future<void> _lift(AdminUser u) async {
-    try {
-      await _repo.unbanUser(u.id);
-      _snack(context, AppState.instance.t('admin.unbanned'));
-      await _load();
-    } catch (e) {
-      _snack(context, '$e');
-    }
   }
 
   @override
@@ -843,7 +798,6 @@ class _UsersTabState extends State<UsersTab> with AppStateMixin {
 
   Widget _userCard(BuildContext context, AppState state, AdminUser u) {
     final theme = Theme.of(context);
-    final myId = AppState.instance.userId;
     return Card(
       margin: const EdgeInsets.symmetric(vertical: 6),
       child: Padding(
@@ -896,96 +850,25 @@ class _UsersTabState extends State<UsersTab> with AppStateMixin {
                 icon: const Icon(Icons.storefront_outlined, size: 16),
                 label: Text(state.t('admin.visitShop')),
               ),
-            if (_banTarget?.id == u.id) _banForm(context, state, u) else _userActions(context, state, u, myId),
+            if (widget.canManageAccess) _accessCta(context, state),
           ],
         ),
       ),
     );
   }
 
-  Widget _banForm(BuildContext context, AppState state, AdminUser u) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const SizedBox(height: 8),
-        Text(state.t('admin.banDuration'), style: Theme.of(context).textTheme.labelMedium),
-        const SizedBox(height: 4),
-        Wrap(
-          spacing: 6,
-          children: [
-            for (final o in _options)
-              ChoiceChip(
-                label: Text(state.t(o.labelKey)),
-                selected: _banDuration.key == o.key,
-                onSelected: (_) => setState(() => _banDuration = o),
-              ),
-          ],
-        ),
-        const SizedBox(height: 8),
-        TextField(
-          controller: _banReason,
-          decoration: InputDecoration(
-            hintText: state.t('admin.banReasonPlaceholder'),
-            border: const OutlineInputBorder(),
-          ),
-        ),
-        const SizedBox(height: 8),
-        Row(
-          children: [
-            Expanded(
-              child: OutlinedButton(
-                onPressed: _busy ? null : () => setState(() => _banTarget = null),
-                child: Text(state.t('common.cancel')),
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: FilledButton(
-                style: FilledButton.styleFrom(
-                  backgroundColor: Theme.of(context).colorScheme.error,
-                ),
-                onPressed: _busy ? null : _confirmBan,
-                child: _busy
-                    ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(strokeWidth: 2))
-                    : Text(state.t('admin.ban')),
-              ),
-            ),
-          ],
-        ),
-      ],
-    );
-  }
-
-  Widget _userActions(BuildContext context, AppState state, AdminUser u, String? myId) {
+  /// The Users tab is a read-only directory — account actions (roles, email,
+  /// sessions, suspension) live in Settings → Manage access.
+  Widget _accessCta(BuildContext context, AppState state) {
     return Padding(
-      padding: const EdgeInsets.only(top: 8),
-      child: Row(
-        children: [
-          Expanded(
-            child: OutlinedButton(
-              onPressed: () => _revoke(u),
-              child: Text(state.t('admin.revokeSessions')),
-            ),
-          ),
-          const SizedBox(width: 8),
-          Expanded(
-            child: u.suspended
-                ? FilledButton(
-                    onPressed: () => _lift(u),
-                    child: Text(state.t('admin.unban')),
-                  )
-                : OutlinedButton(
-                    onPressed: u.id == myId
-                        ? null
-                        : () => setState(() {
-                              _banTarget = u;
-                              _banDuration = _options.first;
-                              _banReason.clear();
-                            }),
-                    child: Text(state.t('admin.ban')),
-                  ),
-          ),
-        ],
+      padding: const EdgeInsets.only(top: 10),
+      child: SizedBox(
+        width: double.infinity,
+        child: OutlinedButton.icon(
+          onPressed: widget.onOpenSettings,
+          icon: const Icon(Icons.admin_panel_settings_outlined, size: 18),
+          label: Text(state.t('admin.manageAccess')),
+        ),
       ),
     );
   }

@@ -593,6 +593,16 @@ class I18n {
     'admin.roleChangeRemoved': 'Role removed.',
     'admin.roleChangeFailed': "Couldn't complete the role change.",
     'admin.superAdminProtected': "Super admin accounts can't be changed.",
+    'admin.manageAccessHint':
+        'Search a user to change their roles, sign-in email, sessions or suspension.',
+    'admin.emailChangeUser': 'Change email',
+    'admin.emailNew': 'New email',
+    'admin.emailReason': 'Reason (optional)',
+    'admin.emailApplied': 'Email updated',
+    'admin.emailChangeFailed': "Couldn't update the email.",
+    'admin.emailInvalid': 'Enter a valid email.',
+    'admin.emailTaken': 'That email is already in use.',
+    'admin.emailUnchanged': 'That is already their email.',
 
     // Settings – marketplace rules & system health
     'admin.marketplaceSettings': 'Marketplace settings',
@@ -1240,6 +1250,16 @@ class I18n {
     'admin.roleChangeRemoved': 'ሚና ተወግዷል።',
     'admin.roleChangeFailed': 'የሚና ለውጡን ማጠናቀቅ አልተቻለም።',
     'admin.superAdminProtected': 'የከፍተኛ አስተዳዳሪ መለያዎችን መቀየር አይቻልም።',
+    'admin.manageAccessHint':
+        'ሚናዎችን፣ የመግቢያ ኢሜይልን፣ ክፍለ-ጊዜዎችን ወይም እገዳን ለመቀየር ተጠቃሚ ይፈልጉ።',
+    'admin.emailChangeUser': 'ኢሜይል ይቀይሩ',
+    'admin.emailNew': 'አዲስ ኢሜይል',
+    'admin.emailReason': 'ምክንያት (አማራጭ)',
+    'admin.emailApplied': 'ኢሜይል ተዘምኗል',
+    'admin.emailChangeFailed': 'ኢሜይሉን ማዘመን አልተቻለም።',
+    'admin.emailInvalid': 'ትክክለኛ ኢሜይል ያስገቡ።',
+    'admin.emailTaken': 'ያ ኢሜይል ቀድሞ ጥቅም ላይ ውሏል።',
+    'admin.emailUnchanged': 'ያ የእነሱ ኢሜይል ነው።',
 
     // Settings – marketplace rules & system health
     'admin.marketplaceSettings': 'የገበያ ቅንብሮች',

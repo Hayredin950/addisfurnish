@@ -239,8 +239,9 @@ class _SettingsTabState extends State<SettingsTab> with AppStateMixin {
   }
 }
 
-/// Search + pick a user and grant/revoke admin roles. Confirmation is a
-/// 6-digit code emailed to the acting super admin (web UserAccessManager).
+/// Search + pick a user and manage access: grant/revoke admin roles
+/// (confirmed by an emailed 6-digit code), change the sign-in email, revoke
+/// sessions, and suspend/lift (web UserAccessManager parity).
 class _RoleManager extends StatefulWidget {
   const _RoleManager({required this.onChanged});
 
@@ -274,6 +275,23 @@ class _RoleManagerState extends State<_RoleManager> with AppStateMixin {
   String? _pendingAction; // 'grant' | 'revoke'
   final _codeController = TextEditingController();
 
+  // Suspension flow.
+  bool _banDialogOpen = false;
+  int _banHours = 24;
+  static const _banOptions = <(String, String, int)>[
+    ('24h', '24h', 24),
+    ('7d', '7d', 24 * 7),
+    ('30d', '30d', 24 * 30),
+    ('ban_permanent', 'admin.banPermanent', 24 * 365 * 10),
+  ];
+  final _banReason = TextEditingController();
+
+  // Email-change flow.
+  bool _emailDialogOpen = false;
+  final _emailController = TextEditingController();
+  final _emailReason = TextEditingController();
+  static final _emailRe = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
+
   String _roleLabel(String role) => AppState.instance.t(switch (role) {
         'admin' => 'admin.roleAdmin',
         'moderator' => 'admin.roleModerator',
@@ -291,11 +309,13 @@ class _RoleManagerState extends State<_RoleManager> with AppStateMixin {
   @override
   void dispose() {
     _codeController.dispose();
+    _banReason.dispose();
+    _emailController.dispose();
+    _emailReason.dispose();
     super.dispose();
   }
 
-  Future<void> _loadUsers() async {
-    setState(() => _loadingUsers = true);
+  Future<List<AdminUser>> _fetchUsers() async {
     try {
       final users = await _repo.getUsers();
       if (mounted) {
@@ -304,9 +324,32 @@ class _RoleManagerState extends State<_RoleManager> with AppStateMixin {
           _loadingUsers = false;
         });
       }
-    } catch (e) {
+      return users;
+    } catch (_) {
       if (mounted) setState(() => _loadingUsers = false);
+      return const [];
     }
+  }
+
+  Future<void> _loadUsers() async {
+    setState(() => _loadingUsers = true);
+    await _fetchUsers();
+  }
+
+  /// Refresh the picker and re-select the same user after an access change so
+  /// the freshly fetched suspension/role state is shown.
+  Future<void> _afterAction() async {
+    final id = _selected?.id;
+    final users = await _fetchUsers();
+    if (!mounted || id == null) return;
+    AdminUser? fresh;
+    for (final u in users) {
+      if (u.id == id) {
+        fresh = u;
+        break;
+      }
+    }
+    setState(() => _selected = fresh ?? _selected);
   }
 
   List<AdminUser> get _pickable {
@@ -397,6 +440,90 @@ class _RoleManagerState extends State<_RoleManager> with AppStateMixin {
     });
   }
 
+  Future<void> _revokeSessions() async {
+    final u = _selected;
+    if (u == null) return;
+    try {
+      await _repo.revokeSessions(u.id);
+      if (mounted) adminSnack(context, AppState.instance.t('admin.sessionsRevoked'));
+    } catch (e) {
+      if (mounted) adminSnack(context, '$e');
+    }
+  }
+
+  void _openBanDialog() {
+    setState(() {
+      _banHours = 24;
+      _banReason.clear();
+      _banDialogOpen = true;
+    });
+  }
+
+  Future<void> _applyBan() async {
+    final u = _selected;
+    if (u == null) return;
+    setState(() => _busy = true);
+    try {
+      await _repo.banUser(u.id, _banHours, reason: _banReason.text.trim());
+      if (!mounted) return;
+      adminSnack(context, AppState.instance.t('admin.banned'));
+      setState(() => _banDialogOpen = false);
+      await _afterAction();
+    } catch (e) {
+      if (mounted) adminSnack(context, '$e');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _liftBan() async {
+    final u = _selected;
+    if (u == null) return;
+    try {
+      await _repo.unbanUser(u.id);
+      if (mounted) adminSnack(context, AppState.instance.t('admin.unbanned'));
+      await _afterAction();
+    } catch (e) {
+      if (mounted) adminSnack(context, '$e');
+    }
+  }
+
+  void _openEmailDialog() {
+    setState(() {
+      _emailController.clear();
+      _emailReason.clear();
+      _emailDialogOpen = true;
+    });
+  }
+
+  String _emailError(AppState app, String code) => app.t(switch (code) {
+        'invalid_email' => 'admin.emailInvalid',
+        'email_taken' => 'admin.emailTaken',
+        'unchanged' => 'admin.emailUnchanged',
+        _ => 'admin.emailChangeFailed',
+      });
+
+  Future<void> _applyEmail() async {
+    final u = _selected;
+    final email = _emailController.text.trim();
+    if (u == null) return;
+    if (!_emailRe.hasMatch(email)) {
+      adminSnack(context, AppState.instance.t('admin.emailInvalid'));
+      return;
+    }
+    setState(() => _busy = true);
+    final err = await _repo.setUserEmail(u.id, email, reason: _emailReason.text.trim());
+    if (!mounted) return;
+    setState(() => _busy = false);
+    if (err != null) {
+      adminSnack(context, _emailError(AppState.instance, err));
+      return;
+    }
+    setState(() => _emailDialogOpen = false);
+    adminSnack(context, AppState.instance.t('admin.emailApplied'));
+    await _afterAction();
+  }
+
   @override
   Widget build(BuildContext context) {
     final app = AppState.instance;
@@ -472,6 +599,12 @@ class _RoleManagerState extends State<_RoleManager> with AppStateMixin {
 
         // Role change dialog (email-code confirmed).
         if (_dialogOpen) _roleDialog(context, app),
+
+        // Suspension dialog.
+        if (_banDialogOpen) _banDialog(context, app),
+
+        // Email-change dialog.
+        if (_emailDialogOpen) _emailDialog(context, app),
       ],
     );
   }
@@ -553,9 +686,123 @@ class _RoleManagerState extends State<_RoleManager> with AppStateMixin {
                       )),
               ],
             ),
+            if (!protected) ...[
+              const Divider(height: 24),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: _busy ? null : _revokeSessions,
+                    icon: const Icon(Icons.logout, size: 18),
+                    label: Text(app.t('admin.revokeSessions')),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: _busy ? null : _openEmailDialog,
+                    icon: const Icon(Icons.mail_outline, size: 18),
+                    label: Text(app.t('admin.emailChangeUser')),
+                  ),
+                  if (suspended)
+                    OutlinedButton.icon(
+                      onPressed: _busy ? null : _liftBan,
+                      icon: const Icon(Icons.lock_open_outlined, size: 18),
+                      label: Text(app.t('admin.unban')),
+                    )
+                  else
+                    OutlinedButton.icon(
+                      onPressed: _busy ? null : _openBanDialog,
+                      icon: const Icon(Icons.block, size: 18),
+                      label: Text(app.t('admin.ban')),
+                    ),
+                ],
+              ),
+            ],
           ],
         ),
       ),
+    );
+  }
+
+  Widget _banDialog(BuildContext context, AppState app) {
+    return AlertDialog(
+      title: Text(app.t('admin.ban')),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(app.t('admin.banDuration'), style: Theme.of(context).textTheme.labelMedium),
+          const SizedBox(height: 4),
+          Wrap(
+            spacing: 6,
+            children: [
+              for (final (_, label, hours) in _banOptions)
+                ChoiceChip(
+                  label: Text(app.t(label)),
+                  selected: _banHours == hours,
+                  onSelected: (_) => setState(() => _banHours = hours),
+                ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _banReason,
+            decoration: InputDecoration(
+              hintText: app.t('admin.banReasonPlaceholder'),
+              border: const OutlineInputBorder(),
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: _busy ? null : () => setState(() => _banDialogOpen = false),
+          child: Text(app.t('common.cancel')),
+        ),
+        FilledButton(
+          style: FilledButton.styleFrom(backgroundColor: Theme.of(context).colorScheme.error),
+          onPressed: _busy ? null : _applyBan,
+          child: Text(app.t('admin.ban')),
+        ),
+      ],
+    );
+  }
+
+  Widget _emailDialog(BuildContext context, AppState app) {
+    return AlertDialog(
+      title: Text(app.t('admin.emailChangeUser')),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          TextField(
+            controller: _emailController,
+            autofocus: true,
+            keyboardType: TextInputType.emailAddress,
+            decoration: InputDecoration(
+              labelText: app.t('admin.emailNew'),
+              border: const OutlineInputBorder(),
+            ),
+          ),
+          const SizedBox(height: 8),
+          TextField(
+            controller: _emailReason,
+            decoration: InputDecoration(
+              labelText: app.t('admin.emailReason'),
+              border: const OutlineInputBorder(),
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: _busy ? null : () => setState(() => _emailDialogOpen = false),
+          child: Text(app.t('common.cancel')),
+        ),
+        FilledButton(
+          onPressed: _busy ? null : _applyEmail,
+          child: Text(app.t('admin.emailChangeUser')),
+        ),
+      ],
     );
   }
 

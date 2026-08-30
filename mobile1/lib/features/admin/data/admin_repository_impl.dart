@@ -49,6 +49,10 @@ class AdminRepositoryImpl implements AdminRepository {
   Future<void> unbanUser(String userId) => SupabaseApi.unbanUser(userId);
 
   @override
+  Future<String?> setUserEmail(String userId, String newEmail, {String? reason}) =>
+      SupabaseApi.setUserEmail(userId, newEmail, reason: reason);
+
+  @override
   Future<List<AdminCategory>> getCategories() => SupabaseApi.fetchAdminCategories();
 
   @override

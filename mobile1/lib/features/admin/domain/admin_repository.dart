@@ -33,6 +33,10 @@ abstract class AdminRepository {
 
   Future<void> unbanUser(String userId);
 
+  /// Directly set a user's sign-in email (super admin RPC, audited).
+  /// Returns a user-facing error code string, or null on success.
+  Future<String?> setUserEmail(String userId, String newEmail, {String? reason});
+
   Future<List<AdminCategory>> getCategories();
 
   Future<void> createCategory(String name, {String? parentId, String? icon});

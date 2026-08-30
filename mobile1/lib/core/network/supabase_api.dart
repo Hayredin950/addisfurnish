@@ -2823,6 +2823,34 @@ class SupabaseApi {
     }
   }
 
+  /// Directly set a user's sign-in email (admin RPC `admin_set_user_email`,
+  /// audited). Returns a user-facing error code string, or null on success.
+  static Future<String?> setUserEmail(
+    String userId,
+    String newEmail, {
+    String? reason,
+  }) async {
+    try {
+      final res = await _db.rpc('admin_set_user_email', params: {
+        '_user_id': userId,
+        '_new_email': newEmail.trim(),
+        '_reason': reason,
+      });
+      final map = (res == null ? const {} : Map<String, dynamic>.from(res as Map));
+      if (map['ok'] != true) return map['error'] as String? ?? 'email_change_failed';
+      unawaited(logAdminAction(
+        action: 'email_changed',
+        entityType: 'user',
+        entityId: userId,
+        newValue: {'email': newEmail.trim(), 'reason': reason},
+        reason: reason,
+      ));
+      return null;
+    } catch (e) {
+      _raise(e);
+    }
+  }
+
   // ── Misc ────────────────────────────────────────────────────────────────
 
   /// Mirrors web `isAdminQuery` + `adminScopesForRoles`: true when the user
