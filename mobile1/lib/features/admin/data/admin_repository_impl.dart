@@ -74,7 +74,76 @@ class AdminRepositoryImpl implements AdminRepository {
   Future<void> deleteCategory(String id) => SupabaseApi.deleteCategory(id);
 
   @override
+  Future<List<AdminAttribute>> getAttributes() => SupabaseApi.fetchAdminAttributes();
+
+  @override
+  Future<void> createAttribute({
+    required String name,
+    String? nameAm,
+    required String type,
+    String? unit,
+    bool isFilterable = true,
+  }) =>
+      SupabaseApi.createAttribute(
+        name: name,
+        nameAm: nameAm,
+        type: type,
+        unit: unit,
+        isFilterable: isFilterable,
+      );
+
+  @override
+  Future<void> updateAttribute(String id, {String? name, String? nameAm, String? unit}) =>
+      SupabaseApi.updateAttribute(id, name: name, nameAm: nameAm, unit: unit);
+
+  @override
+  Future<void> toggleAttributeFlag(String id, String flag) =>
+      SupabaseApi.toggleAttributeFlag(id, flag);
+
+  @override
+  Future<List<AdminAttributeOption>> getAttributeOptions(String attributeId) =>
+      SupabaseApi.fetchAttributeOptions(attributeId);
+
+  @override
+  Future<void> createAttributeOption(
+    String attributeId, {
+    required String value,
+    required String label,
+    String? labelAm,
+  }) =>
+      SupabaseApi.createAttributeOption(attributeId, value: value, label: label, labelAm: labelAm);
+
+  @override
+  Future<void> toggleAttributeOption(String id) => SupabaseApi.toggleAttributeOption(id);
+
+  @override
+  Future<List<AdminCategoryAttributeDef>> getCategoryAttributeSet(String categoryId) =>
+      SupabaseApi.fetchCategoryAttributeSet(categoryId);
+
+  @override
+  Future<void> attachCategoryAttribute(String categoryId, String attributeId) =>
+      SupabaseApi.attachCategoryAttribute(categoryId, attributeId);
+
+  @override
+  Future<void> detachCategoryAttribute(String categoryId, String attributeId) =>
+      SupabaseApi.detachCategoryAttribute(categoryId, attributeId);
+
+  @override
+  Future<void> setCategoryAttributeFlag(String categoryId, String attributeId, String flag) =>
+      SupabaseApi.setCategoryAttributeFlag(categoryId, attributeId, flag);
+
+  @override
   Future<List<AdminListing>> getListings() => SupabaseApi.fetchAdminListings();
+
+  @override
+  Future<List<AdminListing>> getFeaturedListings() => SupabaseApi.fetchAdminFeaturedListings();
+
+  @override
+  Future<void> setFeaturedUntil(String id, DateTime? until) =>
+      SupabaseApi.setFeaturedUntil(id, until);
+
+  @override
+  Future<void> expireFeatured(String id) => SupabaseApi.expireFeatured(id);
 
   @override
   Future<void> toggleFeatured(String id, bool featured) =>

@@ -49,7 +49,51 @@ abstract class AdminRepository {
 
   Future<void> deleteCategory(String id);
 
+  // ── Attribute catalogue admin (web AttributeManager parity) ──────────────
+
+  Future<List<AdminAttribute>> getAttributes();
+
+  Future<void> createAttribute({
+    required String name,
+    String? nameAm,
+    required String type,
+    String? unit,
+    bool isFilterable = true,
+  });
+
+  Future<void> updateAttribute(String id, {String? name, String? nameAm, String? unit});
+
+  Future<void> toggleAttributeFlag(String id, String flag);
+
+  Future<List<AdminAttributeOption>> getAttributeOptions(String attributeId);
+
+  Future<void> createAttributeOption(
+    String attributeId, {
+    required String value,
+    required String label,
+    String? labelAm,
+  });
+
+  Future<void> toggleAttributeOption(String id);
+
+  Future<List<AdminCategoryAttributeDef>> getCategoryAttributeSet(String categoryId);
+
+  Future<void> attachCategoryAttribute(String categoryId, String attributeId);
+
+  Future<void> detachCategoryAttribute(String categoryId, String attributeId);
+
+  Future<void> setCategoryAttributeFlag(String categoryId, String attributeId, String flag);
+
   Future<List<AdminListing>> getListings();
+
+  /// Featured listings with placement deadlines (web Featured tab, spec SS20).
+  Future<List<AdminListing>> getFeaturedListings();
+
+  /// Set a featured placement deadline (`null` = permanent).
+  Future<void> setFeaturedUntil(String id, DateTime? until);
+
+  /// Unfeature a listing immediately and clear its deadline.
+  Future<void> expireFeatured(String id);
 
   Future<void> toggleFeatured(String id, bool featured);
 

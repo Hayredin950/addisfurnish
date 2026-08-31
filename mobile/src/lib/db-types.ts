@@ -464,6 +464,7 @@ export type Database = {
       };
       listings: {
         Row: {
+          attributes_json: Json | null;
           brand: string | null;
           category_id: string | null;
           city: string;
@@ -494,6 +495,7 @@ export type Database = {
           video_url: string | null;
         };
         Insert: {
+          attributes_json?: Json | null;
           brand?: string | null;
           category_id?: string | null;
           city?: string;
@@ -524,6 +526,7 @@ export type Database = {
           featured_until?: string | null;
         };
         Update: {
+          attributes_json?: Json | null;
           brand?: string | null;
           category_id?: string | null;
           city?: string;

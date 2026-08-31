@@ -963,6 +963,7 @@ class AdminCategory {
     required this.sortOrder,
     this.parentId,
     this.icon,
+    this.level,
   });
 
   final String id;
@@ -971,6 +972,7 @@ class AdminCategory {
   final String? parentId;
   final String? icon;
   final int sortOrder;
+  final int? level;
 
   factory AdminCategory.fromJson(Map<String, dynamic> json) => AdminCategory(
         id: json['id'] as String,
@@ -979,6 +981,122 @@ class AdminCategory {
         parentId: json['parent_id'] as String?,
         icon: json['icon'] as String?,
         sortOrder: (json['sort_order'] as num?)?.toInt() ?? 0,
+        level: (json['level'] as num?)?.toInt(),
+      );
+}
+
+/// Attribute catalogue row (admin "Attributes" panel, spec §8).
+class AdminAttribute {
+  const AdminAttribute({
+    required this.id,
+    required this.name,
+    required this.slug,
+    required this.type,
+    this.nameAm,
+    this.unit,
+    this.isFilterable = true,
+    this.isRequired = false,
+    this.isActive = true,
+    this.sortOrder = 0,
+  });
+
+  final String id;
+  final String name;
+  final String? nameAm;
+  final String slug;
+  final String type;
+  final String? unit;
+  final bool isFilterable;
+  final bool isRequired;
+  final bool isActive;
+  final int sortOrder;
+
+  bool get isSelect => type == 'single_select' || type == 'multi_select';
+
+  factory AdminAttribute.fromJson(Map<String, dynamic> json) => AdminAttribute(
+        id: json['id'] as String,
+        name: json['name'] as String? ?? '',
+        nameAm: json['name_am'] as String?,
+        slug: json['slug'] as String? ?? '',
+        type: json['type'] as String? ?? 'text',
+        unit: json['unit'] as String?,
+        isFilterable: (json['is_filterable'] as bool?) ?? true,
+        isRequired: (json['is_required'] as bool?) ?? false,
+        isActive: (json['is_active'] as bool?) ?? true,
+        sortOrder: (json['sort_order'] as num?)?.toInt() ?? 0,
+      );
+}
+
+/// Option of a select-type attribute (spec §10).
+class AdminAttributeOption {
+  const AdminAttributeOption({
+    required this.id,
+    required this.attributeId,
+    required this.value,
+    required this.label,
+    this.labelAm,
+    this.sortOrder = 0,
+    this.isActive = true,
+  });
+
+  final String id;
+  final String attributeId;
+  final String value;
+  final String label;
+  final String? labelAm;
+  final int sortOrder;
+  final bool isActive;
+
+  factory AdminAttributeOption.fromJson(Map<String, dynamic> json) =>
+      AdminAttributeOption(
+        id: json['id'] as String,
+        attributeId: json['attribute_id'] as String,
+        value: json['value'] as String? ?? '',
+        label: json['label'] as String? ?? '',
+        labelAm: json['label_am'] as String?,
+        sortOrder: (json['sort_order'] as num?)?.toInt() ?? 0,
+        isActive: (json['is_active'] as bool?) ?? true,
+      );
+}
+
+/// One row of the `category_attribute_set` RPC (self + ancestors, deepest wins).
+class AdminCategoryAttributeDef {
+  const AdminCategoryAttributeDef({
+    required this.attributeId,
+    required this.slug,
+    required this.name,
+    required this.type,
+    required this.isRequired,
+    required this.isFilterable,
+    required this.fromLevel,
+    this.nameAm,
+    this.unit,
+    this.sortOrder = 0,
+  });
+
+  final String attributeId;
+  final String slug;
+  final String name;
+  final String? nameAm;
+  final String type;
+  final String? unit;
+  final bool isRequired;
+  final bool isFilterable;
+  final int sortOrder;
+  final int fromLevel;
+
+  factory AdminCategoryAttributeDef.fromJson(Map<String, dynamic> json) =>
+      AdminCategoryAttributeDef(
+        attributeId: json['attribute_id'] as String,
+        slug: json['slug'] as String? ?? '',
+        name: json['name'] as String? ?? '',
+        nameAm: json['name_am'] as String?,
+        type: json['type'] as String? ?? 'text',
+        unit: json['unit'] as String?,
+        isRequired: (json['is_required'] as bool?) ?? false,
+        isFilterable: (json['is_filterable'] as bool?) ?? true,
+        sortOrder: (json['sort_order'] as num?)?.toInt() ?? 0,
+        fromLevel: (json['from_level'] as num?)?.toInt() ?? 0,
       );
 }
 
@@ -993,6 +1111,7 @@ class AdminListing {
     required this.sellerId,
     this.city,
     this.featured = false,
+    this.featuredUntil,
     this.coverUrl,
     this.sellerName,
     this.shopName,
@@ -1004,6 +1123,7 @@ class AdminListing {
   final String status;
   final String? city;
   final bool featured;
+  final DateTime? featuredUntil;
   final DateTime createdAt;
   final String sellerId;
   final String? coverUrl;
@@ -1011,6 +1131,11 @@ class AdminListing {
   final String? shopName;
 
   String get sellerLabel => shopName ?? sellerName ?? sellerId;
+
+  bool get featuredActive {
+    final until = featuredUntil;
+    return until == null || until.isAfter(DateTime.now());
+  }
 
   factory AdminListing.fromJson(Map<String, dynamic> json) {
     final images = json['listing_images'] as List<dynamic>? ?? const [];
@@ -1022,6 +1147,9 @@ class AdminListing {
       status: json['status'] as String? ?? '',
       city: json['city'] as String?,
       featured: json['featured'] as bool? ?? false,
+      featuredUntil: json['featured_until'] != null
+          ? DateTime.tryParse(json['featured_until'] as String)?.toLocal()
+          : null,
       createdAt: DateTime.parse(json['created_at'] as String),
       sellerId: json['seller_id'] as String,
       coverUrl: images.isNotEmpty ? (images.first as Map<String, dynamic>)['url'] as String? : null,

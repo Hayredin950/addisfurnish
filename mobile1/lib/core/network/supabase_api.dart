@@ -2368,6 +2368,218 @@ class SupabaseApi {
     }
   }
 
+  // ── Attribute catalogue (web AttributeManager parity, spec §3/§4/§9/§10) ──
+
+  static Future<List<AdminAttribute>> fetchAdminAttributes() async {
+    try {
+      final data = await _db
+          .from('attributes')
+          .select('id,name,name_am,slug,type,unit,is_filterable,is_required,is_active,sort_order')
+          .order('sort_order');
+      return data.map(AdminAttribute.fromJson).toList(growable: false);
+    } catch (e) {
+      _raise(e);
+    }
+  }
+
+  static Future<void> createAttribute({
+    required String name,
+    String? nameAm,
+    required String type,
+    String? unit,
+    bool isFilterable = true,
+  }) async {
+    try {
+      await _db.from('attributes').insert({
+        'name': name.trim(),
+        'name_am': nameAm?.trim().isNotEmpty == true ? nameAm!.trim() : null,
+        'slug': _toSlug(name),
+        'type': type,
+        'unit': unit?.trim().isNotEmpty == true ? unit!.trim() : null,
+        'is_filterable': isFilterable,
+        'is_required': false,
+        'is_active': true,
+        'sort_order': 1,
+      });
+      unawaited(logAdminAction(
+        action: 'attribute_created',
+        entityType: 'attribute',
+        newValue: {'name': name.trim(), 'type': type},
+      ));
+    } catch (e) {
+      _raise(e);
+    }
+  }
+
+  static Future<void> updateAttribute(
+    String id, {
+    String? name,
+    String? nameAm,
+    String? unit,
+  }) async {
+    try {
+      await _db.from('attributes').update({
+        if (name != null) 'name': name.trim(),
+        'name_am': nameAm?.trim().isNotEmpty == true ? nameAm!.trim() : null,
+        if (unit != null) 'unit': unit.trim().isEmpty ? null : unit.trim(),
+      }).eq('id', id);
+      unawaited(logAdminAction(
+        action: 'attribute_changed',
+        entityType: 'attribute',
+        entityId: id,
+        newValue: {'name': name, 'unit': unit},
+      ));
+    } catch (e) {
+      _raise(e);
+    }
+  }
+
+  static Future<void> toggleAttributeFlag(String id, String flag) async {
+    try {
+      final data = await _db.from('attributes').select(flag).eq('id', id).maybeSingle();
+      final current = data == null ? false : (data[flag] as bool? ?? false);
+      await _db.from('attributes').update({flag: !current}).eq('id', id);
+    } catch (e) {
+      _raise(e);
+    }
+  }
+
+  static Future<List<AdminAttributeOption>> fetchAttributeOptions(String attributeId) async {
+    try {
+      final data = await _db
+          .from('attribute_options')
+          .select('id,attribute_id,value,label,label_am,sort_order,is_active')
+          .eq('attribute_id', attributeId)
+          .order('sort_order');
+      return data.map(AdminAttributeOption.fromJson).toList(growable: false);
+    } catch (e) {
+      _raise(e);
+    }
+  }
+
+  static Future<void> createAttributeOption(
+    String attributeId, {
+    required String value,
+    required String label,
+    String? labelAm,
+  }) async {
+    try {
+      await _db.from('attribute_options').insert({
+        'attribute_id': attributeId,
+        'value': value.trim().toLowerCase().replaceAll(' ', '-'),
+        'label': label.trim(),
+        'label_am': labelAm?.trim().isNotEmpty == true ? labelAm!.trim() : null,
+        'sort_order': 1,
+        'is_active': true,
+      });
+      unawaited(logAdminAction(
+        action: 'attribute_option_created',
+        entityType: 'attribute',
+        entityId: attributeId,
+        newValue: {'value': value.trim(), 'label': label.trim()},
+      ));
+    } catch (e) {
+      _raise(e);
+    }
+  }
+
+  static Future<void> updateAttributeOption(
+    String id, {
+    String? value,
+    String? label,
+    String? labelAm,
+  }) async {
+    try {
+      await _db.from('attribute_options').update({
+        if (value != null) 'value': value.trim(),
+        if (label != null) 'label': label.trim(),
+        if (labelAm != null) 'label_am': labelAm.trim(),
+      }).eq('id', id);
+    } catch (e) {
+      _raise(e);
+    }
+  }
+
+  static Future<void> toggleAttributeOption(String id) async {
+    try {
+      final data = await _db.from('attribute_options').select('is_active').eq('id', id).maybeSingle();
+      final current = data == null ? false : (data['is_active'] as bool? ?? false);
+      await _db.from('attribute_options').update({'is_active': !current}).eq('id', id);
+    } catch (e) {
+      _raise(e);
+    }
+  }
+
+  static Future<List<AdminCategoryAttributeDef>> fetchCategoryAttributeSet(String categoryId) async {
+    try {
+      final data = await _db.rpc('category_attribute_set', params: {'_category_id': categoryId});
+      return data.map(AdminCategoryAttributeDef.fromJson).toList(growable: false);
+    } catch (e) {
+      _raise(e);
+    }
+  }
+
+  static Future<void> attachCategoryAttribute(String categoryId, String attributeId) async {
+    try {
+      await _db.from('category_attributes').insert({
+        'category_id': categoryId,
+        'attribute_id': attributeId,
+        'is_required': false,
+        'is_filterable': true,
+        'sort_order': 1,
+      });
+      unawaited(logAdminAction(
+        action: 'category_attribute_attached',
+        entityType: 'category',
+        entityId: categoryId,
+        newValue: {'attribute_id': attributeId},
+      ));
+    } catch (e) {
+      _raise(e);
+    }
+  }
+
+  static Future<void> detachCategoryAttribute(String categoryId, String attributeId) async {
+    try {
+      await _db
+          .from('category_attributes')
+          .delete()
+          .eq('category_id', categoryId)
+          .eq('attribute_id', attributeId);
+      unawaited(logAdminAction(
+        action: 'category_attribute_detached',
+        entityType: 'category',
+        entityId: categoryId,
+        newValue: {'attribute_id': attributeId},
+      ));
+    } catch (e) {
+      _raise(e);
+    }
+  }
+
+  static Future<void> setCategoryAttributeFlag(
+    String categoryId,
+    String attributeId,
+    String flag,
+  ) async {
+    try {
+      final data = await _db
+          .from('category_attributes')
+          .select(flag)
+          .eq('category_id', categoryId)
+          .eq('attribute_id', attributeId)
+          .maybeSingle();
+      final current = data == null ? false : (data[flag] as bool? ?? false);
+      await _db
+          .from('category_attributes')
+          .update({flag: !current})
+          .eq('category_id', categoryId)
+          .eq('attribute_id', attributeId);
+    } catch (e) {
+      _raise(e);
+    }
+  }
+
   static Future<List<AdminListing>> fetchAdminListings() async {
     try {
       final data = await _db
@@ -2399,6 +2611,63 @@ class SupabaseApi {
         entityType: 'listing',
         entityId: id,
         newValue: {'featured': featured},
+      ));
+    } catch (e) {
+      _raise(e);
+    }
+  }
+
+  /// Featured listings with their placement deadline (web `admin-featured`):
+  /// `featured_until` null = permanent, in the future = active placement.
+  static Future<List<AdminListing>> fetchAdminFeaturedListings() async {
+    try {
+      final data = await _db
+          .from('listings')
+          .select(
+            'id,title,price,status,city,featured,featured_until,created_at,seller_id,listing_images(url),profiles(full_name,shop_name,shop_slug)',
+          )
+          .eq('featured', true)
+          .order('featured_until', ascending: true, nullsFirst: false)
+          .limit(50);
+      return data.map((r) {
+        final images = r['listing_images'] as List<dynamic>? ?? const [];
+        if (images.isNotEmpty) {
+          final first = Map<String, dynamic>.from(images.first as Map);
+          first['url'] = _resolveStorageUrl(first['url'] as String? ?? '');
+          r = {...r, 'listing_images': [first, ...images.skip(1)]};
+        }
+        return AdminListing.fromJson(r);
+      }).toList(growable: false);
+    } catch (e) {
+      _raise(e);
+    }
+  }
+
+  /// Set a featured placement's deadline (`null` = permanent, web `setUntil`);
+  /// the placement itself was already turned on from the listings tab.
+  static Future<void> setFeaturedUntil(String id, DateTime? until) async {
+    try {
+      final iso = until?.toUtc().toIso8601String();
+      await _db.from('listings').update({'featured_until': iso}).eq('id', id);
+      unawaited(logAdminAction(
+        action: 'listing_featured_scheduled',
+        entityType: 'listing',
+        entityId: id,
+        newValue: {'featured_until': iso},
+      ));
+    } catch (e) {
+      _raise(e);
+    }
+  }
+
+  /// Unfeature a listing immediately and clear its deadline (web `expireNow`).
+  static Future<void> expireFeatured(String id) async {
+    try {
+      await _db.from('listings').update({'featured': false, 'featured_until': null}).eq('id', id);
+      unawaited(logAdminAction(
+        action: 'listing_unfeatured',
+        entityType: 'listing',
+        entityId: id,
       ));
     } catch (e) {
       _raise(e);

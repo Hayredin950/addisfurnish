@@ -9,6 +9,7 @@ import '../../../core/utils/format.dart';
 import '../../../core/widgets/app_image.dart';
 import '../domain/admin_repository.dart';
 import 'admin_analytics_tab.dart';
+import 'admin_attributes_panel.dart';
 import 'admin_audit_tab.dart';
 import 'admin_dashboard_tab.dart';
 import 'admin_moderation_tab.dart';
@@ -22,6 +23,7 @@ enum AdminTab {
   users,
   categories,
   listings,
+  featured,
   audit,
   analytics,
   telegram,
@@ -63,6 +65,7 @@ class _AdminScreenState extends State<AdminScreen> with AppStateMixin {
     AdminTab.users: (Icons.people_outline, 'admin.tabUsers', AdminScopes.users),
     AdminTab.categories: (Icons.grid_view_outlined, 'admin.tabCategories', AdminScopes.categories),
     AdminTab.listings: (Icons.list_alt_outlined, 'admin.tabListings', AdminScopes.listings),
+    AdminTab.featured: (Icons.star_outline, 'admin.tabFeatured', AdminScopes.users),
     AdminTab.audit: (Icons.history_outlined, 'admin.tabAudit', AdminScopes.users),
     AdminTab.analytics: (Icons.insights_outlined, 'admin.tabAnalytics', AdminScopes.analytics),
     AdminTab.telegram: (Icons.send_outlined, 'admin.tabTelegram', AdminScopes.users),
@@ -161,6 +164,7 @@ class _AdminScreenState extends State<AdminScreen> with AppStateMixin {
                     ),
                     AdminTab.categories => const CategoriesTab(),
                     AdminTab.listings => const ListingsTab(),
+                    AdminTab.featured => const FeaturedTab(),
                     AdminTab.audit => const AuditLogTab(),
                     AdminTab.analytics => const AnalyticsTab(),
                     AdminTab.telegram => const TelegramTab(),
@@ -1218,6 +1222,10 @@ class _CategoriesTabState extends State<CategoriesTab> with AppStateMixin {
             for (final c in all.where((x) => x.parentId == r.id)) _row(context, c, all, 1),
           ],
           const SizedBox(height: 32),
+          const Divider(),
+          const SizedBox(height: 8),
+          const AdminAttributesPanel(),
+          const SizedBox(height: 32),
         ],
         ),
       ),
@@ -1427,6 +1435,183 @@ class _ListingsTabState extends State<ListingsTab> with AppStateMixin {
   }
 }
 
+
+// ── Featured listings ────────────────────────────────────────────────────
+
+/// Featured placement management with deadlines (web Featured tab, spec SS20):
+/// rows split into active vs expired placements, with +7d / +30d / permanent
+/// scheduling, a renew action for expired rows, and immediate expiry.
+class FeaturedTab extends StatefulWidget {
+  const FeaturedTab({super.key});
+
+  @override
+  State<FeaturedTab> createState() => _FeaturedTabState();
+}
+
+class _FeaturedTabState extends State<FeaturedTab> with AppStateMixin {
+  AdminRepository get _repo => sl<AdminRepository>();
+  List<AdminListing>? _rows;
+  bool _loading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final rows = await _repo.getFeaturedListings();
+      if (!mounted) return;
+      setState(() {
+        _rows = rows;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _loading = false;
+        _error = '$e';
+      });
+    }
+  }
+
+  Future<void> _setUntil(AdminListing l, int? days) async {
+    try {
+      await _repo.setFeaturedUntil(
+        l.id,
+        days == null ? null : DateTime.now().add(Duration(days: days)),
+      );
+      await _load();
+    } catch (e) {
+      if (mounted) _snack(context, '$e');
+    }
+  }
+
+  Future<void> _expire(AdminListing l) async {
+    try {
+      await _repo.expireFeatured(l.id);
+      await _load();
+    } catch (e) {
+      if (mounted) _snack(context, '$e');
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final state = AppState.instance;
+    final rows = _rows;
+    final theme = Theme.of(context);
+    if (_loading && rows == null) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    if (_error != null) {
+      return _errorView(context, _error!, _load, state);
+    }
+    final active = rows!.where((l) => l.featuredActive).toList();
+    final expired = rows.where((l) => !l.featuredActive).toList();
+
+    return RefreshIndicator(
+      onRefresh: _load,
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          if (rows.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 32),
+              child: Center(
+                child: Text(state.t('admin.noFeatured'), style: theme.textTheme.bodyMedium),
+              ),
+            ),
+          if (active.isNotEmpty) ...[
+            _sectionTitle(context, state, 'admin.featuredActive'),
+            for (final l in active) _featuredCard(context, state, theme, l),
+          ],
+          if (expired.isNotEmpty) ...[
+            const SizedBox(height: 16),
+            _sectionTitle(context, state, 'admin.featuredExpired'),
+            for (final l in expired) _featuredCard(context, state, theme, l),
+          ],
+          const SizedBox(height: 32),
+        ],
+      ),
+    );
+  }
+
+  Widget _sectionTitle(BuildContext context, AppState state, String key) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 8, 4, 8),
+      child: Text(
+        state.t(key),
+        style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+      ),
+    );
+  }
+
+  Widget _featuredCard(
+      BuildContext context, AppState state, ThemeData theme, AdminListing l) {
+    final expired = !l.featuredActive;
+    final deadline =
+        l.featuredUntil != null
+            ? Fmt.dateTime(l.featuredUntil!)
+            : state.t('admin.featuredPermanent');
+    final deadlineLabel = expired
+        ? '${state.t('admin.featuredExpired')} ${Fmt.timeAgo(l.featuredUntil!)}'
+        : (l.featuredUntil != null
+            ? state.t('admin.featuredUntil', {'date': deadline})
+            : deadline);
+    return Card(
+      margin: const EdgeInsets.symmetric(vertical: 4),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(l.title,
+                maxLines: 1, overflow: TextOverflow.ellipsis, style: theme.textTheme.titleSmall),
+            const SizedBox(height: 2),
+            Text(
+              '${Fmt.birr(l.price)} · ${l.status} · ${l.sellerLabel}',
+              style: theme.textTheme.bodySmall,
+            ),
+            Text(deadlineLabel, style: theme.textTheme.bodySmall),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: !expired
+                  ? [
+                      _chip(context, state, '+7d', () => _setUntil(l, 7)),
+                      _chip(context, state, '+30d', () => _setUntil(l, 30)),
+                      _chip(context, state, '∞', () => _setUntil(l, null)),
+                      OutlinedButton(
+                        onPressed: () => _expire(l),
+                        style: OutlinedButton.styleFrom(
+                          foregroundColor: theme.colorScheme.error,
+                        ),
+                        child: Text(state.t('admin.featureExpire')),
+                      ),
+                    ]
+                  : [
+                      _chip(context, state, state.t('admin.featureRenew'),
+                          () => _setUntil(l, 7)),
+                    ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _chip(BuildContext context, AppState state, String label, VoidCallback onTap) {
+    return OutlinedButton(onPressed: onTap, child: Text(label));
+  }
+}
 
 /// Verification document viewer: mints a short-lived signed URL on open and
 /// shows the image full-screen. Demo/empty paths render a friendly hint.

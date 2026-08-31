@@ -72,6 +72,7 @@ import { BanDialog } from "@/components/admin/BanDialog";
 import { UserDetailDialog } from "@/components/admin/UserDetailDialog";
 import { UserAccessManager } from "@/components/admin/UserAccessManager";
 import { DocumentViewer } from "@/components/admin/DocumentViewer";
+import { AttributeManager } from "@/components/admin/AttributeManager";
 import { deleteCloudinaryAssets, useImageUrl } from "@/lib/storage";
 import { timeAgo, formatBirr } from "@/lib/format";
 import { announceListing, syncListingChannel, telegramConfigured } from "@/lib/telegram";
@@ -2160,6 +2161,10 @@ function CategoriesTab() {
           </li>
         ))}
       </ul>
+
+      <div className="mt-8 border-t pt-6">
+        <AttributeManager />
+      </div>
 
       <ConfirmDialog
         open={!!pendingDelete}
